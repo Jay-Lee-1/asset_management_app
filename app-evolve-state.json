@@ -1,19 +1,8 @@
 {
- "cycle": 361,
- "phase": "advance",
- "pending_advance_plan": {
-  "title": "KR_FIXED_HOLIDAYS가 음력 설날/추석(+대체공휴일)을 빠뜨려 반복거래 영업일 조정(shiftWeekend)이 최대 명절 연휴에 틀린 날짜를 돌려줌",
-  "why": "logic.js:23-29의 KR_FIXED_HOLIDAYS는 MM-DD 고정일 8개만 담고, 23-24행 주석이 음력 설날/추석을 명시적으로 후속 과제로 미뤄둔 채(app-evolve cycle344) 지금까지 방치돼 있었다. isKrNonBusinessDay()가 이 Set만 참조하므로 recDates()/반복거래의 영업일 조정(earlier/later)이 설날·추석 3일 연휴를 평일로 오판해 반복이체/급여입금 등의 예정일을 은행이 쉬는 날 그대로 둔다. 한국 반복거래 사용자에게 가장 흔하고 눈에 띄는 영업일 조정 실패 케이스인데도 지금까지 고쳐지지 않은 알려진 공백.",
-  "approach": "logic.js에 연도 종속 음력 공휴일 테이블(예: KR_LUNAR_HOLIDAYS, YYYY-MM-DD 키, 설날 전날/당일/다음날 + 추석 전날/당일/다음날, 앱 지원 범위에 맞춰 최근 수년~향후 수년) 추가. 대체공휴일 규칙(고정/음력 공휴일이 토/일 또는 다른 공휴일과 겹칠 때 다음 평일로 대체)을 적용하는 순수 함수(예: expandSubstituteHolidays) 추가. isKrNonBusinessDay(ds)가 KR_FIXED_HOLIDAYS와 새 음력+대체공휴일 테이블을 함께 참조하도록 수정. 유지보수 부담(매년 날짜 갱신 필요)을 코드 주석에 명시. test/run.js의 기존 shiftWeekend 단위 테스트(1843-1904행 부근) 옆에 알려진 설날/추석 날짜(예: 2026년 추석) 기준 earlier/later 이동 케이스와 대체공휴일 케이스를 추가하고, 수정 전 코드로 되돌려 새 테스트가 실제로 FAIL하는지 확인. index.html 변경은 불필요(recDates/shiftWeekend가 이미 연결돼 있음)."
- },
+ "cycle": 362,
+ "phase": "develop",
+ "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 356,
-   "phase": "advance",
-   "timestamp": "2026-11-14T20:10:00.000Z",
-   "summary": "critique(cycle356)가 세운 계획(영수증 사진을 별도 Supabase 테이블/버킷으로 분리)은 이 자동화 세션이 실제 원격 Supabase 스키마를 만들거나 검증할 수 없어(새 테이블/버킷 존재를 보장 못 함) 그대로 구현하면 실사용자의 클라우드 동기화를 깨뜰 위험이 있다고 판단해 보류했다 — 대신 Explore 서브에이전트에게 백엔드 인프라 변경이 필요 없는 advance급 개선을 새로 찾게 했다. 채택: openSettlement()(index.html:5735)의 합계 카드가 총액만 보여줘 어느 지출이 합산됐는지, 결제 자산이 ownerA/ownerB 둘 다 아니라 조용히 제외된 지출이 있는지 확인할 방법이 없었다. logic.js에 settlementSummary 바로 아래 순수 함수 settlementItems(txns,assets,ownerA,ownerB) 추가(같은 ownerOf 판정 재사용, 집계 공식은 건드리지 않음) — 포함/제외 건을 날짜순으로 나눠 돌려준다. openSettlement()에 settlementBreakdownHTML() 추가해 포함된 건은 editRec()과 동일한 manage-row 탭-편집 패턴으로 눌러 바로 수정하러 갈 수 있게 하고, 제외된 건은 '제외됨 N건 · 이유 · 금액'으로 안내한다. 테스트 4건 추가(shared/expense 아닌 거래 제외, 제외 사유 payer 필드, 날짜순 정렬, 반복거래 가상 인스턴스의 id/recId 보존). node test/run.js 3437->3441/3441 통과. APP_VERSION 1.47.453->1.47.454, sw.js CACHE v720->v721. pending_advance_plan null로 비움(인프라가 필요한 사진 분리 계획은 폐기 — 다음 critique가 원하면 인프라 제약을 감안해 재검토).",
-   "commit": null
-  },
   {
    "cycle": 357,
    "phase": "develop",
@@ -145,6 +134,13 @@
    "phase": "critique",
    "timestamp": "2026-11-15T15:10:22.721Z",
    "summary": "Explore 서브에이전트에게 cycle340-361의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 가져오기 카테고리 분리)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: logic.js:23-29의 KR_FIXED_HOLIDAYS(한국 고정 공휴일 8개, MM-DD)가 음력 설날/추석을 명시적으로 제외한 채(23-24행 주석, app-evolve cycle344 critique/advance에서 이미 알려진 후속 과제로 기록돼 있었음) 지금까지 방치돼 있었다. isKrNonBusinessDay()가 이 Set만으로 영업일 여부를 판정하고, 반복거래의 영업일 조정(shiftWeekend, earlier/later)이 이를 그대로 써서 설날·추석 3일 연휴를 평일로 오판 — 한국에서 가장 큰 두 명절 연휴마다 매년 두 번씩 반복이체/급여입금 예정일이 은행 휴무일 그대로 찍히는, 기능이 정확히 다루겠다고 약속한 바로 그 케이스가 조용히 틀리고 있었다. 후보로 온보딩/첫 실행 경험 부재(doSignup 직후 가이드 없음, 기능 누락이지 정확성 버그는 아님)와 updateHist()의 전체 innerHTML 재렌더(이미 PAGE=20 페이지네이션+220ms 디바운스로 완화돼 수천 건 이상에서만 체감)도 검토했으나 순위를 낮게 매겼다. pending_advance_plan에 음력 공휴일 테이블+대체공휴일 확장 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 361,
+   "phase": "advance",
+   "timestamp": "2026-11-15T16:05:00.000Z",
+   "summary": "critique(cycle361) 계획대로 KR_FIXED_HOLIDAYS가 음력 설날/추석을 빠뜨려 반복거래 영업일 조정(shiftWeekend)이 명절 연휴를 평일로 오판하던 공백을 메웠다. 계획은 대체공휴일 규칙을 계산하는 순수 함수(expandSubstituteHolidays)를 제안했지만, 음력 날짜 자체를 수식으로 계산할 방법이 없어(천문 계산 불가) 대신 WebSearch로 관공서의 공휴일에 관한 규정·언론 보도를 근거로 2023~2028년 설날/추석 연휴(+그 해에 붙는 대체공휴일·임시공휴일, 예: 2023 추석의 10/2 임시공휴일, 2025 설날의 1/27 임시공휴일, 2027 설날의 2/9 대체공휴일)를 연도별 'YYYY-MM-DD' 상수 테이블 KR_LUNAR_HOLIDAYS로 logic.js에 추가하는 쪽을 택했다 — 계산이 틀릴 위험보다 수동 테이블의 유지보수 부담이 더 안전하다고 판단(코드 주석에 2029년 이후는 표를 벗어나 평일로 오판된다는 한계와 다음 갱신 필요성을 명시). isKrNonBusinessDay(ds)가 KR_FIXED_HOLIDAYS와 함께 이 표도 참조하도록 한 줄 추가. 다른 고정 공휴일(광복절 등)이 주말과 겹칠 때 생기는 대체공휴일은 이번 범위 밖으로 명시적으로 남겨둠(계획 범위를 벗어난 확장 방지). 테스트 5건 추가(isKrNonBusinessDay 직접 단위 2건: 추석 연휴/바로 전날, 대체공휴일 자체/다음날 — shiftWeekend 통합 3건: 2026 추석이 주말에 바로 붙어 연휴+주말을 통째로 건너는 earlier/later, 2027 설날 대체공휴일(2/9, 화요일, MM-DD 고정표에는 없는 날)도 동일하게 조정됨). git stash로 logic.js 수정을 되돌려 새 테스트 4건이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3478->3482/3482 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.462->1.47.463, sw.js CACHE v729->v730. pending_advance_plan null로 비움.",
    "commit": null
   }
  ]

@@ -1904,6 +1904,32 @@ test('shiftWeekend(): mode="none"이면 고정 공휴일이어도 전혀 조정�
   assert.strictEqual(sandbox.shiftWeekend('2026-12-25'), '2026-12-25'); // 성탄절, mode 인자 없음
 });
 
+/* ---------- isKrNonBusinessDay()/shiftWeekend(): 음력 설날·추석 반영 (app-evolve cycle361 critique/advance)
+ * KR_FIXED_HOLIDAYS는 'MM-DD' 고정일만 담아 음력 설날/추석(매년 날짜가 바뀜)을 전혀 보지 못했다 —
+ * 한국에서 가장 긴 두 명절 연휴마다 반복이체/급여입금의 영업일 조정이 평일로 오판되던 공백을
+ * KR_LUNAR_HOLIDAYS('YYYY-MM-DD' 연도별 표)로 메웠다. */
+test('isKrNonBusinessDay(): 음력 설날·추석 당일/연휴는 평일이어도 영업일이 아니다', () => {
+  assert.strictEqual(sandbox.isKrNonBusinessDay('2026-09-24'), true); // 2026 추석 연휴 첫날, 목요일
+  assert.strictEqual(sandbox.isKrNonBusinessDay('2026-09-25'), true); // 2026 추석 당일, 금요일
+  assert.strictEqual(sandbox.isKrNonBusinessDay('2026-09-23'), false); // 추석 연휴 바로 전날, 평범한 수요일
+});
+test('isKrNonBusinessDay(): 설날/추석이 일요일과 겹쳐 생기는 대체공휴일도 KR_FIXED_HOLIDAYS 없이 그 자체로 영업일 아님으로 잡힌다', () => {
+  // 2027년 설날은 2/7(일) — 대체공휴일 2/9(화)는 'MM-DD' 고정표에도 없고 평범한 화요일(dow 기준 평일)이다.
+  assert.strictEqual(sandbox.isKrNonBusinessDay('2027-02-09'), true);
+  assert.strictEqual(sandbox.isKrNonBusinessDay('2027-02-10'), false); // 대체공휴일 다음날, 수요일, 평일
+});
+test('shiftWeekend(): 추석 연휴가 주말에 바로 붙으면(2026) earlier/later 모두 연휴+주말을 통째로 건너 다음 영업일까지 이동한다', () => {
+  // 2026 추석: 9/24(목)~9/26(토, 주말과 바로 연결) — later는 9/25(금)·9/26(토)·9/27(일)을 건너 9/28(월)까지 4일 이동.
+  assert.strictEqual(sandbox.shiftWeekend('2026-09-24', 'later'), '2026-09-28');
+  // earlier는 추석 연휴 시작일 바로 전날(공휴일 아닌 평일)에서 멈춘다.
+  assert.strictEqual(sandbox.shiftWeekend('2026-09-24', 'earlier'), '2026-09-23');
+});
+test('shiftWeekend(): 설날 대체공휴일(2027-02-09, 화)도 고정 공휴일과 동일하게 조정 대상이다', () => {
+  assert.strictEqual(sandbox.shiftWeekend('2027-02-09', 'later'), '2027-02-10'); // 대체공휴일 다음 평일(수)
+  // earlier는 설날 연휴 전체(2/6 토~2/9 대체공휴일 화)를 건너 연휴 시작 전 평일(2/5 금)까지 이동.
+  assert.strictEqual(sandbox.shiftWeekend('2027-02-09', 'earlier'), '2027-02-05');
+});
+
 /* ---------- num()/fmtAmt(): 음수 입력 처리 (app-evolve cycle56 develop, cycle56 review에서 num() 수정)
  * 자산 "현재 금액" 필드(asAmt)는 마이너스통장(오버드래프트)처럼 잔액이 음수일 수 있는데,
  * fmtAmt()가 매 키 입력마다 '-' 문자까지 통째로 제거해 사용자가 애초에 음수를 입력할 수 없었다.
