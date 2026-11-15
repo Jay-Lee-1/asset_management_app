@@ -1,15 +1,12 @@
 {
  "cycle": 362,
- "phase": "critique",
- "pending_advance_plan": null,
+ "phase": "advance",
+ "pending_advance_plan": {
+  "title": "txRowCore()의 role=\"button\" 래퍼 안에 복제/확인 버튼이 중첩돼 스크린리더로 도달 불가",
+  "why": "index.html의 txRowCore()(전체내역/검색/캘린더/홈/카테고리 드릴다운이 전부 공유하는 거래 행 렌더러)가 outer .swipe-content에 role=\"button\" tabindex=\"0\"을 주고, 그 DOM 자손으로 실제 <button class=\"dup-btn\">(복제)와 <button class=\"confirm-btn\">(반복이체 확인 대기)을 또 넣는다 — role=\"button\" 하위에 포커스 가능한 인터랙티브 엘리먼트를 중첩시키는 것은 WAI-ARIA 패턴 위반이고, VoiceOver/TalkBack은 role=\"button\" 엘리먼트를 통째로 하나의 탐색 불가 단위로 취급해 사용자가 스와이프로 그 안의 복제/확인 버튼에 포커스를 옮길 방법이 없다. 결과: 반복이체 확인 대기 행에서 스크린리더 사용자는 rowTap()이 여는 전체 수정 시트로만 갈 수 있고, 마우스/터치 사용자가 쓰는 원탭 '확인'/'복제' 단축 동작을 전혀 쓸 수 없다. 362 사이클의 critique에서 가장 흔히 쓰이는 공유 위젯(모든 거래 리스트)에 걸친, 아직 다뤄지지 않은 유일한 표준 수준 접근성 결함.",
+  "approach": "txRowCore()에서 .swipe-content 자체에 role=\"button\"/tabindex를 주지 말고, 아바타+메모+금액 등 '행 열기' 영역만 감싸는 내부 wrapper(예: 기존 콘텐츠 중 dup-btn/confirm-btn/photo thumbnail을 제외한 부분)에 role=\"button\" tabindex=\"0\" onclick=\"rowTap\"/onkeydown=\"rowKeydown\"을 옮겨 적용한다. dup-btn/confirm-btn/photo(onclick=\"openPhotoViewer\")는 그 role=\"button\" 엘리먼트의 형제(sibling)로 .swipe-content 바로 아래 유지해 시각적 레이아웃(flex)은 그대로 보존하되 DOM 중첩만 해소한다. sel.mode(선택 모드) 분기도 동일하게 점검. 테스트: 생성된 HTML에서 role=\"button\"으로 연 태그와 그 매칭되는 닫는 태그 사이에 <button이나 <img onclick 패턴이 전혀 나타나지 않음을 단언하는 회귀 테스트(정상 모드 + sel.mode 모드 + confirm-btn 있는 경우 + dup-btn 있는 경우 조합), 그리고 rowTap(행 열기)과 duplicateTx/confirmRecTransfer(버튼 클릭)가 이벤트 버블링으로 서로 오염되지 않는 기존 동작이 수정 후에도 유지됨을 확인하는 기존 클릭/키보드 테스트 재실행."
+ },
  "history": [
-  {
-   "cycle": 357,
-   "phase": "critique",
-   "timestamp": "2026-11-14T22:50:00.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-357의 모든 주제(반복거래 override, 부채 상환, 정산 내역, 클라우드 동기화 페이로드, undoToast WCAG, 날짜 포맷 등)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: fx/gold/stock/crypto 자산의 추가매수·매도 시 costBasisField()(5273행)의 '추가로 투입한 금액'/'받은 매도 금액' 입력에 결제 통장을 고르는 수단이 전혀 없고, saveAsset()(5375-5406행)도 costBasis만 조정할 뿐 어떤 현금 자산의 금액도 바꾸지 않으며 거래 기록도 만들지 않는다. isMarketValued 자산은 거래 입력의 통장으로도 못 써서(3146행 주석) 수동 보완조차 불가능 — 주식 매수 시 주식 자산은 늘지만 결제한 현금은 그대로라 순자산(홈 히어로/목표추적/배분드리프트 전부 의존)이 매번 조용히 틀어지는 핵심 원장 정합성 공백. pending_advance_plan에 costBasisField에 asOpenMat()과 같은 cashOnly 통장 선택 입력(선택 사항, 기존 동작 보존) 추가 + saveAsset()에서 선택 시 현금 자산 금액 조정/거래 기록 생성 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
   {
    "cycle": 357,
    "phase": "advance",
@@ -141,6 +138,13 @@
    "phase": "review",
    "timestamp": "2026-11-15T18:05:00.000Z",
    "summary": "develop(cycle362, 3253e48: homeAlertCard 저축 만기 mat/matMulti overdue 구분 추가)을 검토했다. al.date<TODAY 판정이 notifyAlertInfo(11979행)/openMaturity(8308행)가 이미 쓰는 동일한 overdue 정의와 일치함을 grep으로 확인. homeAlerts()의 overdueCount=_mat.filter(a=>a.maturityDate<TODAY).length가 dueCount(<=TODAY+1)와 같은 _mat 배열에서 산출돼 항상 0<=overdueCount<=count인 부분집합임을 확인. matMulti의 allOverdue=count>0&&overdueCount===count, someOverdue=overdueCount>0&&!allOverdue 두 플래그가 overdueCount가 undefined인 기존 호출부/테스트에서 모두 false로 평가돼(undefined===count는 false, undefined>0도 false) 문구가 그대로 유지되는 하위호환을 재확인. node test/run.js 3484/3484 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 362,
+   "phase": "critique",
+   "timestamp": "2026-11-15T19:10:00.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-362의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력 공휴일, 저축 만기 overdue, assetGainLossBadge)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: txRowCore()(전체내역/검색/캘린더/홈/카테고리 드릴다운이 전부 공유하는 거래 행 렌더러)가 .swipe-content에 role=\"button\" tabindex=\"0\"을 주면서 그 DOM 자손으로 실제 <button class=\"dup-btn\">(복제)/<button class=\"confirm-btn\">(반복이체 확인)을 중첩시켜, WAI-ARIA 패턴을 위반하고 VoiceOver/TalkBack이 전체를 하나의 탐색 불가 단위로 취급해 스크린리더 사용자가 그 안의 복제/확인 버튼에 포커스를 옮길 방법이 없다 — 가장 흔히 쓰이는 공유 위젯에 걸친 표준 수준 접근성 결함. pending_advance_plan에 role=\"button\"을 아바타/메모/금액만 감싸는 내부 wrapper로 좁히고 dup-btn/confirm-btn/photo를 그 형제로 빼내는 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
    "commit": null
   }
  ]
