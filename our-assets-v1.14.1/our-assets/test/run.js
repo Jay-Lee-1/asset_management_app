@@ -6419,6 +6419,27 @@ test('duplicateGoal → saveGoal: 복제본을 저장하면 원본은 그대로 
   assert.strictEqual(dup.name, '내 집 마련 복사');
   assert.strictEqual(dup.targetAmount, 100000000);
 });
+/* duplicateGoal/duplicateAsset의 NAME_MAX(60) 경계 버그 (app-evolve cycle358 develop):
+ * cleanName()(위 2007행, slice(0,60))이 saveGoal/saveAsset 저장 시 이름을 60자로 자르는데,
+ * duplicateGoal/duplicateAsset은 (name||'')+' 복사'를 이 clamp 없이 그대로 draft에 넣었다.
+ * 원본 이름이 이미 58~60자면 접미사를 더한 길이가 60을 넘어 저장 시 slice(0,60)가 ' 복사'를
+ * 통째로 잘라내 복제본 이름이 원본과 글자 수까지 완전히 같아져 버린다 — 자산(saveAsset)은
+ * 동명·동종 자산을 명시적으로 막고 있어(normName 비교) 이 입력대로면 매번 "같은 이름·종류의
+ * 자산이 있어요" 토스트로 저장이 막히는 실사용 버그였다. */
+test('duplicateGoal: 원본 이름이 NAME_MAX(60자)에 가까워도 " 복사" 접미사가 저장 시(cleanName) 잘려나가지 않도록 draft 단계에서 미리 자리를 비워둔다', () => {
+  const name57 = '가'.repeat(57); // 57 + ' 복사'(3) = 60, 경계값
+  sandbox.DB = { owners: ['나'], assets: [], goals: [{ id: 'g4', name: name57, type: 'networth', targetAmount: 1000000, targetDate: null, owner: 'all' }] };
+  sandbox.duplicateGoal('g4');
+  assert.strictEqual(sandbox.goalDraft.name, name57 + ' 복사', '경계값(60자)에서도 접미사가 그대로 남아야 함');
+  assert.strictEqual(sandbox.goalDraft.name.length, 60);
+  assert.strictEqual(sandbox.cleanName(sandbox.goalDraft.name), sandbox.goalDraft.name, 'saveGoal()이 저장 시 적용할 cleanName을 통과해도 더 잘리지 않아야 함');
+
+  const name60 = '나'.repeat(60); // 원본이 이미 NAME_MAX 꽉 채운 경우
+  sandbox.DB = { owners: ['나'], assets: [], goals: [{ id: 'g5', name: name60, type: 'networth', targetAmount: 1000000, targetDate: null, owner: 'all' }] };
+  sandbox.duplicateGoal('g5');
+  assert.strictEqual(sandbox.goalDraft.name, '나'.repeat(57) + ' 복사', '원본이 60자를 꽉 채워도 뒤를 잘라 접미사가 들어갈 자리를 만들어야 함(원본과 달라야 saveGoal 혼선이 없음)');
+  assert.notStrictEqual(sandbox.goalDraft.name, name60, '잘못 자르면 원본과 동일한 이름이 돼버리던 버그가 재발하지 않아야 함');
+});
 /* ackGoalAchieved: 홈 알림의 goalAchieved 카드와 goalRowHTML/openGoalsList 행 진입점이 공유하는 ack+이동 핸들러
  * (app-evolve cycle256 advance) */
 test('[실행형] ackGoalAchieved: 달성했지만 아직 ack 안 된 목표를 열면 achievedAckAt을 기록하고 save() 후 openGoalForm으로 이동한다', () => {
@@ -19111,6 +19132,33 @@ test('duplicateAsset: 존재하지 않는 id는 asDraft를 건드리지 않고 �
   sandbox.asDraft = null;
   sandbox.duplicateAsset('nope');
   assert.strictEqual(sandbox.asDraft, null, '존재하지 않는 자산은 draft를 세팅하지 않아야 함');
+});
+/* duplicateAsset의 NAME_MAX(60) 경계 버그 (app-evolve cycle358 develop):
+ * cleanName()(2007행, slice(0,60))이 saveAsset() 저장 시 이름을 60자로 자르는데, duplicateAsset은
+ * (a.name||'')+' 복사'를 이 clamp 없이 그대로 draft에 넣었다. 원본 이름이 58~60자면 접미사를 더한
+ * 길이가 60을 넘어 저장 시 slice(0,60)가 ' 복사'를 통째로 잘라내 복제본 이름이 원본과 완전히 같아져
+ * 버린다 — saveAsset()의 동명·동종 자산 차단(normName 비교, 5384행)에 걸려 매번 "같은 이름·종류의
+ * 자산이 있어요" 토스트로 저장이 막히던 실사용 버그였다. */
+test('duplicateAsset: 원본 이름이 NAME_MAX(60자)에 가까워도 " 복사" 접미사가 저장 시(cleanName) 잘려나가지 않도록 draft 단계에서 미리 자리를 비워둔다', () => {
+  const name60 = 'A'.repeat(60); // 원본이 이미 NAME_MAX를 꽉 채운 경우(폼의 maxlength=60으로 실제 입력 가능)
+  sandbox.DB = { assets: [{ id: 'a10', type: 'cash', owner: '나', currency: 'KRW', includeInTotal: true, name: name60, baseAmount: 1000 }] };
+  sandbox.duplicateAsset('a10');
+  assert.strictEqual(sandbox.asDraft.name, 'A'.repeat(57) + ' 복사', '뒤를 잘라 접미사가 들어갈 자리를 만들어야 함');
+  assert.strictEqual(sandbox.asDraft.name.length, 60);
+  assert.notStrictEqual(sandbox.asDraft.name, name60, '잘못 자르면 원본과 완전히 같은 이름이 돼버리던 버그가 재발하지 않아야 함');
+  assert.strictEqual(sandbox.cleanName(sandbox.asDraft.name), sandbox.asDraft.name, 'saveAsset()이 저장 시 적용할 cleanName을 통과해도 더 잘리지 않아야 함');
+});
+test('duplicateAsset → saveAsset: 원본 이름이 60자를 꽉 채워도 복제본이 중복 이름으로 막히지 않고 저장된다', () => {
+  sandbox.TWi = -1;
+  const name60 = 'B'.repeat(60);
+  sandbox.DB = { owners: ['나'], assets: [{ id: 'a11', type: 'cash', owner: '나', currency: 'KRW', includeInTotal: true, name: name60, baseAmount: 1000 }], txns: [], recurrences: [], goals: [], settings: {} };
+  sandbox._balCache.clear();
+  sandbox.lastToast = null;
+  sandbox.duplicateAsset('a11');
+  sandbox.asDraft._dispAmt = 2000;
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 2, '중복 이름으로 막히지 않고 복제본이 실제로 추가돼야 함(수정 전엔 토스트로 막혀 1건에 머물렀음)');
+  assert.ok(!sandbox.lastToast || !sandbox.lastToast.includes('같은 이름'), '"같은 이름·종류의 자산이 있어요" 토스트가 뜨면 안 됨');
 });
 test('duplicateAsset → saveAsset: 복제본을 저장하면 원본은 그대로 남고 독립된 새 자산이 추가된다', () => {
   sandbox.TWi = -1;

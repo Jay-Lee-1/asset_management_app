@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.456';
+const APP_VERSION='1.47.457';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4118,7 +4118,8 @@ function openGoalForm(id){
 function duplicateGoal(id){
  const g=(DB.goals||[]).find(x=>x.id===id);if(!g)return;
  const d=JSON.parse(JSON.stringify(g));
- d.id=uid();d.name=(d.name||'')+' 복사';d.owner=goalOwnerEff(g);d.createdAt=Date.now();
+ const dupSuffix=' 복사';
+ d.id=uid();d.name=cleanName(g.name).slice(0,NAME_MAX-dupSuffix.length)+dupSuffix;d.owner=goalOwnerEff(g);d.createdAt=Date.now(); /* duplicateAsset()과 동일한 이유로 NAME_MAX 근처 이름의 접미사가 saveGoal의 cleanName(slice(0,60))에 잘려나가지 않도록 미리 자리를 비워둔다 */
  delete d.achievedAckAt;
  goalDraft=d;snapDraft('goal');renderGoalForm(false);
  setTimeout(()=>{const n=$('goalName');if(n){n.focus();n.select()}},300);
@@ -5238,7 +5239,8 @@ function duplicateAsset(id){
  const a=DB.assets.find(x=>x.id===id);if(!a)return;
  const d=JSON.parse(JSON.stringify(a));
  d.id=null;delete d.order;
- d.name=(d.name||'')+' 복사';
+ const dupSuffix=' 복사';
+ d.name=cleanName(a.name).slice(0,NAME_MAX-dupSuffix.length)+dupSuffix; /* 원본 이름이 NAME_MAX(60)에 가까우면 저장 시 cleanName의 slice(0,60)가 이 접미사를 통째로 잘라 원본과 동명이 돼 saveAsset의 중복 차단에 걸리므로, 접미사가 들어갈 자리를 미리 비워둔다 */
  delete d.baseAmount;delete d.amountKRW;delete d.maturityDate;delete d.payoffAckAt;
  if(isMarketValued(d)){
    delete d.costBasis;delete d.acquiredAt; /* 매입원가와 함께 최초 매입일도 새 자산엔 해당하지 않으므로 지운다 — syncAssetInputs()가 나중에 매입 금액을 입력하는 시점에 다시 오늘 날짜로 찍는다 */

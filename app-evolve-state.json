@@ -1,15 +1,8 @@
 {
  "cycle": 358,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 352,
-   "phase": "advance",
-   "timestamp": "2026-11-14T03:40:00.000Z",
-   "summary": "critique(cycle352) 계획대로 반복거래 shared 플래그에 occurrence 단위 override를 추가했다. expandRec/recApply/renderTxSheet(sharedChip UI)/recSave(세 scope 모두) 4곳에 splits/amount와 동일한 edits[date] 오버라이드 패턴 적용. 테스트 9건 추가/1건 갱신. node test/run.js 3401->3409/3409 통과. APP_VERSION 1.47.445->1.47.446, sw.js CACHE v712->v713. pending_advance_plan null로 비움.",
-   "commit": null
-  },
   {
    "cycle": 353,
    "phase": "develop",
@@ -141,6 +134,13 @@
    "phase": "advance",
    "timestamp": "2026-11-15T00:30:00.000Z",
    "summary": "critique(cycle357)가 세운 계획(fx/gold/stock/crypto 추가매수·매도 시 결제 통장이 조용히 안 바뀌어 순자산이 왜곡되는 문제)을 구현했다. logic.js에 순수 함수 settleTxnForQtyChange(prevQty,newQty,addedCost,saleProceeds,settleAssetId,assetName,today) 추가 — 결제·수령 통장을 골랐을 때만, 그 통장 쪽에서만(반대쪽은 null) 금액이 움직인 transfer 레코드를 반환한다(시세평가형 자산 자체는 거래의 fromAssetId/toAssetId로 못 쓰므로 반대쪽은 비워둠, 3146행 주석 참고). baseAmount를 직접 고치면 RANGE_FROM부터 과거 잔액이 전부 밀리는 문제(saveAsset의 setBase 역산과 달리 날짜 기준이 없음)를 피해 오늘 날짜의 DB.txns 레코드로 남기는 쪽을 택했다. index.html: costBasisField()에 asOpenMat()과 같은 cashOnly 피커 필드(결제·수령 통장, 선택 사항·d._settleAssetId는 저장 후 지워지는 임시값) 추가, qtyBasisWarn()이 추가매수/매도 경고와 함께 이 필드도 토글, saveAsset()이 settleAssetId를(존재/현금성 검증 포함) settleTxnForQtyChange에 넘겨 받은 transfer를 DB.txns에 push. 통장을 고르지 않으면 기존 동작(costBasis만 조정)이 그대로 보존된다. 테스트 중 기존 3건(renderAssetSheet 합치기 링크, asOpenCur, costBasisField Enter-제출 exact-string)이 깨진 걸 발견해 원인을 추적 — assetPickBtn()이 DB.assets.find를 가드 없이 불러, DB.assets를 채우지 않은 기존 테스트 mock들이 내 새 호출(costBasisField 안의 assetPickBtn)에서 터졌다. assetPickBtn을 (DB.assets||[]).find로 방어적으로 고쳐 2건을 고치고, 나머지 1건(exact-string 비교)은 새 필드가 포함된 출력으로 기대값을 갱신했다. settleTxnForQtyChange 단위 테스트 5건 + saveAsset 통합 테스트 4건(추가매수/매도 각각 transfer 생성, 통장 미선택 시 거래 없음, 삭제된 id 무시) 추가. node test/run.js 3442->3451/3451 통과(새 테스트 9건 포함, 기존 3건 수정). node --check sw.js/test/run.js 통과, index.html 메인 <script> 블록은 Function()으로 파싱 확인. APP_VERSION 1.47.455->1.47.456, sw.js CACHE v722->v723. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 358,
+   "phase": "develop",
+   "timestamp": "2026-11-15T01:15:00.000Z",
+   "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — duplicateAsset()(index.html:5237-5241)과 duplicateGoal()(4118-4124)이 원본 이름에 ' 복사' 접미사를 NAME_MAX(60) clamp 없이 그대로 붙였는데, saveAsset/saveGoal 저장 시 cleanName()이 slice(0,60)으로 잘라낸다 — 원본 이름이 58~60자(폼 maxlength=60으로 실제 입력 가능한 범위)면 붙인 접미사가 저장 시 통째로 잘려 복제본 이름이 원본과 완전히 같아져 버렸다. 자산 쪽은 saveAsset()의 동명·동종 자산 차단(normName 비교, 5384행)에 걸려 매번 '같은 이름·종류의 자산이 있어요' 토스트로 저장이 막히는 실사용 버그였다(목표는 중복 차단이 없어 이름만 조용히 망가짐). duplicateAsset/duplicateGoal 양쪽 모두 cleanName(name).slice(0,NAME_MAX-접미사길이)+접미사로 베이스 이름을 미리 줄여 접미사가 항상 들어갈 자리를 확보하도록 고쳤다(짧은 이름은 기존과 동일하게 그대로 접미사만 붙음). 테스트 3건 추가(duplicateGoal 경계값 2케이스, duplicateAsset draft 단위+saveAsset 통합 2케이스). node test/run.js 3451->3454/3454 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.456->1.47.457, sw.js CACHE v723->v724.",
    "commit": null
   }
  ]
