@@ -1,15 +1,8 @@
 {
  "cycle": 360,
- "phase": "review",
+ "phase": "critique",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 355,
-   "phase": "review",
-   "timestamp": "2026-11-14T13:30:00.000Z",
-   "summary": "develop(cycle355, 7af99cc: fmtSynced()가 하루 넘은 갱신 시각도 날짜 없이 시:분만 보여주던 공백 수정)을 검토했다. 변경이 작고 명확 — 같은 날이면 기존처럼 시:분만, 다른 날이면 M.D 시:분. 두 호출부 모두 레이아웃 깨짐 없음을 확인. 새 테스트 2건이 의도한 경로를 정확히 겨냥함을 확인. node test/run.js 3424/3424 재실행 통과. 실제 버그 없음(state.json만 커밋, phase를 critique로 회전).",
-   "commit": null
-  },
   {
    "cycle": 355,
    "phase": "critique",
@@ -141,6 +134,13 @@
    "phase": "develop",
    "timestamp": "2026-11-15T09:20:50.713Z",
    "summary": "Explore 서브에이전트가 cycle340-359의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러, fx 폴백, buildExpenseBarHtml 팔레트, undoToast WCAG, 사진 페이로드 등)를 배제하고 발견한 버그를 고쳤다 — comma()(index.html:1753)가 Math.round(n||0)의 결과를 바로 toLocaleString에 넘기는데, Math.round(-0.3) 등 (-0.5,0] 범위의 음수 입력은 IEEE754 -0을 돌려주고 (-0).toLocaleString('ko-KR')은 문자열 \"-0\"을 돌려준다. commaQty()(바로 다음 줄, cycle331)는 이미 같은 문제를 더스트 보유수량에 대해 가드하고 있었지만 돈 포맷터 comma()엔 적용되지 않은 채 남아 있었다. assetGainLossBadge()(4547행)/investGainLossCard()(3954/3959행)처럼 gl.amount=assetEval(a)-a.costBasis(실수 평가가+정수 매입가)를 up=amount>=0으로 부호 판단한 뒤 comma(gl.amount)를 그대로 출력하는 호출부에서, fx/gold/stock/crypto 자산이 거의 손익 0(breakeven)인데 그 잔차가 음수 쪽으로 떨어지면 \"-0원\"이 그대로 찍혀 사실상 무손익인 포지션을 \"손실\"로 오인시켰다. won()/wonS()는 Math.abs를 먼저 적용해 이 문제에 안 걸림. 수정: const comma=n=>(Math.round(n||0)||0).toLocaleString('ko-KR') — -0이 JS에서 falsy라 ||0으로 양의 0으로 정규화, 다른 모든 입력(정수/양수/음수)은 바이트 단위로 동일하게 유지됨을 확인. 테스트 2건(comma() 유닛, -0/일반 회귀) + assetGainLossBadge 통합 테스트 1건(stockQty*rate=99999.7, costBasis=100000으로 gl.amount=-0.3 유도, \"-0원\" 미포함·\"0원\" 포함 확인) 추가, 수정 전 코드로 되돌려(git stash) 새 테스트 2건이 실제로 FAIL함을 직접 확인했다. node test/run.js 3461->3464/3464 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.459->1.47.460, sw.js CACHE v726->v727.",
+   "commit": null
+  },
+  {
+   "cycle": 360,
+   "phase": "review",
+   "timestamp": "2026-11-15T10:05:00.000Z",
+   "summary": "develop(cycle360, 7bcc245: comma()의 Math.round(n||0) 결과가 (-0.5,0] 구간 음수에서 IEEE754 -0이 되어 \"-0원\"으로 표시되던 버그 수정)을 검토했다. const comma=n=>(Math.round(n||0)||0).toLocaleString('ko-KR') 수식이 -0만 양의 0으로 정규화하고 다른 모든 입력(정수/양수/음수/NaN→n||0으로 0 처리)은 기존과 바이트 단위로 동일함을 확인. assetGainLossBadge()(4552행)/investGainLossCard()(3959행) 둘 다 up=amount>=0으로 부호를 먼저 판단한 뒤 comma(amount)를 그대로 이어붙이는 동일 패턴임을 직접 grep으로 확인 — 색상은 여전히 up 플래그 기준이라 손익이 0에 가까운 음수라도 loss 색(expense)으로 남는 점은 이번 수정 범위 밖이며 기존 설계와 일관되어 회귀가 아님. node test/run.js 3464/3464 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
    "commit": null
   }
  ]
