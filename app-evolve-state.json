@@ -1,15 +1,8 @@
 {
  "cycle": 358,
- "phase": "review",
+ "phase": "critique",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 353,
-   "phase": "develop",
-   "timestamp": "2026-11-14T05:20:00.000Z",
-   "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — debtNewlyPaidOff(logic.js:1065)는 asset.payoffAckAt이 한 번 설정되면 영원히 false를 돌려주는데, payoffAckAt을 null로 되돌리는 경로가 없어 신용카드처럼 완납→재사용을 반복하는 부채에서 두 번째부터는 '축하' 알림이 영구히 다시 뜨지 않는 버그였다. render-refresh 경계(startApp/refreshToday)에서 payoffAckAt이 있는 부채만 재평가하는 resetStaleDebtPayoffAcks() 추가. 테스트 5건 추가. node test/run.js 3409->3414/3414 통과. APP_VERSION 1.47.446->1.47.447, sw.js CACHE v713->v714.",
-   "commit": null
-  },
   {
    "cycle": 353,
    "phase": "review",
@@ -141,6 +134,13 @@
    "phase": "develop",
    "timestamp": "2026-11-15T01:15:00.000Z",
    "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — duplicateAsset()(index.html:5237-5241)과 duplicateGoal()(4118-4124)이 원본 이름에 ' 복사' 접미사를 NAME_MAX(60) clamp 없이 그대로 붙였는데, saveAsset/saveGoal 저장 시 cleanName()이 slice(0,60)으로 잘라낸다 — 원본 이름이 58~60자(폼 maxlength=60으로 실제 입력 가능한 범위)면 붙인 접미사가 저장 시 통째로 잘려 복제본 이름이 원본과 완전히 같아져 버렸다. 자산 쪽은 saveAsset()의 동명·동종 자산 차단(normName 비교, 5384행)에 걸려 매번 '같은 이름·종류의 자산이 있어요' 토스트로 저장이 막히는 실사용 버그였다(목표는 중복 차단이 없어 이름만 조용히 망가짐). duplicateAsset/duplicateGoal 양쪽 모두 cleanName(name).slice(0,NAME_MAX-접미사길이)+접미사로 베이스 이름을 미리 줄여 접미사가 항상 들어갈 자리를 확보하도록 고쳤다(짧은 이름은 기존과 동일하게 그대로 접미사만 붙음). 테스트 3건 추가(duplicateGoal 경계값 2케이스, duplicateAsset draft 단위+saveAsset 통합 2케이스). node test/run.js 3451->3454/3454 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.456->1.47.457, sw.js CACHE v723->v724.",
+   "commit": null
+  },
+  {
+   "cycle": 358,
+   "phase": "review",
+   "timestamp": "2026-11-15T02:05:00.000Z",
+   "summary": "develop(cycle358, aa1b986: duplicateAsset/duplicateGoal NAME_MAX clamp 수정)을 검토했다. cleanName(name).slice(0,NAME_MAX-dupSuffix.length)+dupSuffix 수식이 dupSuffix.length=3(' 복사')을 정확히 반영해 항상 길이 60을 넘지 않음을 확인 — slice 결과에 saveAsset/saveGoal이 다시 적용할 cleanName(trim+NFC+slice60)을 통과시켜도 더 잘리지 않아 idempotent함을 확인(테스트가 이미 이 경계를 직접 단언). 이름이 undefined/null인 기존 엣지케이스도 cleanName(undefined)===''로 수정 전후 동일하게 처리됨을 확인. d.name 대신 a.name(원본)을 참조하도록 바뀐 점도 d=JSON.parse(JSON.stringify(a)) 직후라 값이 동일해 무해함을 확인. node test/run.js 3454/3454 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
    "commit": null
   }
  ]
