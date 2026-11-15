@@ -334,7 +334,7 @@ const FUNCTIONS = [
   // DOM 의존이 없거나($('recBody')만 참조) 얕아서 FUNCTIONS로 실제 로드해 검증할 수 있다.
   'recManageBody', 'recQInput',
   'planSplitTransfer', 'planTransfer',
-  'sbErrMsg', 'isRlsPolicyError', 'deleteCloudAccountData', 'doDeleteAccount',
+  'sbErrMsg', 'isRlsPolicyError', 'isMissingTableError', 'deleteCloudAccountData', 'doDeleteAccount',
   // openHelp는 app-evolve cycle244 develop(helpBackupNote 와이어링 검증용)에서 끌어왔다 — openSheet
   // 스텁만으로 실행형 검증이 가능해(DOM 전역을 직접 건드리지 않음) cycle152가 가져온 다른 함수들과
   // 같은 기준으로 바로 추가한다.
@@ -31275,6 +31275,19 @@ test('homeAlertCard: cloudSyncError는 RLS 정책 오류(CLOUD_SYNC_ERR_KIND==="
   assert.ok(!html.includes('자동으로 다시 시도'), 'RLS 오류는 재시도로 안 풀리므로 재시도 중이라고 오도하면 안 됨');
   sandbox.CLOUD_SYNC_ERR_KIND = 'network'; // 이후 테스트에 영향 주지 않도록 기본값으로 되돌림
 });
+/* 테이블 누락(CLOUD_SYNC_ERR_KIND==='missing_table')도 RLS와 마찬가지로 재시도로 해결되지 않는다 —
+ * README 안내대로 Supabase SQL 에디터에서 user_data 테이블을 만드는 첫 설정 단계를 빠뜨렸을 때 나는
+ * 가장 흔한 첫 실패라, 역시 openAccountSheet()가 아니라 안내 SQL이 있는 openHelpCloud()로 보내야
+ * 한다(app-evolve cycle358 advance). */
+test('homeAlertCard: cloudSyncError는 테이블 누락 오류(CLOUD_SYNC_ERR_KIND==="missing_table")면 openHelpCloud()로 열리고 테이블 생성이 필요함을 구체적으로 알린다', () => {
+  sandbox.CLOUD_SYNC_ERR_KIND = 'missing_table';
+  const html = sandbox.homeAlertCard({ kind: 'cloudSyncError' });
+  assert.ok(html.includes('클라우드 동기화에 실패했어요'), '실패 문구가 보여야 함');
+  assert.ok(html.includes('onclick="openHelpCloud()"'), '재시도로 안 풀리므로 계정 화면이 아니라 안내 SQL이 있는 openHelpCloud()로 가야 함');
+  assert.ok(html.includes('테이블이 아직 없어요'), '테이블 누락 문제임을 구체적으로 알려야 함');
+  assert.ok(!html.includes('자동으로 다시 시도'), '테이블 누락 오류는 재시도로 안 풀리므로 재시도 중이라고 오도하면 안 됨');
+  sandbox.CLOUD_SYNC_ERR_KIND = 'network'; // 이후 테스트에 영향 주지 않도록 기본값으로 되돌림
+});
 test('homeAlertCard: confirmMulti는 openConfirmTransferList()로 열리고 건수가 보인다(app-evolve cycle156)', () => {
   const html = sandbox.homeAlertCard({ kind: 'confirmMulti', count: 3 });
   assert.ok(html.includes('onclick="openConfirmTransferList()"'), 'confirmMulti 카드가 openConfirmTransferList()를 호출해야 함');
@@ -37054,6 +37067,16 @@ test('isRlsPolicyError: Postgres 42501 코드와 policy/RLS 메시지를 네트�
   assert.strictEqual(sandbox.isRlsPolicyError(undefined), false, 'undefined 입력에 안전하지 않음');
 });
 
+test('isMissingTableError: Postgres 42P01 코드와 "relation ... does not exist" 메시지를 RLS·네트워크 에러와 구분한다', () => {
+  assert.strictEqual(sandbox.isMissingTableError({ code: '42P01', message: 'relation "public.user_data" does not exist' }), true, '42P01 코드를 테이블 누락으로 인식하지 못함');
+  assert.strictEqual(sandbox.isMissingTableError({ message: 'relation "user_data" does not exist' }), true, 'relation ... does not exist 메시지를 인식하지 못함');
+  assert.strictEqual(sandbox.isMissingTableError({ code: '42501', message: 'permission denied for table user_data' }), false, 'RLS 에러를 테이블 누락으로 오판함');
+  assert.strictEqual(sandbox.isMissingTableError({ message: 'Failed to fetch' }), false, '일반 네트워크 에러까지 테이블 누락으로 오판함');
+  assert.strictEqual(sandbox.isMissingTableError({ code: 'PGRST301', message: 'JWT expired' }), false, '인증 만료 에러를 테이블 누락으로 오판함');
+  assert.strictEqual(sandbox.isMissingTableError(null), false, 'null 입력에 안전하지 않음');
+  assert.strictEqual(sandbox.isMissingTableError(undefined), false, 'undefined 입력에 안전하지 않음');
+});
+
 /* cloudSyncFailed/cloudSyncLabel은 메인 sandbox에서 cloudSyncFailed가 부작용 방지용 no-op
  * 스텁(위 505행)으로 영구히 덮여 있어 실제 분류 로직을 못 본다 — isRlsPolicyError와 마찬가지로
  * 별도 vm 컨텍스트에서 진짜 함수를 추출해 실행형으로 검증한다(themeColorMetaCtx와 같은 패턴).
@@ -37066,7 +37089,7 @@ function cloudSyncErrCtx() {
   const ctx = { toastCalls: [], toast: (msg) => { ctx.toastCalls.push(msg); }, CLOUD_UID: 'u1' };
   vm.createContext(ctx);
   vm.runInContext(
-    [extractFunction('isRlsPolicyError'), extractLet('CLOUD_SYNC_STATE'), extractLet('CLOUD_LAST_OK'),
+    [extractFunction('isRlsPolicyError'), extractFunction('isMissingTableError'), extractLet('CLOUD_SYNC_STATE'), extractLet('CLOUD_LAST_OK'),
       extractLet('CLOUD_ERR_TOASTED'), extractLet('CLOUD_CONFLICT_TOASTED'), extractLet('CLOUD_SYNC_ERR_KIND'),
       extractFunction('cloudSyncOk'), extractFunction('cloudSyncFailed'), extractFunction('cloudSyncLabel')].join('\n'),
     ctx,
@@ -37084,6 +37107,16 @@ test('[실행형] cloudSyncFailed: RLS 정책 에러(42501/policy 메시지)를 
   assert.ok(ctx.toastCalls.some((m) => m.includes('권한')), '토스트가 권한(정책) 문제임을 구체적으로 알려야 함');
   assert.ok(!ctx.toastCalls.some((m) => m.includes('인터넷 연결')), 'RLS 에러인데 인터넷 연결 확인 문구가 뜨면 재시도로 오해하게 됨');
   assert.strictEqual(ctx.cloudSyncLabel(), '⚠ 동기화 실패 · Supabase 권한(정책) 확인 필요', 'cloudSyncLabel()도 RLS 전용 문구를 돌려줘야 함');
+});
+test('[실행형] cloudSyncFailed: 테이블 누락 에러(42P01/relation does not exist 메시지)를 넘기면 CLOUD_SYNC_ERR_KIND="missing_table"로 분류하고 SQL 실행을 구체적으로 안내한다', () => {
+  const ctx = cloudSyncErrCtx();
+  ctx.CLOUD_SYNC_STATE = 'idle'; ctx.CLOUD_ERR_TOASTED = false; ctx.toastCalls = [];
+  ctx.cloudSyncFailed({ code: '42P01', message: 'relation "public.user_data" does not exist' });
+  assert.strictEqual(ctx.CLOUD_SYNC_STATE, 'error');
+  assert.strictEqual(ctx.CLOUD_SYNC_ERR_KIND, 'missing_table', '테이블 누락 에러를 network로 오분류함');
+  assert.ok(ctx.toastCalls.some((m) => m.includes('테이블이 아직 없어요')), '토스트가 테이블 누락 문제임을 구체적으로 알려야 함');
+  assert.ok(!ctx.toastCalls.some((m) => m.includes('인터넷 연결')), '테이블 누락 에러인데 인터넷 연결 확인 문구가 뜨면 재시도로 오해하게 됨');
+  assert.strictEqual(ctx.cloudSyncLabel(), '⚠ 동기화 실패 · 테이블 생성 필요', 'cloudSyncLabel()도 테이블 누락 전용 문구를 돌려줘야 함');
 });
 test('[실행형] cloudSyncFailed: 일반 네트워크 에러(Failed to fetch)는 CLOUD_SYNC_ERR_KIND="network"로 남아 기존 "인터넷 연결 확인" 문구가 그대로 나온다(회귀 가드)', () => {
   const ctx = cloudSyncErrCtx();
