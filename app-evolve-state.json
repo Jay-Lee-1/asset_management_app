@@ -1,19 +1,8 @@
 {
- "cycle": 359,
- "phase": "advance",
- "pending_advance_plan": {
-  "title": "buildExpenseBarHtml()의 고정 8색 팔레트가 9개 이상 카테고리에서 색상이 겹침(index.html:4258-4273)",
-  "why": "PAL(index.html:4261)은 길이 8의 고정 배열이고 col(i)=PAL[i%PAL.length](4262행)로 인덱스를 그대로 모듈로 순환시킨다. 호출부 5곳 중 홈 화면의 expenseBreakdownCard/incomeBreakdownCard(3349-3350행, cats=expenseByCat 전체/icats=incomeByCategory 전체)와 openSpendAnalysis/openIncomeAnalysis의 스택바(7165, 8236행, rows=catCache 전체)는 카테고리 개수를 전혀 자르지 않고 그대로 넘긴다(openYearReview의 TOP3만 8191-8192행에서 이미 3개로 제한돼 있어 영향 없음). 기본 설치는 EXP_CATS_DEFAULT(1877행) 6개뿐이라 테스트 데이터로는 전혀 드러나지 않지만, 앱이 카테고리 개수에 제한을 두지 않고(가계부>카테고리 관리에서 자유 추가, 30종 아이콘) 세분화를 유도하는 만큼 9개 이상 쓰는 실사용자는 앱에서 가장 많이 보는 화면(홈)에서 서로 다른 두 카테고리가 완전히 같은 색 점/막대 구간으로 표시돼, '색으로 어느 지출인지 구분'하는 이 위젯의 존재 목적 자체가 조용히 깨진다. test/run.js(11242-11574행 부근)는 퍼센트 보정/HTML escape/빈 상태/ARIA만 커버하고 카테고리 9개 이상·색상 중복 케이스는 전혀 없다.",
-  "approach": "buildExpenseBarHtml(cats)에 표시 행 개수 상한(예: 금액 기준 상위 7개)을 두고 나머지는 '기타'라는 합성 버킷 하나로 묶어 고정된 전용 색(예: 중립 회색, PAL과 별도)을 부여한다 — 집계 공식(퍼센트 최대잔여법 등)은 그대로 재사용하고 cats 배열을 함수 진입 시 전처리하는 정도로 범위를 좁힌다. 이미 cats를 v 내림차순으로 넘기지 않는 호출부가 있으면 buildExpenseBarHtml 내부에서 정렬 후 자르도록 한다(호출부 5곳이 전부 이 공유 함수 하나를 거치므로 수정이 자동으로 전파됨). 회귀 테스트로 9개 이상 입력 시 중복 색이 없는지, '기타' 버킷 금액이 overflow 합계와 일치하는지, 기존 ≤7개 입력은 동작/출력이 완전히 그대로인지(하위호환) 확인."
- },
+ "cycle": 360,
+ "phase": "develop",
+ "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 354,
-   "phase": "critique",
-   "timestamp": "2026-11-14T11:40:00.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-354의 모든 주제를 배제 목록으로 주고 2차 조사. undoToast(msg,undoFn)(index.html:12190-12195)가 ~80개 호출부가 공유하는 단일 구현인데 setTimeout(...,6000) 생성 시 한 번뿐이고 mouseenter/mouseleave/focus/blur로 일시정지하는 로직이 전혀 없음을 확인 — WCAG 2.2.1(타이밍 조정 가능) 결함이고 trash bin이 없는 호출부(saveSettleConfig 등)는 이 6초가 유일한 되돌리기 경로라 영향이 큼. App Lock 암호화 공백은 이미 두 번(cycle252/289) 의도적으로 미뤄온 대규모 재작성이라 재기각. 채택한 undoToast hover/focus 일시정지만 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
   {
    "cycle": 354,
    "phase": "advance",
@@ -145,6 +134,13 @@
    "phase": "critique",
    "timestamp": "2026-11-15T07:10:00.000Z",
    "summary": "Explore 서브에이전트에게 cycle340-359의 모든 주제(반복거래 override, 클라우드 동기화, undoToast WCAG, App Lock, 부채 상환, 정산 breakdown, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, fx 폴백 등)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: buildExpenseBarHtml(index.html:4258-4273, 홈 지출/수입 분석 카드와 지출·수입 분석 시트·연말 리뷰 TOP3가 공유하는 스택바+범례 렌더)의 PAL 팔레트가 8색 고정이고 col(i)=PAL[i%PAL.length]로 인덱스를 그대로 모듈로 순환시키는데, 호출부 중 홈 화면 2곳(3349-3350행)과 지출/수입 분석 시트 2곳(7165, 8236행)은 카테고리 개수를 전혀 자르지 않고 그대로 넘긴다(TOP3만 이미 3개로 제한). 기본 설치 카테고리가 6개(EXP_CATS_DEFAULT, 1877행)뿐이라 테스트 데이터로는 전혀 드러나지 않지만, 앱이 카테고리를 자유롭게 추가하도록 설계돼 있어 9개 이상 쓰는 실사용자는 가장 많이 보는 홈 화면에서 서로 다른 두 카테고리가 완전히 같은 색으로 표시돼 위젯의 존재 목적(색으로 지출 구분)이 조용히 깨진다. 후보로 checkNotifyAlerts의 visibilitychange 전용 알림 체크(코드 자체가 best-effort로 명시해 기각 가능성 높음 판단)와 RANGE_FROM='2023-01-01' 하드 플로어(아직 실사용자에게 안 걸림, 긴급성 낮음)도 검토했으나 순위를 낮게 매겼다. pending_advance_plan에 buildExpenseBarHtml 상위 N개+'기타' 버킷 합성 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 359,
+   "phase": "advance",
+   "timestamp": "2026-11-15T08:09:30.412Z",
+   "summary": "critique(cycle359) 계획대로 buildExpenseBarHtml()의 PAL(8색) 고정 팔레트가 9개 이상 카테고리에서 col(i%8) 모듈로 순환으로 색이 겹치던 버그를 고쳤다. cats를 v 내림차순으로 방어적으로 재정렬한 뒤 상위 PAL.length-1(7)개까지만 PAL 색을 각자 고유하게 배정하고, 8번째부터는 금액을 합산한 '기타' 버킷 하나로 묶어 PAL에 없는 전용 중립색(var(--text-3))을 준다 — 7개는 PAL 8색 중 7개만 쓰므로 '기타'와도 절대 겹치지 않는다. 호출부 5곳(expenseBreakdownCard/incomeBreakdownCard/openSpendAnalysis/openIncomeAnalysis/openYearReview TOP3)이 전부 이 공유 함수 하나를 거쳐 수정이 자동 전파됨. 퍼센트 최대잔여법 등 기존 집계 공식은 items(정렬+기타 묶음 후 배열)에 그대로 적용. 테스트 3건 추가: 7개 이하는 기타 버킷 없이 완전히 기존과 동일(하위호환), 9개 입력 시 상위7+기타로 묶이고 8개 행의 색이 전부 서로 다름, 호출부가 비정렬로 넘겨도 내부에서 금액 내림차순 정렬함. 수정 전 index.html로 되돌려 새 테스트 2건이 실제로 FAIL함을 직접 확인(stash로 검증). node test/run.js 3458->3461/3461 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.458->1.47.459, sw.js CACHE v725->v726. pending_advance_plan null로 비움.",
    "commit": null
   }
  ]

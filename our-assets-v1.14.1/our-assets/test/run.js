@@ -11248,6 +11248,32 @@ test('buildExpenseBarHtml: 퍼센트 합이 정확히 100이 되도록 최대 �
   const pcs = [...html.matchAll(/class="eb-pc num">(\d+)%/g)].map((m) => Number(m[1]));
   assert.strictEqual(pcs.reduce((s, v) => s + v, 0), 100, `퍼센트 합이 100이어야 함 (실제: ${pcs.join('+')})`);
 });
+test('buildExpenseBarHtml: 카테고리가 7개 이하면 기타 버킷 없이 기존처럼 전부 그대로 보여준다(하위호환)', () => {
+  const cats = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((c, i) => ({ cat: c, v: 7 - i }));
+  const html = sandbox.buildExpenseBarHtml(cats);
+  const catNames = [...html.matchAll(/class="eb-cat">([^<]+)</g)].map((m) => m[1]);
+  assert.strictEqual(catNames.length, 7, '7개 입력이면 7행이 그대로 나와야 함');
+  assert.deepStrictEqual(catNames, ['A', 'B', 'C', 'D', 'E', 'F', 'G'], '7개는 기타로 묶이지 않고 전부 보여야 함');
+  assert.ok(!html.includes('class="eb-cat">기타'), '7개 이하는 기타 버킷이 생기면 안 됨');
+});
+test('buildExpenseBarHtml: 카테고리가 9개 이상이면 PAL(8색) 인덱스가 겹쳐 색상이 중복되던 버그를 상위 7개+기타 버킷으로 막는다', () => {
+  const cats = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'].map((c, i) => ({ cat: c, v: 90 - i * 10 }));
+  const html = sandbox.buildExpenseBarHtml(cats);
+  const catNames = [...html.matchAll(/class="eb-cat">([^<]+)</g)].map((m) => m[1]);
+  assert.deepStrictEqual(catNames, ['A', 'B', 'C', 'D', 'E', 'F', 'G', '기타'], '상위 7개(A~G, 금액 내림차순)만 개별 표시되고 나머지(H,I)는 기타로 합쳐져야 함');
+  const dots = [...html.matchAll(/class="eb-dot" style="background:([^"]+)"/g)].map((m) => m[1]);
+  assert.strictEqual(new Set(dots).size, dots.length, '8개 행(상위7+기타)의 점 색이 전부 서로 달라야 함 — 이전엔 PAL[8]이 PAL[0]과 겹쳤음');
+  const otherAmt = Number(html.match(/기타<\/span><span class="eb-pc num">\d+%<\/span><span class="eb-v num">([\d,]+)원/)[1].replace(/,/g, ''));
+  assert.strictEqual(otherAmt, 20 + 10, '기타 버킷 금액은 8번째(H=20)+9번째(I=10) 합계와 같아야 함');
+  const pcs = [...html.matchAll(/class="eb-pc num">(\d+)%/g)].map((m) => Number(m[1]));
+  assert.strictEqual(pcs.reduce((s, v) => s + v, 0), 100, '기타로 묶여도 퍼센트 합은 여전히 100이어야 함');
+});
+test('buildExpenseBarHtml: 카테고리가 호출부에서 정렬 없이(입력 순서 그대로) 넘어와도 내부에서 금액 내림차순으로 정렬해 상위 7개를 고른다', () => {
+  const cats = [{ cat: 'small', v: 1 }, { cat: 'big', v: 100 }, { cat: 'mid', v: 50 }];
+  const html = sandbox.buildExpenseBarHtml(cats);
+  const catNames = [...html.matchAll(/class="eb-cat">([^<]+)</g)].map((m) => m[1]);
+  assert.deepStrictEqual(catNames, ['big', 'mid', 'small'], '입력 순서가 뒤섞여 있어도 금액 내림차순으로 정렬돼야 함');
+});
 test('openSpendAnalysis: 총 지출 카드 바로 아래 buildExpenseBarHtml 비중 스택바가 장식용(aria-hidden)으로 삽입된다', () => {
   const ctx = spendAnalysisCtx();
   ctx.DB = { owners: [], assets: [], recurrences: [], budgetHistory: {}, catBudgetRollover: {}, txns: [

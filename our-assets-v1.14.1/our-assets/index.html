@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.458';
+const APP_VERSION='1.47.459';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4259,17 +4259,28 @@ function buildExpenseBarHtml(cats){
  const spent=cats.reduce((s,c)=>s+c.v,0);
  if(!spent)return '';
  const PAL=['var(--brand)','var(--gold)','var(--stock)','var(--income)','var(--expense)','#7CC7B8','#C9A227','var(--save)'];
- const col=i=>PAL[i%PAL.length];
+ /* PAL은 8색 고정이라 호출부(홈 브리핑 2곳·지출/수입 분석 시트 2곳)가 카테고리 개수를 자르지
+  * 않고 그대로 넘기면 9번째 카테고리부터 col(i%8)이 1번째 색과 겹쳐 서로 다른 두 카테고리가
+  * 같은 점·막대 색으로 보이는 공백이 있었다(app-evolve cycle359 critique/advance). PAL보다
+  * 하나 적은 상위 7개까지만 각자 고유한 색을 받고, 나머지는 금액 합계를 '기타' 한 행으로 묶어
+  * PAL에 없는 전용 중립색을 쓴다 — 그래야 '기타'가 실제 PAL 색과도 절대 겹치지 않는다. */
+ const MAX_ROWS=PAL.length-1;
+ const OTHER_COL='var(--text-3)';
+ const sorted=cats.slice().sort((a,b)=>b.v-a.v); /* 호출부가 이미 내림차순으로 넘기지만 여기서도 보장해 둔다 */
+ const items=sorted.length>MAX_ROWS
+   ? sorted.slice(0,MAX_ROWS).concat([{cat:'기타',v:sorted.slice(MAX_ROWS).reduce((s,c)=>s+c.v,0),_other:true}])
+   : sorted;
+ const col=(it,i)=>it._other?OTHER_COL:PAL[i%PAL.length];
  // 퍼센트 합이 정확히 100이 되도록 보정 (최대 잔여법)
- const raw=cats.map(c=>c.v/spent*100);
+ const raw=items.map(c=>c.v/spent*100);
  const floor=raw.map(v=>Math.floor(v));
  let rem=100-floor.reduce((s,v)=>s+v,0);
  const order=raw.map((v,i)=>({i,frac:v-Math.floor(v)})).sort((a,b)=>b.frac-a.frac);
  for(let k=0;k<rem&&k<order.length;k++)floor[order[k].i]++;
- const rows=cats.map((c,i)=>
-   `<div class="eb-row"><span class="eb-dot" style="background:${col(i)}"></span>
+ const rows=items.map((c,i)=>
+   `<div class="eb-row"><span class="eb-dot" style="background:${col(c,i)}"></span>
      <span class="eb-cat">${esc(c.cat)}</span><span class="eb-pc num">${floor[i]}%</span><span class="eb-v num">${comma(c.v)}원</span></div>`).join('');
- const seg=cats.map((c,i)=>`<i style="width:${c.v/spent*100}%;background:${col(i)}"></i>`).join('');
+ const seg=items.map((c,i)=>`<i style="width:${c.v/spent*100}%;background:${col(c,i)}"></i>`).join('');
  return `<div class="eb-bar">${seg}</div><div class="eb-list">${rows}</div>`;
 }
 function expenseBreakdownCard(cats,_ignore){
