@@ -1,8 +1,15 @@
 {
  "cycle": 364,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
+  {
+   "cycle": 364,
+   "phase": "develop",
+   "timestamp": "2026-11-17T07:55:00.000Z",
+   "summary": "PWA 설치 유도 배너(#installBar)가 txRowCore/asset-item/date-picker(cycle362-363)와 똑같은 WAI-ARIA role=\"button\" 중첩 결함을 갖고 있었음을 발견 — 배너 전체에 role=\"button\"/tabindex를 주면서 그 자손에 실제 <button class=\"ib-x\">(나중에)를 중첩시켜 스크린리더가 전체를 탐색 불가 단위로 묶었다. role=\"button\"/tabindex/onkeydown을 아이콘+텍스트만 감싸는 내부 wrapper .row-tap으로 옮기고 ib-x(이미 stopPropagation 있음)는 형제로 유지, innerHTML 생성 로직을 순수 함수 installBarHTML(isIOS)로 분리해 buildExpenseBarHtml 관례를 따랐다. 기존 txRowCore 테스트 헬퍼(divInnerHTML/assertRowTapHasNoNestedInteractive) 재사용해 수정 전 마크업으로 되돌리면 실제로 FAIL함을 확인. node test/run.js 3493->3494/3494 통과. APP_VERSION 1.47.467->1.47.468, sw.js CACHE v734->v735.",
+   "commit": "0e06d18"
+  },
   {
    "cycle": 359,
    "phase": "develop",
