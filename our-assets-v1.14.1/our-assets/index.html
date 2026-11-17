@@ -331,7 +331,7 @@ html[data-theme="dark"] .alloc-bar i+i::before{background:var(--bg);opacity:.9}
 .toggle-row .tl{font-size:14px;font-weight:600}
 .switch{width:46px;height:28px;border-radius:var(--r-pill);background:var(--line-2);position:relative;transition:background .2s;flex-shrink:0;appearance:none;-webkit-appearance:none;border:0;padding:0;cursor:pointer}
 .switch:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-.asset-item:focus-visible,.swipe-content:focus-visible,.manage-row:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+.asset-item:focus-visible,.swipe-content:focus-visible,.manage-row:focus-visible,.row-tap:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 .nwh-chart:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
 #ledsumLive:focus-visible,#histTotLive:focus-visible,#histTotals:focus-visible,#planBalLive:focus-visible,#m-suji:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:var(--r-lg)}
 #m-fab:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:50%}
@@ -511,6 +511,7 @@ body.dp-open .page{overflow:hidden}
 .swipe{position:relative;overflow:hidden}
 .swipe+.swipe{border-top:1px solid var(--line)}
 .swipe-content{position:relative;background:var(--surface);transition:transform .26s var(--ease);z-index:1;display:flex;align-items:center;gap:12px;padding:13px 16px}
+.row-tap{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
 .swipe-content .nm{font-weight:600;font-size:15px}
 .swipe-content .tag{display:flex;gap:5px;margin-top:4px;flex-wrap:wrap}
 .nm-row{display:flex;align-items:center;gap:5px;min-width:0}
@@ -1420,7 +1421,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.464';
+const APP_VERSION='1.47.465';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -6115,10 +6116,16 @@ function txRowCore(t,sel){
    <div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||catLabel)}</span>${sharedIc}${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==catLabel)?`<div class="flow-sub"><span class="fl">${esc(catLabel)}</span></div>`:''}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div></div></div>`;}
- return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" tabindex="0" role="button" aria-label="${esc(t.memo||catLabel)} ${sign}${comma(t.amount)}원" onclick="rowTap(this)" onkeydown="rowKeydown(event,()=>rowTap(this))"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
+ /* role="button" tabindex는 .swipe-content 전체가 아니라 '행 열기' 영역만 감싸는 .row-tap
+  * 내부 wrapper에 준다 — dup-btn/confirm-btn/photo(아래)는 그 role="button" 밖, .swipe-content의
+  * 형제로 둔다. WAI-ARIA는 role="button" 하위에 또 다른 포커스 가능한 인터랙티브 엘리먼트가
+  * 중첩되는 걸 금지하고, 그걸 어기면 VoiceOver/TalkBack이 전체를 하나의 탐색 불가 단위로 묶어
+  * 버려 스크린리더 사용자가 안쪽 복제/확인 버튼에 포커스를 옮길 방법이 없어진다
+  * (app-evolve cycle362 critique가 찾은 접근성 결함, advance에서 수정). */
+ return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content"><div class="row-tap" tabindex="0" role="button" aria-label="${esc(t.memo||catLabel)} ${sign}${comma(t.amount)}원" onclick="rowTap(this)" onkeydown="rowKeydown(event,()=>rowTap(this))"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||catLabel)}</span>${isSplit?`<span class="mini" title="분할 거래">${esc(catLabel)}</span>`:''}${sharedIc}${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
     ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
-   <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${t.photo?`<img src="${t.photo}" class="tx-photo-mini" alt="영수증" onclick="event.stopPropagation();openPhotoViewer(this.src)">`:''}${(!t.isRec&&!t.adjust&&!isDuePending(t))?`<button class="dup-btn" onclick="event.stopPropagation();duplicateTx('${t.id}')" aria-label="${esc(t.memo||catLabel)} 복제">${svg('copy',16)}</button>`:''}${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
+   <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div></div>${t.photo?`<img src="${t.photo}" class="tx-photo-mini" alt="영수증" onclick="event.stopPropagation();openPhotoViewer(this.src)">`:''}${(!t.isRec&&!t.adjust&&!isDuePending(t))?`<button class="dup-btn" onclick="event.stopPropagation();duplicateTx('${t.id}')" aria-label="${esc(t.memo||catLabel)} 복제">${svg('copy',16)}</button>`:''}${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
 }
 function txRow(t){return txRowCore(t,{mode:ST.lSel.mode,has:id=>ST.lSel.ids.has(id),onToggle:'ledgerToggleSel'})}
 function rowTap(el){ /* 내역 탭 → 수정 (길게 누르면 다중 선택·삭제) */

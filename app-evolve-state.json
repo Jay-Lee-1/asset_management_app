@@ -1,19 +1,8 @@
 {
- "cycle": 362,
- "phase": "advance",
- "pending_advance_plan": {
-  "title": "txRowCore()의 role=\"button\" 래퍼 안에 복제/확인 버튼이 중첩돼 스크린리더로 도달 불가",
-  "why": "index.html의 txRowCore()(전체내역/검색/캘린더/홈/카테고리 드릴다운이 전부 공유하는 거래 행 렌더러)가 outer .swipe-content에 role=\"button\" tabindex=\"0\"을 주고, 그 DOM 자손으로 실제 <button class=\"dup-btn\">(복제)와 <button class=\"confirm-btn\">(반복이체 확인 대기)을 또 넣는다 — role=\"button\" 하위에 포커스 가능한 인터랙티브 엘리먼트를 중첩시키는 것은 WAI-ARIA 패턴 위반이고, VoiceOver/TalkBack은 role=\"button\" 엘리먼트를 통째로 하나의 탐색 불가 단위로 취급해 사용자가 스와이프로 그 안의 복제/확인 버튼에 포커스를 옮길 방법이 없다. 결과: 반복이체 확인 대기 행에서 스크린리더 사용자는 rowTap()이 여는 전체 수정 시트로만 갈 수 있고, 마우스/터치 사용자가 쓰는 원탭 '확인'/'복제' 단축 동작을 전혀 쓸 수 없다. 362 사이클의 critique에서 가장 흔히 쓰이는 공유 위젯(모든 거래 리스트)에 걸친, 아직 다뤄지지 않은 유일한 표준 수준 접근성 결함.",
-  "approach": "txRowCore()에서 .swipe-content 자체에 role=\"button\"/tabindex를 주지 말고, 아바타+메모+금액 등 '행 열기' 영역만 감싸는 내부 wrapper(예: 기존 콘텐츠 중 dup-btn/confirm-btn/photo thumbnail을 제외한 부분)에 role=\"button\" tabindex=\"0\" onclick=\"rowTap\"/onkeydown=\"rowKeydown\"을 옮겨 적용한다. dup-btn/confirm-btn/photo(onclick=\"openPhotoViewer\")는 그 role=\"button\" 엘리먼트의 형제(sibling)로 .swipe-content 바로 아래 유지해 시각적 레이아웃(flex)은 그대로 보존하되 DOM 중첩만 해소한다. sel.mode(선택 모드) 분기도 동일하게 점검. 테스트: 생성된 HTML에서 role=\"button\"으로 연 태그와 그 매칭되는 닫는 태그 사이에 <button이나 <img onclick 패턴이 전혀 나타나지 않음을 단언하는 회귀 테스트(정상 모드 + sel.mode 모드 + confirm-btn 있는 경우 + dup-btn 있는 경우 조합), 그리고 rowTap(행 열기)과 duplicateTx/confirmRecTransfer(버튼 클릭)가 이벤트 버블링으로 서로 오염되지 않는 기존 동작이 수정 후에도 유지됨을 확인하는 기존 클릭/키보드 테스트 재실행."
- },
+ "cycle": 363,
+ "phase": "develop",
+ "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 357,
-   "phase": "advance",
-   "timestamp": "2026-11-15T00:30:00.000Z",
-   "summary": "critique(cycle357)가 세운 계획(fx/gold/stock/crypto 추가매수·매도 시 결제 통장이 조용히 안 바뀌어 순자산이 왜곡되는 문제)을 구현했다. logic.js에 순수 함수 settleTxnForQtyChange(prevQty,newQty,addedCost,saleProceeds,settleAssetId,assetName,today) 추가 — 결제·수령 통장을 골랐을 때만, 그 통장 쪽에서만(반대쪽은 null) 금액이 움직인 transfer 레코드를 반환한다(시세평가형 자산 자체는 거래의 fromAssetId/toAssetId로 못 쓰므로 반대쪽은 비워둠, 3146행 주석 참고). baseAmount를 직접 고치면 RANGE_FROM부터 과거 잔액이 전부 밀리는 문제(saveAsset의 setBase 역산과 달리 날짜 기준이 없음)를 피해 오늘 날짜의 DB.txns 레코드로 남기는 쪽을 택했다. index.html: costBasisField()에 asOpenMat()과 같은 cashOnly 피커 필드(결제·수령 통장, 선택 사항·d._settleAssetId는 저장 후 지워지는 임시값) 추가, qtyBasisWarn()이 추가매수/매도 경고와 함께 이 필드도 토글, saveAsset()이 settleAssetId를(존재/현금성 검증 포함) settleTxnForQtyChange에 넘겨 받은 transfer를 DB.txns에 push. 통장을 고르지 않으면 기존 동작(costBasis만 조정)이 그대로 보존된다. 테스트 중 기존 3건(renderAssetSheet 합치기 링크, asOpenCur, costBasisField Enter-제출 exact-string)이 깨진 걸 발견해 원인을 추적 — assetPickBtn()이 DB.assets.find를 가드 없이 불러, DB.assets를 채우지 않은 기존 테스트 mock들이 내 새 호출(costBasisField 안의 assetPickBtn)에서 터졌다. assetPickBtn을 (DB.assets||[]).find로 방어적으로 고쳐 2건을 고치고, 나머지 1건(exact-string 비교)은 새 필드가 포함된 출력으로 기대값을 갱신했다. settleTxnForQtyChange 단위 테스트 5건 + saveAsset 통합 테스트 4건(추가매수/매도 각각 transfer 생성, 통장 미선택 시 거래 없음, 삭제된 id 무시) 추가. node test/run.js 3442->3451/3451 통과(새 테스트 9건 포함, 기존 3건 수정). node --check sw.js/test/run.js 통과, index.html 메인 <script> 블록은 Function()으로 파싱 확인. APP_VERSION 1.47.455->1.47.456, sw.js CACHE v722->v723. pending_advance_plan null로 비움.",
-   "commit": null
-  },
   {
    "cycle": 358,
    "phase": "develop",
@@ -145,6 +134,13 @@
    "phase": "critique",
    "timestamp": "2026-11-15T19:10:00.000Z",
    "summary": "Explore 서브에이전트에게 cycle340-362의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력 공휴일, 저축 만기 overdue, assetGainLossBadge)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: txRowCore()(전체내역/검색/캘린더/홈/카테고리 드릴다운이 전부 공유하는 거래 행 렌더러)가 .swipe-content에 role=\"button\" tabindex=\"0\"을 주면서 그 DOM 자손으로 실제 <button class=\"dup-btn\">(복제)/<button class=\"confirm-btn\">(반복이체 확인)을 중첩시켜, WAI-ARIA 패턴을 위반하고 VoiceOver/TalkBack이 전체를 하나의 탐색 불가 단위로 취급해 스크린리더 사용자가 그 안의 복제/확인 버튼에 포커스를 옮길 방법이 없다 — 가장 흔히 쓰이는 공유 위젯에 걸친 표준 수준 접근성 결함. pending_advance_plan에 role=\"button\"을 아바타/메모/금액만 감싸는 내부 wrapper로 좁히고 dup-btn/confirm-btn/photo를 그 형제로 빼내는 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 362,
+   "phase": "advance",
+   "timestamp": "2026-11-17T05:13:40.711Z",
+   "summary": "critique(cycle362) 계획대로 txRowCore()의 비선택 모드 행에서 .swipe-content 전체에 role=\"button\"/tabindex를 주면서 그 자손으로 실제 <button class=\"dup-btn\">(복제)/<button class=\"confirm-btn\">(반복이체 확인)을 중첩시키던 WAI-ARIA 위반을 고쳤다. role=\"button\" tabindex=\"0\" onclick=\"rowTap(this)\" onkeydown=\"rowKeydown(...)\"을 .swipe-content 자체가 아니라 아바타+메모+금액만 감싸는 새 내부 wrapper .row-tap으로 옮기고, dup-btn/confirm-btn/photo(onclick=\"openPhotoViewer\")는 .row-tap의 형제로 .swipe-content 바로 아래에 그대로 둬 DOM 중첩만 해소했다. CSS는 .row-tap{display:flex;align-items:center;gap:12px;flex:1;min-width:0}만 추가(.swipe-content .amt/.nm/.tag는 이미 자손 선택자라 그대로 적용됨, amt의 margin-left:auto는 .row-tap이 display:flex가 되면서 그 안에서 동일하게 동작) — 레이아웃은 바이트 단위로 동일하게 유지됨을 눈으로 확인. :focus-visible 아웃라인 규칙에도 .row-tap을 추가. rowTap(this)의 this가 이제 .row-tap을 가리키지만 el.closest(\".swipe\")로 조상을 찾으므로 무해함을 확인. 선택 모드(sel.mode) 분기는 원래부터 role=\"button\" 안에 버튼이 중첩돼 있지 않아 손대지 않음(검토만). 테스트: role=\"button\" 엘리먼트를 div 중첩 깊이로 직접 추적해 그 안에 <button>/<img>가 전혀 없음을 확인하는 헬퍼(divInnerHTML)를 추가하고, (1) dup-btn+photo가 있는 일반 행, (2) confirm-btn이 있는 반복이체 확인 대기 행, (3) 선택 모드(원래부터 안전함을 확인하는 회귀) 3건의 테스트를 추가. git stash로 index.html을 수정 전 상태로 되돌려 (1)(2) 테스트가 실제로 FAIL함을 직접 확인한 뒤 복원. node test/run.js 3482->3487/3487 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.464->1.47.465, sw.js CACHE v731->v732. pending_advance_plan null로 비움.",
    "commit": null
   }
  ]

@@ -34457,6 +34457,70 @@ test('txRowCore: 반복에서 파생된 가상 인스턴스(isRec+shared)도 "�
   assert.ok(html.includes('title="같이 냈어요"') && html.includes('title="반복"'), '두 배지 모두 떠야 함');
 });
 
+/* ---------- txRowCore: role="button" wrapper(.row-tap) 안에 dup-btn/confirm-btn/photo가
+ * 중첩되면 안 된다 (app-evolve cycle362 critique/advance) ----------
+ * .swipe-content 전체에 role="button"을 주면서 그 DOM 자손으로 실제 <button class="dup-btn">/
+ * <button class="confirm-btn">을 또 넣으면 WAI-ARIA의 "role=button 하위에 포커스 가능한
+ * 인터랙티브 엘리먼트 중첩 금지" 패턴을 어겨, VoiceOver/TalkBack이 전체를 하나의 탐색 불가
+ * 단위로 묶어버려 스크린리더 사용자가 안쪽 버튼에 포커스를 옮길 수 없다. role="button"은
+ * 이제 .row-tap(아바타+메모+금액만 감싸는 내부 wrapper)에만 있고, dup-btn/confirm-btn/photo는
+ * 그 밖(.swipe-content의 형제)에 있어야 한다. div 태그를 직접 밸런스를 맞춰 내용을 잘라내
+ * "role=button 엘리먼트 안에 <button>/onclick이 전혀 없음"을 문자열 매칭이 아니라 실제
+ * DOM 중첩 구조로 확인한다. */
+function divInnerHTML(html, openTagIdx) {
+  const contentStart = html.indexOf('>', openTagIdx) + 1;
+  let i = contentStart, depth = 1;
+  while (depth > 0) {
+    const nextOpen = html.indexOf('<div', i);
+    const nextClose = html.indexOf('</div>', i);
+    if (nextClose === -1) throw new Error('divInnerHTML: 짝이 맞지 않는 <div>');
+    if (nextOpen !== -1 && nextOpen < nextClose) { depth++; i = html.indexOf('>', nextOpen) + 1; }
+    else { depth--; i = nextClose + '</div>'.length; }
+  }
+  return { inner: html.slice(contentStart, i - '</div>'.length), endIdx: i };
+}
+function assertRowTapHasNoNestedInteractive(html) {
+  const rbIdx = html.indexOf('role="button"');
+  assert.ok(rbIdx !== -1, 'role="button" wrapper가 있어야 함');
+  const divOpenIdx = html.lastIndexOf('<div', rbIdx);
+  assert.ok(html.slice(divOpenIdx, rbIdx).includes('class="row-tap"'), 'role="button"은 .row-tap에 있어야 함(.swipe-content 전체에 있으면 안 됨)');
+  const { inner, endIdx } = divInnerHTML(html, divOpenIdx);
+  assert.ok(!inner.includes('<button'), 'role="button"(.row-tap) 안에 <button>(dup-btn/confirm-btn)이 중첩되면 안 됨');
+  assert.ok(!inner.includes('<img'), 'role="button"(.row-tap) 안에 onclick이 있는 <img>(사진 썸네일)이 중첩되면 안 됨');
+  return endIdx;
+}
+test('txRowCore: dup-btn/photo는 role="button"(.row-tap) 밖, .swipe-content의 형제에 있다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', name: '통장' }], recurrences: [], settings: { confirmTransfers: false } };
+  const t = { id: 't1', date: '2026-06-10', type: 'expense', category: '식비', memo: '점심 김밥', amount: 8000, fromAssetId: 'a1', photo: 'data:image/png;base64,x' };
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('dup-btn') && html.includes('tx-photo-mini'), '테스트 자체가 의미 있으려면 dup-btn과 photo가 실제로 렌더돼야 함');
+  const endIdx = assertRowTapHasNoNestedInteractive(html);
+  const after = html.slice(endIdx);
+  assert.ok(after.includes('dup-btn'), 'dup-btn은 role="button" 바깥(형제)에 있어야 함');
+  assert.ok(after.includes('tx-photo-mini'), 'photo 썸네일도 role="button" 바깥(형제)에 있어야 함');
+});
+test('txRowCore: 반복이체 확인 대기 행도 confirm-btn이 role="button"(.row-tap) 밖에 있다(회귀 없음)', () => {
+  sandbox.DB = { assets: [{ id: 'a1', name: '통장' }], recurrences: [], settings: { confirmTransfers: true } };
+  const t = { id: 't1', date: '2020-01-01', type: 'transfer', category: '이체', memo: '', amount: 50000, fromAssetId: 'a1', toAssetId: null, confirmed: false };
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('confirm-btn'), '테스트 자체가 의미 있으려면 confirm-btn이 실제로 렌더돼야 함');
+  const endIdx = assertRowTapHasNoNestedInteractive(html);
+  assert.ok(html.slice(endIdx).includes('confirm-btn'), 'confirm-btn은 role="button" 바깥(형제)에 있어야 함');
+});
+test('txRowCore: 선택 모드(sel.mode)는 원래부터 role="button" 안에 중첩 버튼이 없다(회귀 없음 확인)', () => {
+  sandbox.DB = { assets: [{ id: 'a1', name: '통장' }], recurrences: [], settings: { confirmTransfers: false } };
+  const t = makeTxRowFixture();
+  sandbox.ST = { lSel: { mode: true, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  const rbIdx = html.indexOf('role="button"');
+  assert.ok(rbIdx !== -1);
+  const divOpenIdx = html.lastIndexOf('<div', rbIdx);
+  const { inner } = divInnerHTML(html, divOpenIdx);
+  assert.ok(!inner.includes('<button') && !inner.includes('<img'), '선택 모드 행에는 애초에 dup-btn/confirm-btn/photo가 없어야 함');
+});
+
 /* ---------- renderPlan: 렌더 함수 스모크 테스트 (app-evolve cycle57 critique/advance) ----------
  * render* 함수 중 실행 커버리지가 전혀 없던 유이한 함수(다른 하나는 정적 템플릿인 renderMenu)였다.
  * 지금까지 renderPlan 테스트(위쪽의 esc/접근성/owner 가드 테스트들)는 전부 extractFunction()으로
