@@ -33396,6 +33396,48 @@ test('matchAssetQuery: fx 자산은 이름 외에 보유 통화로도 검색되�
   const html = sandbox.assetBodyHTML();
   assert.ok(html.includes('여행자금'), '이름에 없어도 보유 통화(JPY)로 매칭되어야 함');
 });
+
+/* ---------- assetBodyHTML: role="button" wrapper(.row-tap) 안에 row-acts(복제/내역 버튼)가
+ * 중첩되면 안 된다 (app-evolve cycle363 develop) ----------
+ * txRowCore의 .swipe-content와 똑같은 WAI-ARIA 위반이 자산 목록(일반 모드)에도 있었다 — asset-item
+ * 전체에 role="button" tabindex를 주면서 그 자손으로 실제 <button class="act-btn">(복제/내역 보기)을
+ * 중첩시켜, VoiceOver/TalkBack이 전체를 하나의 탐색 불가 단위로 묶어버려 스크린리더 사용자가 안쪽
+ * 복제/내역 버튼에 포커스를 옮길 방법이 없었다. role="button"은 이제 아바타+이름만 감싸는 내부
+ * wrapper .row-tap에만 있고, row-acts(그리고 val)는 그 밖(asset-item의 형제)에 있어야 한다.
+ * txRowCore 테스트(34460행대)가 쓰는 divInnerHTML()/assertRowTapHasNoNestedInteractive()를 그대로
+ * 재사용한다(최상위 함수라 선언 순서와 무관하게 호이스팅으로 여기서도 호출 가능). */
+test('assetBodyHTML: row-acts(복제/내역 보기 버튼)는 role="button"(.row-tap) 밖, asset-item의 형제에 있다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '카카오뱅크', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  const html = sandbox.assetBodyHTML();
+  assert.ok(html.includes('act-btn') && html.includes('duplicateAsset'), '테스트 자체가 의미 있으려면 복제 버튼이 실제로 렌더돼야 함');
+  const endIdx = assertRowTapHasNoNestedInteractive(html);
+  const after = html.slice(endIdx);
+  assert.ok(after.includes('class="row-acts"') && after.includes('duplicateAsset') && after.includes('openAssetHistory'), 'row-acts(복제/내역 보기)는 role="button" 바깥(형제)에 있어야 함');
+});
+test('assetBodyHTML: asset-item 자체에는 더 이상 role="button"/tabindex가 없고, onclick만 남아 row-acts를 제외한 영역(아바타/이름/금액) 클릭이 여전히 openAssetSheet로 버블링된다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '카카오뱅크', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  const html = sandbox.assetBodyHTML();
+  const itemIdx = html.indexOf('class="asset-item');
+  assert.ok(itemIdx !== -1);
+  const openTagEnd = html.indexOf('>', itemIdx);
+  const openTag = html.slice(itemIdx, openTagEnd);
+  assert.ok(!openTag.includes('role="button"') && !openTag.includes('tabindex'), 'asset-item 자체는 더 이상 포커스 가능한 role="button"이면 안 됨(그래야 row-tap 하나만 포커스 단위가 됨)');
+  assert.ok(openTag.includes(`onclick="openAssetSheet('a1')"`), 'asset-item의 onclick은 유지돼 val 등 row-acts 밖 영역 클릭이 여전히 상세보기를 열어야 함(기존 클릭 동작 보존)');
+});
+test('assetBodyHTML: 일괄선택 모드(ST.aSel.mode)는 원래부터 role="button" 안에 중첩 버튼이 없다(회귀 없음 확인)', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '카카오뱅크', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.aSel.mode = true;
+  const html = sandbox.assetBodyHTML();
+  const rbIdx = html.indexOf('role="button"');
+  assert.ok(rbIdx !== -1);
+  const divOpenIdx = html.lastIndexOf('<div', rbIdx);
+  const { inner } = divInnerHTML(html, divOpenIdx);
+  assert.ok(!inner.includes('<button'), '선택 모드 행에는 애초에 row-acts(act-btn)가 없어야 함');
+});
+
 test('renderAssets: 편집 모드(ST.editAssets)에서는 드래그용 그룹 목록이 렌더되고, assetSort가 custom이면 그룹 헤더 아래 개별 자산 위/아래 버튼도 함께 렌더된다(app-evolve cycle134 advance 전에는 그룹만 나왔음)', () => {
   setupAssetsDB(); // setupAssetsDB()는 assetSort:'custom'
   sandbox.DB.assets = [

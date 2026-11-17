@@ -354,6 +354,7 @@ html[data-theme="dark"] .alloc-bar i+i::before{background:var(--bg);opacity:.9}
 .grp-title{display:flex;align-items:baseline;justify-content:space-between;margin:20px 4px 8px}
 .grp-title .g{font-size:13px;font-weight:600;color:var(--text-2)}.grp-title .gt{font-size:13.5px;font-weight:700}
 .asset-item{display:flex;align-items:center;gap:13px;padding:14px 16px}
+.asset-item .row-tap{gap:13px} /* 공유 .row-tap(514행)의 기본 gap(12px)은 txRowCore의 .swipe-content gap(12px)과 맞춘 값이라, asset-item의 gap(13px)과는 다르다 — 아바타·이름 사이 간격을 1px이라도 바꾸지 않기 위해 이 안에서만 덮어쓴다(app-evolve cycle363 develop) */
 .asset-item+.asset-item{border-top:1px solid var(--line)}
 .asset-item:active{background:var(--surface-2)}
 .asset-item .nm{font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px;min-width:0}
@@ -1421,7 +1422,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.465';
+const APP_VERSION='1.47.466';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4738,10 +4739,21 @@ function assetBodyHTML(){
            <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
              <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
            <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div></div></div>`;}
-       return `<div class="asset-item ${a.includeInTotal?'':'excl'}" data-id="${a.id}" data-lp="1" tabindex="0" role="button" aria-label="${esc(a.name)} ${won(val)}" onclick="openAssetSheet('${a.id}')" onkeydown="rowKeydown(event,()=>openAssetSheet('${a.id}'))">
+       /* role="button" tabindex는 asset-item 전체가 아니라 아바타+이름만 감싸는 내부 wrapper
+        * .row-tap에 준다 — row-acts(복제/내역 버튼)는 그 role="button" 밖, asset-item의 형제로
+        * 그대로 둔다. txRowCore(6119행)와 동일한 이유로 WAI-ARIA가 role="button" 하위에 또 다른
+        * 포커스 가능한 인터랙티브 엘리먼트가 중첩되는 걸 금지하는데, asset-item 전체에 role="button"을
+        * 주면서 그 자손으로 실제 <button class="act-btn">(복제/내역 보기)을 중첩시켜 VoiceOver/
+        * TalkBack이 전체를 하나의 탐색 불가 단위로 묶어버려 안쪽 버튼에 포커스를 옮길 수 없었다
+        * (app-evolve cycle363 develop가 찾은 접근성 결함, txRowCore와 같은 패턴의 재발).
+        * asset-item의 onclick은 그대로 둬 row-acts를 제외한 나머지 영역(아바타/이름/val) 클릭이
+        * 여전히 버블링으로 openAssetSheet를 열도록 유지한다(val의 기존 클릭 동작 보존) — row-tap은
+        * 키보드(Enter/Space)·스크린리더 포커스 전용이라 onclick 없이 onkeydown만 둔다. */
+       return `<div class="asset-item ${a.includeInTotal?'':'excl'}" data-id="${a.id}" data-lp="1" onclick="openAssetSheet('${a.id}')">
+         <div class="row-tap" tabindex="0" role="button" aria-label="${esc(a.name)} ${won(val)}" onkeydown="rowKeydown(event,()=>openAssetSheet('${a.id}'))">
          <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
          <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
-           <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
+           <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div></div>
          <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(a.name)} 복제" onclick="event.stopPropagation();duplicateAsset('${a.id}')">${svg('copy')}</button><button type="button" class="act-btn" aria-label="${esc(a.name)} 내역 보기" onclick="event.stopPropagation();openAssetHistory('${a.id}')">${svg('receipt')}</button></div>
          <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval?(rateUnknown(a)?'<div class="mini warn">가격 미확인</div>':'<div class="s">평가액</div>'):''}</div></div>`;
      }).join('')+`</div>`;
