@@ -1,15 +1,8 @@
 {
  "cycle": 366,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 360,
-   "phase": "advance",
-   "timestamp": "2026-11-15T12:40:00.000Z",
-   "summary": "critique(cycle360)가 제안한 초대 코드 기반 가구 공유 보조 로그인은 pullCloud/pushCloud의 CLOUD_UID 조회 경로 자체와 RLS 정책을 바꿔야 하는데, 이 세션은 실제 원격 Supabase 스키마를 만들거나 검증할 수 없어(cycle356 advance와 동일한 제약) 모든 기존 사용자의 동기화 경로를 깨뜰 위험이 있다고 판단해 보류했다(계획 자체에 명시된 대체 허용 조항 적용). 대신 Explore로 새 영역을 찾아 구현: budgetOver/goalBehind/debtBehind/allocationDrift는 전부 homeAlerts() 홈 카드+OS 푸시가 있는데, 이미 구현된 2인 정산(openSettlement/settlementSummary) 기능만 알림이 전혀 없어 직접 열어봐야만 쌓인 금액을 알 수 있던 공백을 메웠다. logic.js에 순수 함수 settleAlertBucket(diffAmount,minAmount,bucketWon) 추가(allocationDrift와 동일한 버킷팅으로 재알림 스팸 방지), homeAlerts()에 settleDue 알림(openSettlement()과 동일한 settledThrough 필터 재사용), notifyAlertInfo/homeAlertCard/renderMenu 뮤트 토글까지 기존 패턴을 그대로 확장했다. 테스트 12건 추가(설정 없음/문턱 미달/문턱 이상/settledThrough 제외/알림 키 버킷팅/카드/메뉴 토글), 기능을 일시적으로 꺼서 테스트가 실제로 실패하는지 확인 후 복원. node test/run.js 3464->3476/3476 통과, node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.460->1.47.461, sw.js CACHE v727->v728. pending_advance_plan null로 비움.",
-   "commit": null
-  },
   {
    "cycle": 361,
    "phase": "develop",
@@ -141,6 +134,13 @@
    "phase": "advance",
    "timestamp": "2026-11-17T17:12:27.297Z",
    "summary": "critique(cycle365) 계획대로 DB.assetQtyLog가 archiveTxnsBefore(저장공간 정리)에서 누락돼 무제한 증가하던 문제를 고쳤다. logic.js에 순수 함수 archiveQtyLogGainBaselines(assetQtyLog,cutoffDate) 추가(archiveBaselines와 같은 \"지워지는 몫을 베이스라인에 접는다\" 원칙, realizedGain!=null인 cutoffDate 이전 기록만 자산별 합산 — totalRealizedGain과 동일 필터). archiveTxnsBefore(index.html)가 DB.txns와 나란히 DB.assetQtyLog도 cutoffDate 기준으로 잘라내고, 지워지는 realizedGain 합을 a.archivedRealizedGain 베이스라인으로 접어 넣은 뒤 제거된 항목을 DB.deletedIds에 톰스톤 처리(클라우드 merge가 되살리지 않게)하도록 확장. 기존 undoToast 클로저도 확장해 지워진 assetQtyLog 항목과 이전 archivedRealizedGain 값을 정확히 복원(0/미설정이 아니라 직전 값으로). openAssetQtyLog의 누적 실현손익 계산을 a.archivedRealizedGain+남은 기록 합계로 바꿔(baseline과 items 둘 다 없을 때만 null 유지) 정리를 거듭해도 합계가 끊기지 않게 했다. 테스트 15건 추가(archiveQtyLogGainBaselines 단위 4건, openAssetQtyLog 베이스라인 표시 3건, archiveTxnsBefore 통합 4건: 정리/undo/기존 베이스라인에 누적/realizedGain 없는 기록은 필드 안 생김). git stash로 index.html/logic.js를 수정 전 상태로 되돌려 새 테스트 10건이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3529->3540/3540 통과(vm 샌드박스 realm 문제로 빈 객체 비교 1건만 JSON.stringify 비교로 전환, 기존 cycle364 관례와 동일). node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.470->1.47.471, sw.js CACHE v737->v738. 범위가 커 보이는 yearRealizedGain(연도별 집계)의 과거 연도 archiving 영향은 범위 밖으로 남겨둠(budgetCarryFor의 archivedThroughDate 클램프와 같은 종류의 기존 한계, 이번 계획이 명시한 범위는 openAssetQtyLog 누적 합계뿐).",
+   "commit": null
+  },
+  {
+   "cycle": 366,
+   "phase": "develop",
+   "timestamp": "2026-11-17T18:19:08.000Z",
+   "summary": "index.html의 homeAlerts() 주석(\"3인 이상 정산(N인 분담, cycle364 advance)은 ... 알림 일반화는 다음 사이클로 미룸\")이 남겨둔 공백을 메웠다 — settleDue(정산 알림)가 참가자 2명일 때만 동작하고 3명 이상이면 homeAlerts()에서 아예 계산되지 않던 문제를 고쳤다. settleConfigured().participants.length===2 분기는 그대로 두고, else 분기에서 settlementSummaryN+settleUpTransfers(둘 다 cycle364가 이미 만든 순수 함수, 새 계산식 없음)로 송금 목록을 구해 그 총액(net 합이 0이 되게 맞춘 마지막 참가자 보정 덕에 빚/받을돈 총액이 항상 일치)에 기존 settleAlertBucket 문턱/버킷 판정을 그대로 적용하는 새 kind \"settleDueN\"을 추가했다. notifyAlertInfo(OS 푸시, key는 송금 쌍 from>to 집합+bucket, group은 기존 settleDue와 동일한 'settle'이라 뮤트 토글도 그대로 공유)/homeAlertCard(송금 1건이면 2인 때와 같은 문구, 2건 이상이면 총액+건수)에도 대칭 분기를 추가했다. 테스트 6건 추가(문턱 미달/중립 참가자로 송금 1건으로 줄어드는 경우/중립 없이 2건인 경우/settledThrough 제외/notifyAlertInfo 키 버킷팅/homeAlertCard 1건·다건 렌더) — index.html을 원래 커밋으로 되돌려 4건이 실제로 실패하는 것을 확인한 뒤 복원. node test/run.js 3540->3546/3546 통과, node --check logic.js/sw.js/test/run.js 및 추출한 인라인 <script> 블록 통과. APP_VERSION 1.47.471->1.47.472, sw.js CACHE v738->v739.",
    "commit": null
   }
  ]

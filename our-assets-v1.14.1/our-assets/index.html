@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.471';
+const APP_VERSION='1.47.472';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -12101,14 +12101,26 @@ function homeAlerts(neg){
   * (expense·shared·조정 제외)로 settlementSummary를 돌려 diffAmount를 구하고, settleAlertBucket
   * (logic.js)으로 문턱/버킷 판정만 추가한다 — 집계 공식 자체는 건드리지 않는다. */
  const _scfg=settleConfigured();
- if(_scfg&&_scfg.participants.length===2){ /* 3인 이상 정산(N인 분담, app-evolve cycle364 advance)은 "누가 누구에게"가 아니라 참가자별 순부담 목록이라 이 2인 전용 알림 문구가 맞지 않음 — 알림 일반화는 다음 사이클로 미룸(참가자가 2명일 때만 기존 그대로 동작) */
+ if(_scfg){
   const _sfrom=DB.settings.settledThrough?addDays(DB.settings.settledThrough,1):RANGE_FROM;
   const _stxns=allTxns(_sfrom,TODAY).filter(t=>t.type==='expense'&&t.shared&&!(t.adjust&&!t.inSurplus));
-  const _ssum=settlementSummary(_stxns,DB.assets,_scfg.ownerA,_scfg.ownerB,_scfg.ratioA);
-  const _sbucket=settleAlertBucket(_ssum.diffAmount,SETTLE_ALERT_MIN,SETTLE_ALERT_BUCKET);
-  if(_sbucket!=null){
-   const _other=_ssum.oweOwner===_scfg.ownerA?_scfg.ownerB:_scfg.ownerA;
-   arr.push({kind:'settleDue',oweOwner:_ssum.oweOwner,otherOwner:_other,diffAmount:_ssum.diffAmount,bucket:_sbucket});
+  if(_scfg.participants.length===2){
+   const _ssum=settlementSummary(_stxns,DB.assets,_scfg.ownerA,_scfg.ownerB,_scfg.ratioA);
+   const _sbucket=settleAlertBucket(_ssum.diffAmount,SETTLE_ALERT_MIN,SETTLE_ALERT_BUCKET);
+   if(_sbucket!=null){
+    const _other=_ssum.oweOwner===_scfg.ownerA?_scfg.ownerB:_scfg.ownerA;
+    arr.push({kind:'settleDue',oweOwner:_ssum.oweOwner,otherOwner:_other,diffAmount:_ssum.diffAmount,bucket:_sbucket});
+   }
+  }else{ /* 3인 이상(N명)은 "누가 누구에게" 한 쌍으로 못 줄여 settleUpTransfers(logic.js)의 송금 목록
+   * 전체로 알린다 — 문턱/버킷 판정은 2인 경로와 동일한 settleAlertBucket을 "움직여야 할 돈 총액"
+   * (transfers 합계, settlementSummaryN의 net 합이 0이 되게 맞춘 마지막 참가자 보정 덕에 빚/받을돈
+   * 총액이 항상 일치)에 적용해 2인 경로와 동일한 스팸 방지 원칙을 공유한다(app-evolve cycle364
+   * critique가 "다음 사이클로 미룸"이라 남겨둔 공백, app-evolve cycle366 develop). */
+   const _sn=settlementSummaryN(_stxns,DB.assets,_scfg.participants);
+   const _transfers=settleUpTransfers(_sn.byOwner);
+   const _stotal=_transfers.reduce((s,t)=>s+t.amount,0);
+   const _sbucket=settleAlertBucket(_stotal,SETTLE_ALERT_MIN,SETTLE_ALERT_BUCKET);
+   if(_sbucket!=null)arr.push({kind:'settleDueN',transfers:_transfers,total:_stotal,bucket:_sbucket});
   }
  }
  return arr;
@@ -12192,6 +12204,15 @@ function notifyAlertInfo(al){
   * 늘어나는 값이라, 월로만 묶으면 이번 달에 이미 한 번 알린 뒤 더 쌓여도 다음 달까지 재알림이
   * 안 된다. oweOwner도 key에 넣어 빚진 쪽이 바뀌면(한쪽이 몰아서 내서 역전) 별도로 알린다. */
  if(al.kind==='settleDue')return{key:`settleDue:${al.oweOwner}:${al.bucket}`,title:'정산할 금액이 쌓였어요',body:`${al.oweOwner}님이 ${al.otherOwner}님에게 ${comma(al.diffAmount)}원 정도 보내면 돼요`,group:'settle'};
+ /* settleDue(2인)를 N명으로 일반화(app-evolve cycle366 develop) — key는 oweOwner 하나 대신 송금
+  * 쌍(from>to) 집합을 묶어, 누가 누구에게 보낼지가 바뀌면(참가자 중 한 명이 몰아서 내서 역전되는 등)
+  * 별도로 다시 알린다. 정확한 금액은 bucket과 별개로 매번 미세하게 바뀌므로 key에서 뺀다(2인 경로와
+  * 동일 원칙). */
+ if(al.kind==='settleDueN'){
+  const _pairs=al.transfers.map(t=>`${t.from}>${t.to}`).sort().join(',');
+  const _body=al.transfers.length===1?`${al.transfers[0].from}님이 ${al.transfers[0].to}님에게 ${comma(al.transfers[0].amount)}원 정도 보내면 돼요`:`총 ${comma(al.total)}원 · 송금 ${al.transfers.length}건이 필요해요`;
+  return{key:`settleDueN:${_pairs}:${al.bucket}`,title:'정산할 금액이 쌓였어요',body:_body,group:'settle'};
+ }
  return null;
 }
 /* 같은 항목(key)은 상태가 유지되는 한 다시 알리지 않는다 — checkNotifyAlerts가 동기화 주기(수 분)마다
@@ -12454,6 +12475,11 @@ function homeAlertCard(al){
    <div class="ha-ic">${svg('users')}</div>
    <div class="ha-b"><div class="ha-t">정산할 금액이 쌓였어요</div>
      <div class="ha-s">${esc(al.oweOwner)}님이 ${esc(al.otherOwner)}님에게 ${comma(al.diffAmount)}원 정도 · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='settleDueN')return `<button class="home-alert mat" onclick="openSettlement()">
+   <div class="ha-ic">${svg('users')}</div>
+   <div class="ha-b"><div class="ha-t">정산할 금액이 쌓였어요</div>
+     <div class="ha-s">${al.transfers.length===1?`${esc(al.transfers[0].from)}님이 ${esc(al.transfers[0].to)}님에게 ${comma(al.transfers[0].amount)}원 정도`:`총 ${comma(al.total)}원 · 송금 ${al.transfers.length}건`} · 눌러서 확인하세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='negMulti')return `<button class="home-alert" onclick="openNegList()">
    <div class="ha-ic">${svg('bell')}</div>

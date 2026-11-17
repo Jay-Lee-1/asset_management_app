@@ -27073,6 +27073,80 @@ test('renderMenu: OS 알림이 켜져 있으면 정산 알림 뮤트 토글(· �
   assert.ok(body.includes("toggleNotifyMuteGroup('settle')"));
 });
 
+/* ---------- homeAlerts()/notifyAlertInfo()/homeAlertCard()의 settleDueN(3인 이상 정산 알림) 통합 ----------
+ * (app-evolve cycle366 develop) — cycle364 advance가 settlementSummaryN/settleUpTransfers로 N명
+ * 정산 화면 자체는 일반화했지만, homeAlerts()의 알림은 "2명일 때만" 동작하도록 남겨두고 "알림
+ * 일반화는 다음 사이클로 미룸"이라고 명시했었다(index.html의 settleDue 주석). 그 공백을 메운다. ---------- */
+function setupSettleDueDBN() {
+  setupHomeAlertsDB();
+  sandbox.DB.owners = ['나', '배우자', '아이'];
+  sandbox.DB.assets.push({ id: 'a1', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 0 });
+  sandbox.DB.assets.push({ id: 'a2', owner: '배우자', type: 'cash', includeInTotal: true, baseAmount: 0 });
+  sandbox.DB.assets.push({ id: 'a3', owner: '아이', type: 'cash', includeInTotal: true, baseAmount: 0 });
+  sandbox.DB.settings.settle = { participants: [{ owner: '나', ratio: 50 }, { owner: '배우자', ratio: 30 }, { owner: '아이', ratio: 20 }] };
+}
+test('homeAlerts: 참가자 3명 이상이고 송금 총액이 SETTLE_ALERT_MIN 미만이면 settleDueN이 뜨지 않는다', () => {
+  setupSettleDueDBN();
+  // total=100000, 나가 전액 결제 → 배우자 30000/아이 20000만 빚져 둘 다 문턱(100000) 미만
+  sandbox.DB.txns.push({ id: 't1', type: 'expense', shared: true, fromAssetId: 'a1', amount: 100000, date: sandbox.TODAY, category: '식비' });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'settleDueN'), '송금 총액이 사소하면 알릴 필요 없음');
+  assert.ok(!alerts.some((a) => a.kind === 'settleDue'), '참가자가 3명이면 2인 전용 settleDue는 절대 뜨지 않아야 함');
+});
+test('homeAlerts: 참가자 3명 중 1명이 정확히 자기 몫만큼 내 net=0이면(중립) settleUpTransfers가 1건으로 줄고 settleDueN.transfers도 1건이다', () => {
+  setupSettleDueDBN();
+  // 아이가 자기 몫(20%=200000)을 정확히 결제 → 아이 net=0. 나머지 800000을 나가 전액 결제.
+  sandbox.DB.txns.push({ id: 't1', type: 'expense', shared: true, fromAssetId: 'a1', amount: 800000, date: sandbox.TODAY, category: '식비' });
+  sandbox.DB.txns.push({ id: 't2', type: 'expense', shared: true, fromAssetId: 'a3', amount: 200000, date: sandbox.TODAY, category: '식비' });
+  const alerts = sandbox.homeAlerts([]);
+  const sd = alerts.find((a) => a.kind === 'settleDueN');
+  assert.ok(sd, '송금 총액(300000)이 문턱 이상이면 settleDueN이 떠야 함');
+  assert.strictEqual(sd.transfers.length, 1, '중립(아이) 제외하면 배우자→나 1건으로 줄어야 함');
+  assert.strictEqual(sd.transfers[0].from, '배우자');
+  assert.strictEqual(sd.transfers[0].to, '나');
+  assert.strictEqual(sd.transfers[0].amount, 300000);
+  assert.strictEqual(sd.total, 300000);
+  assert.strictEqual(sd.bucket, 300000, 'settleAlertBucket(300000,100000,100000)=300000');
+});
+test('homeAlerts: 참가자 3명 모두 순부담이 남으면(중립 없음) settleDueN.transfers가 2건이고 합계가 전체 빚과 일치한다', () => {
+  setupSettleDueDBN();
+  // 나 혼자 500000 전액 결제 → 배우자(150000)/아이(100000) 둘 다 빚짐
+  sandbox.DB.txns.push({ id: 't1', type: 'expense', shared: true, fromAssetId: 'a1', amount: 500000, date: sandbox.TODAY, category: '식비' });
+  const alerts = sandbox.homeAlerts([]);
+  const sd = alerts.find((a) => a.kind === 'settleDueN');
+  assert.ok(sd);
+  assert.strictEqual(sd.transfers.length, 2);
+  const sum = sd.transfers.reduce((s, t) => s + t.amount, 0);
+  assert.strictEqual(sum, 250000, '배우자 150000 + 아이 100000 = 나가 받아야 할 총액과 일치');
+  assert.strictEqual(sd.total, 250000);
+});
+test('homeAlerts: settleDueN도 settleDue와 동일하게 settledThrough 이전 지출은 집계에서 뺀다', () => {
+  setupSettleDueDBN();
+  sandbox.DB.settings.settledThrough = '2026-05-01';
+  sandbox.DB.txns.push({ id: 'old1', type: 'expense', shared: true, fromAssetId: 'a1', amount: 900000, date: '2026-01-10', category: '식비' });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'settleDueN'), 'settledThrough 이전 지출은 이미 정산된 것으로 보고 다시 세면 안 됨');
+});
+test('notifyAlertInfo: settleDueN은 송금 쌍(from>to) 집합과 bucket으로 키가 잡혀 그룹은 settle이고, 송금 1건이면 2인 settleDue와 같은 문구를 쓴다', () => {
+  const single = sandbox.notifyAlertInfo({ kind: 'settleDueN', transfers: [{ from: '배우자', to: '나', amount: 300000 }], total: 300000, bucket: 300000 });
+  assert.strictEqual(single.group, 'settle');
+  assert.ok(single.body.includes('배우자') && single.body.includes('나') && single.body.includes('300,000'));
+  const a1 = sandbox.notifyAlertInfo({ kind: 'settleDueN', transfers: [{ from: '배우자', to: '나', amount: 150000 }, { from: '아이', to: '나', amount: 100000 }], total: 250000, bucket: 200000 });
+  assert.ok(a1.key.includes('배우자>나') && a1.key.includes('아이>나') && a1.key.includes('200000'));
+  const a2 = sandbox.notifyAlertInfo({ kind: 'settleDueN', transfers: [{ from: '배우자', to: '나', amount: 150000 }, { from: '아이', to: '나', amount: 140000 }], total: 290000, bucket: 200000 });
+  assert.strictEqual(a2.key, a1.key, '같은 송금 쌍 집합·같은 버킷이면 금액이 조금 더 쌓여도 같은 키로 dedupe되어야 함');
+  const a3 = sandbox.notifyAlertInfo({ kind: 'settleDueN', transfers: [{ from: '배우자', to: '나', amount: 150000 }, { from: '아이', to: '나', amount: 160000 }], total: 310000, bucket: 300000 });
+  assert.notStrictEqual(a3.key, a1.key, '버킷이 바뀌면 다시 알려야 함');
+});
+test('homeAlertCard: settleDueN은 openSettlement()으로 연결되고, 송금 1건이면 누가 누구에게 얼마를, 여러 건이면 총액과 건수를 보여준다', () => {
+  const single = sandbox.homeAlertCard({ kind: 'settleDueN', transfers: [{ from: '배우자', to: '나', amount: 300000 }], total: 300000, bucket: 300000 });
+  assert.ok(single.includes('onclick="openSettlement()"'));
+  assert.ok(single.includes('배우자') && single.includes('나') && single.includes('300,000'));
+  const multi = sandbox.homeAlertCard({ kind: 'settleDueN', transfers: [{ from: '배우자', to: '나', amount: 150000 }, { from: '아이', to: '나', amount: 100000 }], total: 250000, bucket: 200000 });
+  assert.ok(multi.includes('onclick="openSettlement()"'));
+  assert.ok(multi.includes('250,000') && multi.includes('2건'));
+});
+
 /* ---------- portfolioGainLoss(logic.js)/investGainLossCard: 투자자산 전체 손익 카드
  * (app-evolve cycle226 critique/advance — assetGainLoss(a)/assetGainLossBadge가 자산 1건씩만
  * 행 배지로 보여주고, 총자산/비중/순자산추이/목표와 달리 전체 합산 뷰가 없던 공백) ---------- */
