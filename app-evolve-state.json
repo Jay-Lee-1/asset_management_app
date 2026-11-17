@@ -1,19 +1,8 @@
 {
- "cycle": 364,
- "phase": "advance",
- "pending_advance_plan": {
-  "title": "정산(settlement) 기능을 2귀속(ownerA/ownerB) 고정 구조에서 N귀속(3인 이상) 분담 지원으로 확장",
-  "why": "DB.owners 기본값이 이미 3개('나','배우자','공용', index.html:2830)이고 사용자가 귀속을 자유롭게 추가할 수 있는데, DB.settings.settle={ownerA,ownerB,ratioA} 구조와 settleConfigured()(5746-5789행 부근, 6229행)가 정확히 2귀속만 받아들여서, '같이 냈어요' 공동지출 토글(6250/6281/6849행)과 정산 요약(logic.js settlementSummary/settlementItems, 222-257행)이 제3의 귀속이 지불한 공용 지출을 아예 다루지 못하고 조용히 제외한다. 앱의 핵심 기능인 '공동지출 정산'이 앱 자체 기본 구성(나/배우자/공용)에서조차 3인 분담을 지원하지 못하는 구조적 결함이다.",
-  "approach": "1) 데이터 모델: DB.settings.settle을 {ownerA,ownerB,ratioA}에서 참가자 배열(예: {participants:[{owner,ratio}]})로 확장하되, 기존 사용자의 2귀속 설정을 로드 시 자동 마이그레이션(ownerA/ownerB/ratioA → participants 2개로 변환)해 하위호환을 깨지 않는다. 2) settleConfigured()를 '참가자 2명 이상, 각 귀속이 DB.owners에 존재, ratio 합계 100%'로 일반화한다. 3) renderSettleConfigForm/openOwnerPicker 흐름을 N명을 추가/제거하고 비율을 재분배할 수 있도록 확장한다(처음엔 균등분배 또는 마지막 1명은 나머지로 자동 계산하는 단순한 UX로 시작해도 됨 — 최적 송금 매트릭스 같은 고도화는 1차 범위에서 제외해도 된다). 4) logic.js의 settlementSummary/settlementItems를 단일 diffAmount/oweOwner 대신 귀속별 순부담액(net balance) 배열을 반환하도록 일반화하고, openSettlement()의 결과 화면을 '누가 누구에게 얼마'가 아니라 귀속별 순부담 목록으로 보여주는 최소 버전으로 시작한다. 5) doRenameOwner/doMergeOwner(5575-5689행 부근)의 ownerA/ownerB 동기화 로직도 participants 배열 기준으로 같이 수정한다. 6) test/run.js에 3인 이상 참가자 settlementSummary 회귀 테스트를 추가한다. 범위가 크므로 한 사이클에 전부 못 끝내면 1차로 데이터 모델+마이그레이션+N명 선택 UI까지만 완료하고 요약 로직 일반화는 다음 advance로 넘겨도 된다 — 일부만 완료해도 빌드/테스트가 깨지지 않는 중간 상태로 커밋할 것."
- },
+ "cycle": 365,
+ "phase": "develop",
+ "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 359,
-   "phase": "critique",
-   "timestamp": "2026-11-15T07:10:00.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-359의 모든 주제(반복거래 override, 클라우드 동기화, undoToast WCAG, App Lock, 부채 상환, 정산 breakdown, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, fx 폴백 등)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: buildExpenseBarHtml(index.html:4258-4273, 홈 지출/수입 분석 카드와 지출·수입 분석 시트·연말 리뷰 TOP3가 공유하는 스택바+범례 렌더)의 PAL 팔레트가 8색 고정이고 col(i)=PAL[i%PAL.length]로 인덱스를 그대로 모듈로 순환시키는데, 호출부 중 홈 화면 2곳(3349-3350행)과 지출/수입 분석 시트 2곳(7165, 8236행)은 카테고리 개수를 전혀 자르지 않고 그대로 넘긴다(TOP3만 이미 3개로 제한). 기본 설치 카테고리가 6개(EXP_CATS_DEFAULT, 1877행)뿐이라 테스트 데이터로는 전혀 드러나지 않지만, 앱이 카테고리를 자유롭게 추가하도록 설계돼 있어 9개 이상 쓰는 실사용자는 가장 많이 보는 홈 화면에서 서로 다른 두 카테고리가 완전히 같은 색으로 표시돼 위젯의 존재 목적(색으로 지출 구분)이 조용히 깨진다. 후보로 checkNotifyAlerts의 visibilitychange 전용 알림 체크(코드 자체가 best-effort로 명시해 기각 가능성 높음 판단)와 RANGE_FROM='2023-01-01' 하드 플로어(아직 실사용자에게 안 걸림, 긴급성 낮음)도 검토했으나 순위를 낮게 매겼다. pending_advance_plan에 buildExpenseBarHtml 상위 N개+'기타' 버킷 합성 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
   {
    "cycle": 359,
    "phase": "advance",
@@ -145,6 +134,13 @@
    "phase": "critique",
    "timestamp": "2026-11-17T12:12:09.000Z",
    "summary": "Explore 서브에이전트에게 cycle340-364의 모든 주제(반복거래 override, 클라우드 동기화, undoToast WCAG, App Lock, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력 공휴일, 저축 만기 overdue, assetGainLossBadge, 전역검색(이미 존재), txRowCore/asset-item/date-picker/installBar의 role=button 중첩 접근성 패턴)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: 정산(settlement) 기능이 구조적으로 정확히 2귀속(ownerA/ownerB)으로 하드코딩돼 있다 — DB.owners는 기본값부터 3개('나','배우자','공용', index.html:2830)이고 사용자가 자유롭게 늘릴 수 있는데(5567행, 상한 없음), DB.settings.settle은 {ownerA,ownerB,ratioA} 구조뿐이고 settleConfigured()(6229행 부근)가 정확히 두 귀속만 요구한다. '같이 냈어요' 토글도 settleConfigured()가 true일 때만(즉 2귀속 설정이 끝났을 때만) 노출되고(6250/6281/6849행), logic.js의 settlementSummary/settlementItems(222-257행)는 제3의 귀속이 지불한 공용 지출을 합계에서 조용히 제외한다 — 앱 자체의 기본 3귀속 구성에서조차 핵심 기능인 공동지출 정산이 3인 분담을 전혀 지원하지 못한다. 러너업으로 (1) filteredHist()가 매 키입력/필터칩 토글마다 allTxns 전체 재계산·재정렬을 하는 성능 이슈, (2) exportData/doExport가 동기적으로 전체 JSON/CSV를 메모리에 쌓아 대용량 데이터에서 멈춤 위험, (3) ST.hist.preset 류 '도달 불가 UI 상태 필드' 패턴의 전수 점검도 검토했으나 우선순위는 settlement 2인 제약이 가장 높다고 판단. 이미 다룬 '가구 공유 인증'(household invite 인증 문제) 및 '정산 breakdown/알림'(기존 2인 모델의 표시/알림 문제)과는 범위가 다름 — 이번 건은 2인이라는 구조적 제약 자체. pending_advance_plan에 N인 정산 지원 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 364,
+   "phase": "advance",
+   "timestamp": "2026-11-17T13:40:00.000Z",
+   "summary": "critique(cycle364) 계획대로 정산(settlement)의 2귀속(ownerA/ownerB) 하드코딩을 참가자 배열(N명, 2명 이상)로 일반화했다. 데이터 모델: DB.settings.settle을 옛 {ownerA,ownerB,ratioA}에서 {participants:[{owner,ratio},...]}로 바꾸되, logic.js settleParticipantsFromSettings()가 읽을 때마다 옛 구조를 동등한 participants 2개로 조용히 마이그레이션해 하위호환을 유지한다(저장은 항상 새 구조). settleConfigured()를 '참가자 2명 이상·전부 DB.owners에 실재·중복 없음'으로 일반화하고, 가장 흔한 2명 케이스는 ownerA/ownerB/ratioA도 함께 채워 기존 2인 전용 코드 경로(openSettlement/confirmSettlement/doSettle/homeAlerts의 settleDue)가 전혀 안 바뀌어도 그대로 동작하게 했다 — 3명 이상일 때만 cfg.participants를 직접 쓰는 새 경로(openSettlement 내 분기, settlementBreakdownHTMLN, confirmSettlementN, doSettleN)를 탄다. logic.js에 settlementSummaryN(참가자별 paid/expected/net 계산, 마지막 참가자가 반올림 나머지를 떠안아 expected 합이 항상 total과 정확히 일치)·settlementItemsN(N명 포함/제외 내역)·settleUpTransfers(순부담 net 배열을 받아 최소 송금 목록을 만드는 탐욕 매칭 — 계획이 명시한 대로 최적 송금 매트릭스는 범위 밖)을 추가하고, 옛 settlementSummary/settlementItems(2귀속 전용)는 이 N명 함수를 호출해 바이트 단위로 동일한 결과를 내는 얇은 래퍼로 재구현했다. UI: settleDraft를 {ownerA,ownerB,ratioA}에서 {rows:[{owner,ratio}]}로 바꿔 참가자 추가/삭제(최소 2명, DB.owners 수까지)와 '균등 분배' 버튼을 지원하고, 마지막 행의 비율은 항상 '100-앞사람들 합'으로 자동 계산(편집 불가)해 합계가 100%를 벗어날 일 자체를 없앴다. doRenameOwner/mergeOwnerInto/delOwner의 '이 귀속이 정산에 쓰이는가/이름이 바뀌면 따라가야 하는가' 판정도 settleTouchesOwner/settleReplaceOwner(logic.js, 옛 구조는 옛 구조 그대로 owner만 바꿔 돌려줘 2인 사용자 저장값이 뜻밖에 participants로 통째로 바뀌어 보이지 않게 함)로 일반화했다. 테스트: settlementSummaryN/settlementItemsN/settleUpTransfers/settleParticipantsFromSettings/settleTouchesOwner/settleReplaceOwner 신규 단위 테스트와 3명 참가자 openSettlement/confirmSettlementN/doSettleN 통합 테스트를 추가하고, settleConfigPickA/B·settleRatioInput 등 이름이 바뀐 기존 UI 테스트 전체를 rows 기반 API로 재작성했다(vm 샌드박스 realm 문제로 몇몇은 기존 관례대로 JSON.stringify 비교로 전환). node test/run.js 3502->3529/3529 통과(기존 테스트 포함 전부 그대로 녹색 — 2인 사용자 동작은 회귀 없음). node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.468->1.47.469, sw.js CACHE v735->v736. 범위가 커서(계획이 허용한 대로) 정산 알림(homeAlerts의 settleDue)은 여전히 2명 전용으로 남겨뒀다 — 3명 이상 설정이면 알림 없이 openSettlement()을 직접 열어야 확인 가능(호출부에 그 이유를 주석으로 남김, 다음 critique가 후보로 재검토할 수 있음). pending_advance_plan null로 비움.",
    "commit": null
   }
  ]

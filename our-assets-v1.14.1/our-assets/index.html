@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.468';
+const APP_VERSION='1.47.469';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5578,8 +5578,8 @@ function delOwner(i){if(twGuard())return;const o=DB.owners[i];if(DB.owners.lengt
    * mergeOwnerInto와 달리 옮겨갈 대상 귀속이 없으므로(삭제라서) ownerA===ownerB collapse
    * 분기와 동일하게 단순히 꺼버린다(settle=null). */
   const settle=DB.settings&&DB.settings.settle;
-  const settleTouched=!!(settle&&(settle.ownerA===o||settle.ownerB===o));
-  const prevSettle=settleTouched?Object.assign({},settle):null;
+  const settleTouched=settleTouchesOwner(settle,o); /* participants 배열(N명)도 함께 판정(app-evolve cycle364 advance) */
+  const prevSettle=settleTouched?JSON.parse(JSON.stringify(settle)):null; /* participants가 배열을 품으므로 Object.assign 얕은 복사로는 안 되고 깊은 복사가 필요(app-evolve cycle364 advance) */
   const prevSettledThrough=settleTouched?DB.settings.settledThrough:undefined; /* settle을 끌 때 settledThrough(정산 하한)도 함께 초기화 — 안 그러면 나중에 다른 쌍으로 재설정해도 죽은 하한이 조용히 남아있다(app-evolve cycle347) */
   if(settleTouched){DB.settings.settle=null;DB.settings.settledThrough=null;}
   DB.owners=DB.owners.filter(x=>x!==o);
@@ -5605,9 +5605,9 @@ function doRenameOwner(i){if(twGuard())return;const v=cleanName($('renameOwner')
  const hadSpendOwner=ST.spendOwner===old;if(hadSpendOwner)ST.spendOwner=v;
  const hadHistOwner=!!(ST.hist&&ST.hist.owner===old);if(hadHistOwner)ST.hist.owner=v; /* 활성 귀속 필터가 이름 변경을 따라가도록 — ST.hist.owner(전체내역 탭, 지출분석 카테고리 드릴다운이 세팅)까지 빠지면 이름 바꾼 뒤 그 필터가 사라진 옛 이름 그대로 남아 filterTxnsByOwner가 매칭되는 자산을 못 찾아 내역이 조용히 전부 사라져 보인다 */
  const settle=DB.settings&&DB.settings.settle;
- const settleTouched=!!(settle&&(settle.ownerA===old||settle.ownerB===old));
- const prevSettle=settleTouched?Object.assign({},settle):null;
- if(settleTouched){if(settle.ownerA===old)settle.ownerA=v;if(settle.ownerB===old)settle.ownerB=v;} /* 정산(settlementSummary) 설정도 같은 이유로 이름변경을 따라가야 함 — 안 그러면 openSettlement()의 owner 존재 검증에 걸려 재설정을 요구받는다(app-evolve cycle314 advance) */
+ const settleTouched=settleTouchesOwner(settle,old); /* participants 배열(N명)도 함께 판정(app-evolve cycle364 advance) */
+ const prevSettle=settleTouched?JSON.parse(JSON.stringify(settle)):null; /* participants가 배열을 품으므로 깊은 복사가 필요(app-evolve cycle364 advance) */
+ if(settleTouched)DB.settings.settle=settleReplaceOwner(settle,old,v); /* 정산(settlementSummary) 설정도 같은 이유로 이름변경을 따라가야 함 — 안 그러면 openSettlement()의 owner 존재 검증에 걸려 재설정을 요구받는다(app-evolve cycle314 advance). settleReplaceOwner(logic.js)가 구/신 구조를 모두 다룸(cycle364 advance) */
  const nwChanges=[];(DB.nwHistory||[]).forEach(h=>{if(h.byOwner&&old in h.byOwner){nwChanges.push(h);h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}}); /* 과거 추이 스냅샷의 귀속별 키도 새 이름으로 이동 */
  const prevVTomb=DB.deletedIds?DB.deletedIds[ownerTombKey(v)]:undefined;
  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(old)]=Date.now();delete DB.deletedIds[ownerTombKey(v)]; /* old 이름도 delOwner처럼 톰스톤해야 함 — 안 그러면 mergeNameListWithTombstones가 old를 '살아있다'고 보고 아직 이 이름변경을 모르는 다른 기기의 사본이 old를 되살림(app-evolve cycle180, doRenameCat과 동일). v가 과거에 삭제됐던 이름이면 그 톰스톤은 지워 되살림을 허용 */
@@ -5681,13 +5681,9 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
   * 사라지므로 정산을 그대로 끈다(settle=null) — ratioA만 남기면 같은 사람을 상대로 정산하라는
   * 뜻이 되어 의미가 없다. */
  const settle=DB.settings&&DB.settings.settle;
- const settleTouched=!!(settle&&(settle.ownerA===from||settle.ownerB===from));
- const prevSettle=settleTouched?Object.assign({},settle):null;
- if(settleTouched){
-  if(settle.ownerA===from)settle.ownerA=toName;
-  if(settle.ownerB===from)settle.ownerB=toName;
-  if(settle.ownerA===settle.ownerB)DB.settings.settle=null;
- }
+ const settleTouched=settleTouchesOwner(settle,from); /* participants 배열(N명)도 함께 판정(app-evolve cycle364 advance) */
+ const prevSettle=settleTouched?JSON.parse(JSON.stringify(settle)):null; /* participants가 배열을 품으므로 깊은 복사가 필요(app-evolve cycle364 advance) */
+ if(settleTouched)DB.settings.settle=settleReplaceOwner(settle,from,toName); /* settleReplaceOwner(logic.js)가 합쳐져 같은 이름이 두 번 나오면 null(정산 끄기)을 돌려줌 — 기존 ownerA===ownerB collapse 분기와 동일(cycle364 advance) */
  const nwChanges=[];
  (DB.nwHistory||[]).forEach(h=>{
   if(h.byOwner&&from in h.byOwner){
@@ -5736,48 +5732,89 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
  * 귀속·ownerA 분담 비율)로 범위를 좁혀 계산하고 화면/정산완료 처리를 맡는다. */
 let settleDraft=null;
 /* 정산 설정 시트 — openTargetAllocationForm과 동일한 draft 패턴(열 때 복사, 저장할 때만 반영).
- * 두 귀속은 openOwnerPicker(merge 피커가 쓰는 exclude 옵션 재사용)로 고르고, 서로 같은 귀속을
- * 고르지 못하게 상대쪽을 exclude에 넣는다. */
+ * 예전엔 정확히 두 귀속(ownerA/ownerB)만 고를 수 있었지만, DB.owners가 자유롭게 늘어날 수 있는데도
+ * 정산은 그 중 둘만 허용해 제3의 귀속이 낸 공동지출이 집계에서 조용히 빠지던 구조적 결함을
+ * 고친다(app-evolve cycle364 critique → advance). settleDraft.rows는 참가자 배열([{owner,ratio}])
+ * 이고, 마지막 행의 ratio는 "100 - 앞사람들 합"으로 항상 자동 계산해(편집 불가) 합계가 100%를
+ * 벗어날 일 자체를 없앤다 — 2명일 때는 옛 UI(귀속 A 편집, 귀속 B=나머지)와 완전히 동일한 흐름이다. */
+function settleDraftRows(){
+ const parts=settleParticipantsFromSettings(DB.settings.settle);
+ return parts?parts.map(p=>({owner:p.owner,ratio:p.ratio})):[{owner:null,ratio:50},{owner:null,ratio:50}];
+}
 function openSettleConfigForm(){
- const cur=DB.settings.settle;
- settleDraft={ownerA:cur?cur.ownerA:null,ownerB:cur?cur.ownerB:null,ratioA:cur&&cur.ratioA!=null?cur.ratioA:50};
+ settleDraft={rows:settleDraftRows()};
  renderSettleConfigForm();
 }
-function settleConfigPickA(){openOwnerPicker({current:settleDraft.ownerA,exclude:settleDraft.ownerB?[settleDraft.ownerB]:[],back:renderSettleConfigForm,onPick:v=>{settleDraft.ownerA=v;renderSettleConfigForm()}})}
-function settleConfigPickB(){openOwnerPicker({current:settleDraft.ownerB,exclude:settleDraft.ownerA?[settleDraft.ownerA]:[],back:renderSettleConfigForm,onPick:v=>{settleDraft.ownerB=v;renderSettleConfigForm()}})}
-function settleRatioInput(el){
+function settleConfigPick(i){
+ const exclude=settleDraft.rows.filter((r,ri)=>ri!==i&&r.owner).map(r=>r.owner);
+ openOwnerPicker({current:settleDraft.rows[i].owner,exclude,back:renderSettleConfigForm,onPick:v=>{settleDraft.rows[i].owner=v;renderSettleConfigForm()}});
+}
+function settleConfigAddRow(){
+ if(settleDraft.rows.length>=DB.owners.length){toast('추가할 수 있는 귀속이 없어요');return}
+ settleDraft.rows.push({owner:null,ratio:0});
+ renderSettleConfigForm();
+}
+function settleConfigRemoveRow(i){
+ if(settleDraft.rows.length<=2)return;
+ settleDraft.rows.splice(i,1);
+ renderSettleConfigForm();
+}
+function settleConfigRatioInput(i,el){
  let v=parseFloat((el.value||'').replace(/,/g,''));
  if(!(v>=0))v=0;if(v>100)v=100;
- settleDraft.ratioA=v;
- const h=$('settleRatioHint');if(h)h.textContent=`${settleDraft.ownerB||'상대방'}: ${100-v}%`;
+ settleDraft.rows[i].ratio=v;
+ const n=settleDraft.rows.length;
+ const sumOthers=settleDraft.rows.slice(0,n-1).reduce((s,r)=>s+(r.ratio||0),0);
+ const h=$('settleRatioHint');if(h)h.textContent=`${esc(settleDraft.rows[n-1].owner||'마지막 참가자')}: ${100-sumOthers}%`;
+}
+function settleConfigEqualSplit(){
+ const n=settleDraft.rows.length;
+ const base=Math.floor(100/n);
+ settleDraft.rows.forEach((r,i)=>{r.ratio=i<n-1?base:100-base*(n-1)});
+ renderSettleConfigForm();
 }
 function renderSettleConfigForm(){
- const ratio=settleDraft.ratioA==null?50:settleDraft.ratioA;
+ const rows=settleDraft.rows,n=rows.length;
+ const sumOthers=rows.slice(0,n-1).reduce((s,r)=>s+(r.ratio||0),0);
+ const lastRatio=100-sumOthers;
  const ownerBtn=(v,onclick)=>`<button class="pick ${v?'':'placeholder'}" onclick="${onclick}"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${v?esc(v):'선택하세요'}</div></div><div class="pc">${svg('chevR')}</div></button>`;
- openSheet(`<h3>정산 설정</h3><div class="desc">공동지출을 나눠 낼 두 귀속과 분담 비율을 정하세요. 지출 입력 시 '같이 냈어요'를 켠 내역만 집계돼요.</div>
-  <div class="field"><label>귀속 A</label>${ownerBtn(settleDraft.ownerA,'settleConfigPickA()')}</div>
-  <div class="field"><label>귀속 B</label>${ownerBtn(settleDraft.ownerB,'settleConfigPickB()')}</div>
-  <div class="field"><label for="settleRatio">${settleDraft.ownerA?esc(settleDraft.ownerA):'귀속 A'}의 분담 비율</label><div class="with-unit"><div class="field-clear"><input id="settleRatio" class="num" inputmode="decimal" value="${ratio}" oninput="settleRatioInput(this)"><button type="button" class="fc-x" aria-label="비율 지우기" onclick="clrInput('settleRatio')">✕</button></div><span class="unit">%</span></div></div>
-  <div class="mini" id="settleRatioHint" style="margin:4px 2px 14px">${esc(settleDraft.ownerB||'상대방')}: ${100-ratio}%</div>
+ const rowsHtml=rows.map((r,i)=>{
+  const isLast=i===n-1;
+  const removeLink=n>2?` <span class="link" role="button" tabindex="0" aria-label="참가자 삭제" onclick="settleConfigRemoveRow(${i})" onkeydown="rowKeydown(event,()=>settleConfigRemoveRow(${i}))">삭제</span>`:'';
+  const ratioField=isLast
+   ?`<div class="mini" id="settleRatioHint" style="margin:4px 2px 0">${esc(r.owner||'마지막 참가자')}: ${lastRatio}%</div>`
+   :`<div class="mini" style="margin:8px 2px 0">분담 비율</div><div class="with-unit"><div class="field-clear"><input id="settleRatio${i}" class="num" inputmode="decimal" value="${r.ratio||0}" oninput="settleConfigRatioInput(${i},this)"><button type="button" class="fc-x" aria-label="비율 지우기" onclick="clrInput('settleRatio${i}')">✕</button></div><span class="unit">%</span></div>`;
+  return `<div class="field"><label>참가자 ${i+1}${removeLink}</label>${ownerBtn(r.owner,`settleConfigPick(${i})`)}${ratioField}</div>`;
+ }).join('');
+ const canAdd=rows.length<DB.owners.length;
+ openSheet(`<h3>정산 설정</h3><div class="desc">공동지출을 나눠 낼 참가자(2명 이상)와 분담 비율을 정하세요. 지출 입력 시 '같이 냈어요'를 켠 내역만 집계돼요.</div>
+  ${rowsHtml}
+  <div class="two-btn" style="margin:4px 0 14px">${canAdd?`<button class="btn btn-soft" onclick="settleConfigAddRow()">${svg('plus')} 참가자 추가</button>`:'<div></div>'}<button class="btn btn-soft" onclick="settleConfigEqualSplit()">균등 분배</button></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
     <button class="btn btn-primary" onclick="saveSettleConfig()">저장</button></div>
   ${DB.settings.settle?`<button class="del-link" onclick="clearSettleConfig()">${svg('trash')} 정산 끄기</button>`:''}`);
 }
 function saveSettleConfig(){
  if(twGuard())return;
- if(!settleDraft.ownerA||!settleDraft.ownerB){toast('두 귀속을 모두 선택해 주세요');return}
- if(settleDraft.ownerA===settleDraft.ownerB){toast('서로 다른 귀속을 선택해 주세요');return}
- const ratioA=Math.max(0,Math.min(100,settleDraft.ratioA==null?50:settleDraft.ratioA));
- const prevSettle=DB.settings.settle?Object.assign({},DB.settings.settle):null;
+ const rows=settleDraft.rows,n=rows.length;
+ if(rows.some(r=>!r.owner)){toast('참가자를 모두 선택해 주세요');return}
+ const owners=rows.map(r=>r.owner);
+ if(new Set(owners).size!==owners.length){toast('서로 다른 귀속을 선택해 주세요');return}
+ const sumOthers=rows.slice(0,n-1).reduce((s,r)=>s+(r.ratio||0),0);
+ const lastRatio=100-sumOthers;
+ if(lastRatio<0){toast('분담 비율의 합이 100%를 넘었어요');return}
+ const participants=rows.map((r,i)=>({owner:r.owner,ratio:i===n-1?lastRatio:Math.max(0,Math.min(100,r.ratio||0))}));
+ const prevSettle=DB.settings.settle?JSON.parse(JSON.stringify(DB.settings.settle)):null;
  const prevSettledThrough=DB.settings.settledThrough;
  /* settledThrough(마지막 정산 완료일)는 openSettlement/confirmSettlement가 쓰는 유일한 집계
-  * 하한선인데, 귀속쌍이 바뀌면(신규 설정 포함) 이전 쌍의 하한을 그대로 물려받으면 안 된다 —
-  * 그 쌍의 과거 공동지출이 조용히 영구 누락된다. 같은 쌍으로 비율만 바꾸는 흔한 재조정은
-  * 하한을 유지해야 하므로, 역할(A/B)이 바뀌어도 두 귀속의 집합이 같으면 '같은 쌍'으로 본다
-  * (app-evolve cycle347 critique → advance). */
- const samePair=prevSettle&&[prevSettle.ownerA,prevSettle.ownerB].sort().join('\n')===[settleDraft.ownerA,settleDraft.ownerB].sort().join('\n');
- DB.settings.settle={ownerA:settleDraft.ownerA,ownerB:settleDraft.ownerB,ratioA};
- if(!samePair)DB.settings.settledThrough=null;
+  * 하한선인데, 참가자 구성이 바뀌면(신규 설정 포함) 이전 구성의 하한을 그대로 물려받으면 안 된다 —
+  * 그 구성의 과거 공동지출이 조용히 영구 누락된다. 같은 참가자 집합으로 비율만 바꾸는 흔한 재조정은
+  * 하한을 유지해야 하므로, 순서가 바뀌어도 참가자 집합이 같으면 '같은 구성'으로 본다
+  * (app-evolve cycle347 critique → advance, cycle364 advance에서 N명으로 일반화). */
+ const prevOwners=prevSettle?settleParticipantsFromSettings(prevSettle).map(p=>p.owner):[];
+ const sameSet=prevOwners.length===owners.length&&prevOwners.slice().sort().join('\n')===owners.slice().sort().join('\n');
+ DB.settings.settle={participants};
+ if(!sameSet)DB.settings.settledThrough=null;
  save();closeSheet();renderCurrent();
  undoToast('정산 설정을 저장했어요',()=>{DB.settings.settle=prevSettle;DB.settings.settledThrough=prevSettledThrough;save();renderCurrent();toast('되돌렸어요')});
 }
@@ -5796,25 +5833,46 @@ function clearSettleConfig(){
 function openSettlement(){
  const cfg=settleConfigured();
  if(!cfg){
-  openSheet(`<h3>정산</h3><div class="desc">공동지출을 나눠 낸 두 귀속과 분담 비율을 먼저 정해주세요.</div>
-   <div class="empty"><div class="ei">${svg('users')}</div><div class="et">정산 설정이 필요해요</div><div class="es">두 귀속을 정하면 누가 얼마 보낼지 알려드려요</div></div>
+  openSheet(`<h3>정산</h3><div class="desc">공동지출을 나눠 낼 참가자(2명 이상)와 분담 비율을 먼저 정해주세요.</div>
+   <div class="empty"><div class="ei">${svg('users')}</div><div class="et">정산 설정이 필요해요</div><div class="es">참가자를 정하면 누가 얼마 보낼지 알려드려요</div></div>
    <button class="btn btn-primary" onclick="openSettleConfigForm()">정산 설정하기</button>
    <div style="height:10px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
   return;
  }
  const from=DB.settings.settledThrough?addDays(DB.settings.settledThrough,1):RANGE_FROM;
  const txns=allTxns(from,TODAY).filter(t=>t.type==='expense'&&t.shared&&!(t.adjust&&!t.inSurplus));
- const s=settlementSummary(txns,DB.assets,cfg.ownerA,cfg.ownerB,cfg.ratioA);
- const body=s.total?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
+ if(cfg.participants.length===2){
+  const s=settlementSummary(txns,DB.assets,cfg.ownerA,cfg.ownerB,cfg.ratioA);
+  const body=s.total?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
+     <div style="font-size:12.5px;color:var(--text-3);font-weight:700">공동지출 합계</div>
+     <div class="num" style="font-size:22px;font-weight:700;margin-top:2px">${comma(s.total)}원</div>
+     <div style="font-size:12.5px;color:var(--text-3);margin-top:6px">${esc(cfg.ownerA)} ${comma(s.paidA)}원 · ${esc(cfg.ownerB)} ${comma(s.paidB)}원</div>
+     ${s.diffAmount?`<div class="num" style="font-size:17px;font-weight:700;margin-top:10px">${esc(s.oweOwner)}님이 ${esc(s.oweOwner===cfg.ownerA?cfg.ownerB:cfg.ownerA)}님에게<br>${comma(s.diffAmount)}원 보내면 돼요</div>`:`<div style="font-size:14px;font-weight:700;margin-top:10px;color:var(--text-2)">이미 딱 맞게 나눠 냈어요 🎉</div>`}
+   </div>`:`<div class="empty"><div class="ei">${svg('users')}</div><div class="et">아직 같이 낸 지출이 없어요</div><div class="es">지출 입력에서 '같이 냈어요'를 켜 보세요</div></div>`;
+  openSheet(`<h3>정산</h3><div class="desc">${fmtDateFull(from)}부터 오늘까지 · ${esc(cfg.ownerA)} ${cfg.ratioA}% · ${esc(cfg.ownerB)} ${100-cfg.ratioA}% <span class="link" role="button" tabindex="0" aria-label="정산 설정" onclick="openSettleConfigForm()" onkeydown="rowKeydown(event,()=>openSettleConfigForm())">설정 ${svg('chev')}</span></div>
+   ${body}
+   ${settlementBreakdownHTML(txns,DB.assets,cfg.ownerA,cfg.ownerB)}
+   ${s.diffAmount?`<button class="btn btn-primary" style="margin-bottom:8px" onclick="confirmSettlement()">정산 완료로 표시</button>`:''}
+   <button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
+  return;
+ }
+ /* 3명 이상은 "A가 B에게 얼마" 한 줄로 못 줄이므로(app-evolve cycle364 advance), 참가자별
+  * 순부담(net=낸 돈-몫) 목록과 settleUpTransfers(logic.js)가 계산한 최소 송금 목록을 보여준다. */
+ const sn=settlementSummaryN(txns,DB.assets,cfg.participants);
+ const transfers=settleUpTransfers(sn.byOwner);
+ const ownersLabel=cfg.participants.map(p=>`${esc(p.owner)} ${p.ratio}%`).join(' · ');
+ const netRows=sn.byOwner.map(b=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>${esc(b.owner)}</span><span class="num">${comma(b.paid)}원 냄 / ${comma(b.expected)}원 몫</span></div>`).join('');
+ const transferRows=transfers.map(t=>`<div class="num" style="font-size:15px;font-weight:700;margin-top:4px">${esc(t.from)}님이 ${esc(t.to)}님에게 ${comma(t.amount)}원</div>`).join('');
+ const body=sn.total?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
     <div style="font-size:12.5px;color:var(--text-3);font-weight:700">공동지출 합계</div>
-    <div class="num" style="font-size:22px;font-weight:700;margin-top:2px">${comma(s.total)}원</div>
-    <div style="font-size:12.5px;color:var(--text-3);margin-top:6px">${esc(cfg.ownerA)} ${comma(s.paidA)}원 · ${esc(cfg.ownerB)} ${comma(s.paidB)}원</div>
-    ${s.diffAmount?`<div class="num" style="font-size:17px;font-weight:700;margin-top:10px">${esc(s.oweOwner)}님이 ${esc(s.oweOwner===cfg.ownerA?cfg.ownerB:cfg.ownerA)}님에게<br>${comma(s.diffAmount)}원 보내면 돼요</div>`:`<div style="font-size:14px;font-weight:700;margin-top:10px;color:var(--text-2)">이미 딱 맞게 나눠 냈어요 🎉</div>`}
+    <div class="num" style="font-size:22px;font-weight:700;margin-top:2px">${comma(sn.total)}원</div>
+    <div style="text-align:left;margin-top:10px">${netRows}</div>
+    ${transfers.length?`<div style="margin-top:10px">${transferRows}</div>`:`<div style="font-size:14px;font-weight:700;margin-top:10px;color:var(--text-2)">이미 딱 맞게 나눠 냈어요 🎉</div>`}
   </div>`:`<div class="empty"><div class="ei">${svg('users')}</div><div class="et">아직 같이 낸 지출이 없어요</div><div class="es">지출 입력에서 '같이 냈어요'를 켜 보세요</div></div>`;
- openSheet(`<h3>정산</h3><div class="desc">${fmtDateFull(from)}부터 오늘까지 · ${esc(cfg.ownerA)} ${cfg.ratioA}% · ${esc(cfg.ownerB)} ${100-cfg.ratioA}% <span class="link" role="button" tabindex="0" aria-label="정산 설정" onclick="openSettleConfigForm()" onkeydown="rowKeydown(event,()=>openSettleConfigForm())">설정 ${svg('chev')}</span></div>
+ openSheet(`<h3>정산</h3><div class="desc">${fmtDateFull(from)}부터 오늘까지 · ${ownersLabel} <span class="link" role="button" tabindex="0" aria-label="정산 설정" onclick="openSettleConfigForm()" onkeydown="rowKeydown(event,()=>openSettleConfigForm())">설정 ${svg('chev')}</span></div>
   ${body}
-  ${settlementBreakdownHTML(txns,DB.assets,cfg.ownerA,cfg.ownerB)}
-  ${s.diffAmount?`<button class="btn btn-primary" style="margin-bottom:8px" onclick="confirmSettlement()">정산 완료로 표시</button>`:''}
+  ${settlementBreakdownHTMLN(txns,DB.assets,cfg.participants.map(p=>p.owner))}
+  ${transfers.length?`<button class="btn btn-primary" style="margin-bottom:8px" onclick="confirmSettlementN()">정산 완료로 표시</button>`:''}
   <button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
 }
 /* openSettlement()의 합계 카드는 "얼마"만 보여줘 사용자가 그 안에 어느 지출이 섞였는지, 결제
@@ -5831,6 +5889,20 @@ function settlementBreakdownHTML(txns,assets,ownerA,ownerB){
  return `<div class="card" style="padding:4px 12px;margin-bottom:12px">
    <div style="max-height:40dvh;overflow-y:auto">${it.included.map(row).join('')}</div>
    ${it.excluded.length?`<div style="font-size:12px;color:var(--text-3);padding:10px 4px 6px">제외됨 ${it.excluded.length}건 · 결제 자산이 ${esc(ownerA)}/${esc(ownerB)} 둘 다 아니라 집계에서 빠졌어요 (${comma(it.excluded.reduce((a,x)=>a+x.amount,0))}원)</div>`:''}
+  </div>`;
+}
+/* settlementBreakdownHTML(2명 전용)을 N명 참가자로 일반화한 것(app-evolve cycle364 advance) —
+ * 포함/제외 판정과 행 렌더는 완전히 동일하고, "제외됨" 안내 문구만 "A/B 둘 다 아니라"가 아니라
+ * 참가자 목록 전체를 나열하도록 바꿨다. */
+function settlementBreakdownHTMLN(txns,assets,owners){
+ const it=settlementItemsN(txns,assets,owners);
+ if(!it.included.length&&!it.excluded.length)return '';
+ const row=x=>`<div class="manage-row" tabindex="0" role="button" aria-label="${esc(x.memo||x.category||'')} ${shortDate2(x.date)} -${comma(x.amount)}원" onclick="editTx('${x.id}','${x.recId||''}','${x.date}')" onkeydown="rowKeydown(event,()=>editTx('${x.id}','${x.recId||''}','${x.date}'))">
+   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(x.memo||x.category||'')}</span></div><div class="flow-sub"><span class="fl">${shortDate2(x.date)} · ${esc(x.payer||'')}</span></div></div>
+   <div class="amt num minus">-${comma(x.amount)}원</div></div>`;
+ return `<div class="card" style="padding:4px 12px;margin-bottom:12px">
+   <div style="max-height:40dvh;overflow-y:auto">${it.included.map(row).join('')}</div>
+   ${it.excluded.length?`<div style="font-size:12px;color:var(--text-3);padding:10px 4px 6px">제외됨 ${it.excluded.length}건 · 결제 자산이 참가자(${owners.map(esc).join('/')}) 중 누구도 아니라 집계에서 빠졌어요 (${comma(it.excluded.reduce((a,x)=>a+x.amount,0))}원)</div>`:''}
   </div>`;
 }
 /* '정산 완료로 표시' — 실제로 갚아야 할 쪽(oweOwner)의 현금 자산에서 받는 쪽 현금 자산으로
@@ -5856,6 +5928,40 @@ function doSettle(payer,receiver,amount){
  save({recsChanged:false});invalidateBalances(null,{recsChanged:false});closeSheet();renderCurrent();
  undoToast('정산 완료로 표시했어요',()=>{
   DB.txns=DB.txns.filter(t=>t.id!==tx.id);
+  DB.settings.settledThrough=prevSettledThrough;
+  save({recsChanged:false});invalidateBalances(null,{recsChanged:false});renderCurrent();toast('되돌렸어요');
+ });
+}
+/* confirmSettlement/doSettle(2명 전용)을 N명으로 일반화(app-evolve cycle364 advance) — settleUpTransfers
+ * (logic.js)가 계산한 여러 건의 송금을 각각 이체 거래로 남기고, settledThrough는 전체가 끝난 뒤 한
+ * 번만 오늘로 당긴다. 중간에 현금 자산이 없는 참가자가 있으면 그 전까지 만든 거래는 그대로 둔 채
+ * (부분 실패) 안내만 하고 멈춘다 — doSettle과 달리 undo 하나로 여러 거래를 한번에 되돌려야 하므로
+ * 생성한 tx id 목록을 모아 undoToast 하나로 묶는다. */
+function confirmSettlementN(){
+ const cfg=settleConfigured();if(!cfg||cfg.participants.length<3)return;
+ const from=DB.settings.settledThrough?addDays(DB.settings.settledThrough,1):RANGE_FROM;
+ const txns=allTxns(from,TODAY).filter(t=>t.type==='expense'&&t.shared&&!(t.adjust&&!t.inSurplus));
+ const sn=settlementSummaryN(txns,DB.assets,cfg.participants);
+ const transfers=settleUpTransfers(sn.byOwner);
+ if(!transfers.length)return;
+ const lines=transfers.map(t=>`${esc(t.from)}님이 ${esc(t.to)}님에게 ${comma(t.amount)}원`).join('<br>');
+ confirmSheet('정산 완료로 표시',`${lines}을 보낸 걸로 이체 내역을 남기고, 오늘까지 정산 완료로 표시할까요?`,'완료로 표시',()=>doSettleN(transfers));
+}
+function doSettleN(transfers){
+ if(twGuard())return;
+ const prevSettledThrough=DB.settings.settledThrough;
+ const created=[];
+ for(const t of transfers){
+  const fromId=firstCashForOwner(t.from),toId=firstCashForOwner(t.to);
+  if(!fromId||!toId){toast(`${fromId?t.to:t.from}의 현금성 자산이 없어요`);break}
+  const tx=touch({id:uid(),type:'transfer',category:'이체',memo:'정산',amount:t.amount,fromAssetId:fromId,toAssetId:toId,date:TODAY,confirmed:true});
+  DB.txns.push(tx);created.push(tx.id);
+ }
+ if(!created.length)return;
+ DB.settings.settledThrough=TODAY;
+ save({recsChanged:false});invalidateBalances(null,{recsChanged:false});closeSheet();renderCurrent();
+ undoToast('정산 완료로 표시했어요',()=>{
+  DB.txns=DB.txns.filter(t=>!created.includes(t.id));
   DB.settings.settledThrough=prevSettledThrough;
   save({recsChanged:false});invalidateBalances(null,{recsChanged:false});renderCurrent();toast('되돌렸어요');
  });
@@ -6221,12 +6327,28 @@ function firstCash(excludeId){const a=DB.assets.find(x=>isCashLike(x)&&x.id!==ex
  * 이체 트랜잭션을 만들 때 "보내는 쪽 귀속의 현금 자산 → 받는 쪽 귀속의 현금 자산"을 자동으로
  * 골라야 해서 owner 필터가 필요하다(app-evolve cycle314 advance). */
 function firstCashForOwner(owner){const a=DB.assets.find(x=>isCashLike(x)&&x.owner===owner);return a?a.id:null}
-/* DB.settings.settle(정산용 두 귀속·비율)가 설정돼 있고 두 귀속 모두 아직 DB.owners에 실재할 때만
- * 유효한 설정으로 본다 — doRenameOwner는 이름변경을 따라가지만(위 가드) owner가 통째로 삭제/합쳐지는
- * 경로(delOwner/mergeOwnerInto)는 settle까지 따라가지 않으므로, 쓰는 쪽(renderTxSheet/openSettlement)
- * 모두 이 헬퍼로 매번 존재를 재확인해 사라진 귀속을 가리키며 조용히 오작동하지 않게 한다
- * (app-evolve cycle314 advance). */
-function settleConfigured(){const s=DB.settings&&DB.settings.settle;return (s&&DB.owners.includes(s.ownerA)&&DB.owners.includes(s.ownerB))?s:null}
+/* DB.settings.settle(정산 참가자·비율)가 설정돼 있고 참가자가 2명 이상이며 전부 아직 DB.owners에
+ * 실재할 때만 유효한 설정으로 본다 — doRenameOwner는 이름변경을 따라가지만(위 가드) owner가 통째로
+ * 삭제/합쳐지는 경로(delOwner/mergeOwnerInto)는 settle까지 따라가지 않으므로, 쓰는 쪽(renderTxSheet/
+ * openSettlement) 모두 이 헬퍼로 매번 존재를 재확인해 사라진 귀속을 가리키며 조용히 오작동하지 않게
+ * 한다(app-evolve cycle314 advance). 예전엔 정확히 2귀속(ownerA/ownerB)만 허용했지만, DB.owners가
+ * 기본값부터 3개('나'/'배우자'/'공용')이고 사용자가 자유롭게 더 늘릴 수 있는데도 정산은 그 중 둘만
+ * 고르게 강제해, 제3의 귀속이 결제한 공동지출이 집계에서 조용히 빠지는 구조적 결함이 있었다
+ * (app-evolve cycle364 critique). settleParticipantsFromSettings(logic.js)로 옛 {ownerA,ownerB,
+ * ratioA} 구조와 새 {participants:[{owner,ratio},...]} 구조를 동일하게 펼쳐 N명(2명 이상)을
+ * 검증한다. 반환값은 항상 participants 배열을 갖고, 참가자가 정확히 2명일 때만(가장 흔한 경우) 기존
+ * 호출부가 그대로 쓸 수 있게 ownerA/ownerB/ratioA도 함께 채워준다 — 3명 이상이면 "누가 누구에게"
+ * 한 줄로 못 줄이므로 호출부가 cfg.participants를 직접 순회해야 한다. */
+function settleConfigured(){
+ const parts=settleParticipantsFromSettings(DB.settings&&DB.settings.settle);
+ if(!parts||parts.length<2)return null;
+ if(!parts.every(p=>p.owner&&DB.owners.includes(p.owner)))return null;
+ const owners=parts.map(p=>p.owner);
+ if(new Set(owners).size!==owners.length)return null;
+ const cfg={participants:parts};
+ if(parts.length===2){cfg.ownerA=parts[0].owner;cfg.ownerB=parts[1].owner;cfg.ratioA=parts[0].ratio}
+ return cfg;
+}
 function catListOf(type){return type==='income'?DB.categories.income:type==='saving'?DB.categories.saving:type==='expense'?DB.categories.expense:[]}
 /* tx(내역 입력)/rec(반복 설정) 폼이 공유하는 '반복일' 선택 UI. pfx='tx' 또는 'rec' */
 function dayPickerHTML(d,pfx){
@@ -11973,7 +12095,7 @@ function homeAlerts(neg){
   * (expense·shared·조정 제외)로 settlementSummary를 돌려 diffAmount를 구하고, settleAlertBucket
   * (logic.js)으로 문턱/버킷 판정만 추가한다 — 집계 공식 자체는 건드리지 않는다. */
  const _scfg=settleConfigured();
- if(_scfg){
+ if(_scfg&&_scfg.participants.length===2){ /* 3인 이상 정산(N인 분담, app-evolve cycle364 advance)은 "누가 누구에게"가 아니라 참가자별 순부담 목록이라 이 2인 전용 알림 문구가 맞지 않음 — 알림 일반화는 다음 사이클로 미룸(참가자가 2명일 때만 기존 그대로 동작) */
   const _sfrom=DB.settings.settledThrough?addDays(DB.settings.settledThrough,1):RANGE_FROM;
   const _stxns=allTxns(_sfrom,TODAY).filter(t=>t.type==='expense'&&t.shared&&!(t.adjust&&!t.inSurplus));
   const _ssum=settlementSummary(_stxns,DB.assets,_scfg.ownerA,_scfg.ownerB,_scfg.ratioA);

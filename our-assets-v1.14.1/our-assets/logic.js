@@ -220,21 +220,125 @@ function filterTxnsByOwner(txns,assets,owner){
  * 합치면 분담 계산 자체가 틀어지므로, 이 한계는 호출부(openSettlement)가 UI 안내로 문서화한다.
  * total이 0이면(공동지출 없음) diffAmount=0·oweOwner=null로 "정산할 것 없음"을 나타낸다. */
 function settlementSummary(txns,assets,ownerA,ownerB,ratioA){
+ const ra=(ratioA==null?50:ratioA);
+ const r=settlementSummaryN(txns,assets,[{owner:ownerA,ratio:ra},{owner:ownerB,ratio:100-ra}]);
+ const [a,b]=r.byOwner;
+ const diffAmount=Math.abs(a.net);
+ const oweOwner=diffAmount===0?null:(a.net<0?ownerA:ownerB);
+ return {paidA:a.paid,paidB:b.paid,total:r.total,expectedA:a.expected,expectedB:b.expected,diffAmount,oweOwner};
+}
+/* settlementSummary(2귀속 전용)를 N명(3명 이상) 참가자로 일반화한 것(app-evolve cycle364 advance)
+ * — DB.owners가 기본값부터 3개('나'/'배우자'/'공용')라 settleConfigured()가 2귀속으로 하드코딩돼
+ * 있으면 사용자가 자유롭게 추가한 제3의 귀속이 지불한 공용 지출을 정산이 조용히 빠뜨리던 공백을
+ * 메운다. participants=[{owner,ratio}, ...] 순서대로 기대분담액을 계산하되, 마지막 참가자는
+ * round() 누적 오차가 나지 않도록 "전체 - 앞사람들 합"으로 나머지를 떠안는다 — 2인 케이스의 기존
+ * settlementSummary가 expectedB=total-expectedA로 하던 것과 완전히 같은 방식이라 결과가 바이트
+ * 단위로 일치한다(byOwner[0]=expectedA 계산, byOwner[1]=나머지). net=paid-expected: 음수면 그
+ * 귀속이 더 적게 내서 갚아야 할 쪽, 양수면 더 내서 받아야 할 쪽. */
+function settlementSummaryN(txns,assets,participants){
  const ownerOf=id=>{if(!id)return null;const a=(assets||[]).find(x=>x.id===id);return a?a.owner:null};
- let paidA=0,paidB=0;
+ const owners=(participants||[]).map(p=>p.owner);
+ const paid={};owners.forEach(o=>{paid[o]=0});
  (txns||[]).forEach(t=>{
   if(t.type!=='expense'||!t.shared)return;
   const o=ownerOf(t.fromAssetId);
-  if(o===ownerA)paidA+=t.amount;
-  else if(o===ownerB)paidB+=t.amount;
+  if(o!=null&&owners.includes(o))paid[o]+=t.amount;
  });
- const total=paidA+paidB;
- const ra=(ratioA==null?50:ratioA);
- const expectedA=total?Math.round(total*ra/100):0;
- const expectedB=total-expectedA;
- const diffAmount=Math.abs(paidA-expectedA);
- const oweOwner=diffAmount===0?null:(paidA>expectedA?ownerB:ownerA);
- return {paidA,paidB,total,expectedA,expectedB,diffAmount,oweOwner};
+ const total=owners.reduce((s,o)=>s+paid[o],0);
+ let assigned=0;
+ const byOwner=(participants||[]).map((p,i)=>{
+  const ratio=p.ratio==null?0:p.ratio;
+  const isLast=i===participants.length-1;
+  const expected=isLast?(total-assigned):(total?Math.round(total*ratio/100):0);
+  if(!isLast)assigned+=expected;
+  return {owner:p.owner,ratio,paid:paid[p.owner],expected,net:paid[p.owner]-expected};
+ });
+ return {byOwner,total};
+}
+/* settlementItems(아래)와 짝을 이루는 N명용 "포함/제외 내역" 일반화(app-evolve cycle364 advance).
+ * owners 배열(길이 2 이상) 중 하나가 결제한 공동지출만 included, 그 외(제3 귀속 등)는 excluded로
+ * 나눈다 — 판정 기준은 settlementSummaryN과 동일(Object.prototype.hasOwnProperty 대신 includes를
+ * 쓰는 이유는 여기선 합산용 누적 객체가 필요 없어서일 뿐 의미는 같다). */
+function settlementItemsN(txns,assets,owners){
+ const ownerOf=id=>{if(!id)return null;const a=(assets||[]).find(x=>x.id===id);return a?a.owner:null};
+ const included=[],excluded=[];
+ (txns||[]).forEach(t=>{
+  if(t.type!=='expense'||!t.shared)return;
+  const o=ownerOf(t.fromAssetId);
+  const item={id:t.id,date:t.date,memo:t.memo,category:t.category,amount:t.amount,payer:o,isRec:!!t.isRec,recId:t.recId||null};
+  ((owners||[]).includes(o)?included:excluded).push(item);
+ });
+ const byDate=(a,b)=>a.date<b.date?-1:a.date>b.date?1:0;
+ included.sort(byDate);excluded.sort(byDate);
+ return {included,excluded};
+}
+/* 3인 이상 정산은 "A가 B에게 얼마" 한 줄로 끝나지 않으므로, settlementSummaryN()이 돌려준
+ * byOwner(귀속별 net=paid-expected)를 받아 실제로 몇 번의 송금으로 전원이 0에 맞춰지는지 최소
+ * 송금 목록을 만든다(app-evolve cycle364 advance). 가장 많이 빚진 사람과 가장 많이 받을 사람을
+ * 반복해서 짝지어 상계하는 단순 탐욕 알고리즘 — 이론상 최소 송금 횟수를 보장하는 최적해는 아니지만
+ * (계획에서도 "최적 송금 매트릭스는 1차 범위 밖"으로 명시), 2~4인 규모의 가계부 정산에선 결과가
+ * 직관적이고 송금 횟수도 충분히 적다. net 합이 0이 아니면(호출자가 잘못된 입력을 줬다는 뜻) 남는
+ * 쪽은 그냥 무시하고 매칭 가능한 만큼만 돌려준다 — 이 모듈은 DB/화면에 관여하지 않는 순수 계산. */
+function settleUpTransfers(byOwner){
+ const debtors=(byOwner||[]).filter(b=>b.net<0).map(b=>({owner:b.owner,amt:-b.net})).sort((a,b)=>b.amt-a.amt);
+ const creditors=(byOwner||[]).filter(b=>b.net>0).map(b=>({owner:b.owner,amt:b.net})).sort((a,b)=>b.amt-a.amt);
+ const out=[];
+ let i=0,j=0;
+ while(i<debtors.length&&j<creditors.length){
+  const d=debtors[i],c=creditors[j];
+  const amt=Math.min(d.amt,c.amt);
+  if(amt>0)out.push({from:d.owner,to:c.owner,amount:amt});
+  d.amt-=amt;c.amt-=amt;
+  if(d.amt<=0.5)i++;
+  if(c.amt<=0.5)j++;
+ }
+ return out;
+}
+/* DB.settings.settle의 데이터 모델 마이그레이션(app-evolve cycle364 advance) — 오랫동안
+ * {ownerA,ownerB,ratioA} 2귀속 전용 구조였는데, 이제 참가자 수 제한이 없는 {participants:
+ * [{owner,ratio}, ...]} 구조로 바뀐다. 기존 사용자의 저장된 옛 구조를 읽을 때마다(저장은 항상 새
+ * 구조로) 조용히 동등한 participants 배열로 변환해줘, 클라우드 동기화로 아직 구버전 데이터를 들고
+ * 있는 다른 기기와 섞여도 양쪽 다 깨지지 않는다. s 자체가 없으면 null(정산 미설정). */
+function settleParticipantsFromSettings(s){
+ if(!s)return null;
+ if(Array.isArray(s.participants))return s.participants.map(p=>({owner:p.owner,ratio:p.ratio}));
+ if(s.ownerA!=null&&s.ownerB!=null){
+  const ra=s.ratioA==null?50:s.ratioA;
+  return [{owner:s.ownerA,ratio:ra},{owner:s.ownerB,ratio:100-ra}];
+ }
+ return null;
+}
+/* delOwner/doRenameOwner/mergeOwnerInto가 귀속을 지우거나 이름을 바꾸거나 합칠 때 "이 귀속이
+ * 정산 설정에 쓰이고 있었나"를 판정하던 로직(settle.ownerA===o||settle.ownerB===o)을 participants
+ * 배열 구조에서도 그대로 쓸 수 있게 일반화한 순수 함수(app-evolve cycle364 advance). 구/신 두
+ * 구조를 settleParticipantsFromSettings로 동일하게 펼쳐 판정하므로 호출부는 구조를 몰라도 된다. */
+function settleTouchesOwner(settle,owner){
+ const parts=settleParticipantsFromSettings(settle);
+ return !!(parts&&parts.some(p=>p.owner===owner));
+}
+/* doRenameOwner/mergeOwnerInto가 이름변경·합치기로 정산 당사자 이름을 따라가게 하던 로직을
+ * participants 배열 구조로 일반화(app-evolve cycle364 advance). settle을 직접 변형하지 않고 항상
+ * 새 participants 배열을 돌려주는 순수 함수 — 바뀐 뒤 같은 귀속이 두 번 이상 나타나면(예: 합치기로
+ * 두 참가자가 하나가 된 경우) 정산의 "서로 다른 사람" 전제가 깨지므로 null(정산 끄기)을 돌려준다.
+ * settle이 애초에 없거나 from을 포함하지 않으면 입력을 그대로(구조 변환 없이) 돌려준다 — 호출부가
+ * settleTouchesOwner로 먼저 걸러 쓰는 게 기본이지만, 방어적으로 no-op을 보장한다. */
+function settleReplaceOwner(settle,from,to){
+ if(!settleTouchesOwner(settle,from))return settle;
+ if(Array.isArray(settle.participants)){
+  const parts=settle.participants.map(p=>p.owner===from?{owner:to,ratio:p.ratio}:p);
+  const owners=parts.map(p=>p.owner);
+  if(new Set(owners).size!==owners.length)return null;
+  return {participants:parts};
+ }
+ /* settle이 아직 옛 {ownerA,ownerB,ratioA} 구조면 settleParticipantsFromSettings로 펼치지 않고
+  * 그 구조 그대로 owner 이름만 바꿔 돌려준다 — 단순 이름변경/합치기에 굳이 새 participants
+  * 구조로 마이그레이션을 강제할 필요가 없고(저장은 그대로 구버전으로 남아 있어도 settleConfigured가
+  * 읽을 때 항상 마이그레이션해서 보여주므로 무해함), 기존 2인 사용자 입장에서 저장 내용이 뜻밖에
+  * 통째로 바뀌어 보이지 않게 한다(app-evolve cycle364 advance). */
+ const ownerA=settle.ownerA===from?to:settle.ownerA;
+ const ownerB=settle.ownerB===from?to:settle.ownerB;
+ if(ownerA===ownerB)return null;
+ return {ownerA,ownerB,ratioA:settle.ratioA};
 }
 /* settlementSummary는 집계 총액만 돌려줘, openSettlement이 "얼마"는 보여줘도 "뭐가 합쳐진 건지"는
  * 전혀 보여줄 방법이 없었다 — shared 플래그가 몇 주 전 지출에서 잘못 켜져 있어도 정산 직전까지
@@ -243,17 +347,7 @@ function settlementSummary(txns,assets,ownerA,ownerB,ratioA){
  * 판정으로 집계에 포함된/제외된 건을 각각 날짜순으로 추려 돌려준다 — 합산 공식은 그대로 두고 그
  * 위에 상세 내역만 덧붙인다(app-evolve cycle356 advance). */
 function settlementItems(txns,assets,ownerA,ownerB){
- const ownerOf=id=>{if(!id)return null;const a=(assets||[]).find(x=>x.id===id);return a?a.owner:null};
- const included=[],excluded=[];
- (txns||[]).forEach(t=>{
-  if(t.type!=='expense'||!t.shared)return;
-  const o=ownerOf(t.fromAssetId);
-  const item={id:t.id,date:t.date,memo:t.memo,category:t.category,amount:t.amount,payer:o,isRec:!!t.isRec,recId:t.recId||null};
-  (o===ownerA||o===ownerB?included:excluded).push(item);
- });
- const byDate=(a,b)=>a.date<b.date?-1:a.date>b.date?1:0;
- included.sort(byDate);excluded.sort(byDate);
- return {included,excluded};
+ return settlementItemsN(txns,assets,[ownerA,ownerB]);
 }
 /* 정산(settlement)은 budgetOver/goalBehind/debtBehind처럼 homeAlerts()의 홈 카드·OS 푸시 알림
  * 체계에 전혀 올라가 있지 않았다 — openSettlement()을 직접 열어야만 공동지출이 얼마나 쌓였는지

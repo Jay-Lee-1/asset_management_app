@@ -235,7 +235,7 @@ const FUNCTIONS = [
   // 정산(settlement, app-evolve cycle314 critique/advance): settlementSummary(logic.js)를 둘러싼
   // 설정 폼/화면/완료처리. firstCashForOwner/settleConfigured는 doSettle/renderTxSheet/renderMenu가
   // 공유하는 작은 헬퍼라 그 호출부들과 같은 sandbox에 항상 함께 올라가야 한다.
-  'firstCashForOwner', 'settleConfigured', 'openSettleConfigForm', 'settleConfigPickA', 'settleConfigPickB', 'settleRatioInput', 'renderSettleConfigForm', 'saveSettleConfig', 'clearSettleConfig', 'openSettlement', 'settlementBreakdownHTML', 'confirmSettlement', 'doSettle',
+  'firstCashForOwner', 'settleConfigured', 'settleDraftRows', 'openSettleConfigForm', 'settleConfigPick', 'settleConfigAddRow', 'settleConfigRemoveRow', 'settleConfigRatioInput', 'settleConfigEqualSplit', 'renderSettleConfigForm', 'saveSettleConfig', 'clearSettleConfig', 'openSettlement', 'settlementBreakdownHTML', 'settlementBreakdownHTMLN', 'confirmSettlement', 'doSettle', 'confirmSettlementN', 'doSettleN',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
@@ -20665,6 +20665,143 @@ test('settlementItems: 반복거래가 펼친 가상 인스턴스(isRec, recId)�
   assert.strictEqual(x.memo, '넷플릭스');
 });
 
+/* ---------- settlementSummaryN/settlementItemsN/settleUpTransfers: settlementSummary/settlementItems
+ * (2귀속 전용)를 N명(3명 이상) 참가자로 일반화한 것(app-evolve cycle364 critique → advance) —
+ * DB.owners가 기본값부터 3개('나'/'배우자'/'공용')이고 자유롭게 더 늘릴 수 있는데도 정산이 정확히
+ * 2귀속만 받아들여, 제3의 귀속이 결제한 공동지출이 조용히 집계에서 빠지던 구조적 결함을 고친다. ---------- */
+test('settlementSummaryN: 각자 자기 분담 비율대로 정확히 낸 금액이면(라운딩까지 맞춘 금액) 전원 net=0이다', () => {
+  // ratio 33/33/34(마지막이 나머지)에 대해 total=30000일 때 expected=[9900,9900,10200] —
+  // paid를 그 expected와 똑같이 맞춰 라운딩까지 정확히 일치시킨다.
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }, { id: 'a3', owner: '아이' }];
+  const txns = [
+    { type: 'expense', fromAssetId: 'a1', amount: 9900, shared: true, date: '2026-01-01' },
+    { type: 'expense', fromAssetId: 'a2', amount: 9900, shared: true, date: '2026-01-02' },
+    { type: 'expense', fromAssetId: 'a3', amount: 10200, shared: true, date: '2026-01-03' },
+  ];
+  const participants = [{ owner: '나', ratio: 33 }, { owner: '배우자', ratio: 33 }, { owner: '아이', ratio: 34 }];
+  const s = sandbox.settlementSummaryN(txns, assets, participants);
+  assert.strictEqual(s.total, 30000);
+  s.byOwner.forEach((b) => assert.strictEqual(b.net, 0, `${b.owner}의 net은 0이어야 함`));
+});
+test('settlementSummaryN: 마지막 참가자는 반올림 누적오차 없이 "전체-앞사람들 합"으로 나머지를 떠안아 expected 합이 항상 total과 정확히 같다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }, { id: 'a3', owner: '아이' }];
+  const txns = [{ type: 'expense', fromAssetId: 'a1', amount: 10000, shared: true, date: '2026-01-01' }];
+  const participants = [{ owner: '나', ratio: 33.3 }, { owner: '배우자', ratio: 33.3 }, { owner: '아이', ratio: 33.4 }];
+  const s = sandbox.settlementSummaryN(txns, assets, participants);
+  const sumExpected = s.byOwner.reduce((a, b) => a + b.expected, 0);
+  assert.strictEqual(sumExpected, s.total, 'expected 합계는 항상 total과 정확히 일치해야 함(마지막이 나머지를 떠안음)');
+});
+test('settlementSummaryN: 결제 자산이 참가자 중 누구의 것도 아니면("공용" 등 제3 owner) 집계에서 제외된다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }, { id: 'a3', owner: '공용' }];
+  const txns = [
+    { type: 'expense', fromAssetId: 'a1', amount: 10000, shared: true, date: '2026-01-01' },
+    { type: 'expense', fromAssetId: 'a3', amount: 99999, shared: true, date: '2026-01-02' },
+  ];
+  const s = sandbox.settlementSummaryN(txns, assets, [{ owner: '나', ratio: 50 }, { owner: '배우자', ratio: 50 }]);
+  assert.strictEqual(s.total, 10000, "'공용'이 낸 지출은 참가자가 아니므로 제외돼야 함");
+});
+test('settlementSummaryN: 2명 입력이면 기존 settlementSummary(2귀속 전용)와 바이트 단위로 동일한 total/paid/expected를 낸다(하위호환 회귀 가드)', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [
+    { type: 'expense', fromAssetId: 'a1', amount: 30000, shared: true, date: '2026-01-01' },
+    { type: 'expense', fromAssetId: 'a2', amount: 10000, shared: true, date: '2026-01-02' },
+  ];
+  const old = sandbox.settlementSummary(txns, assets, '나', '배우자', 60);
+  const n = sandbox.settlementSummaryN(txns, assets, [{ owner: '나', ratio: 60 }, { owner: '배우자', ratio: 40 }]);
+  assert.strictEqual(n.total, old.total);
+  assert.strictEqual(n.byOwner[0].paid, old.paidA);
+  assert.strictEqual(n.byOwner[1].paid, old.paidB);
+  assert.strictEqual(n.byOwner[0].expected, old.expectedA);
+  assert.strictEqual(n.byOwner[1].expected, old.expectedB);
+});
+test('settlementItemsN: owners 배열에 있는 참가자가 결제한 지출만 included, 그 외(제3 귀속)는 excluded다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }, { id: 'a3', owner: '공용' }];
+  const txns = [
+    { id: 't1', type: 'expense', fromAssetId: 'a1', amount: 10000, shared: true, date: '2026-01-01' },
+    { id: 't2', type: 'expense', fromAssetId: 'a3', amount: 5000, shared: true, date: '2026-01-02' },
+  ];
+  const it = sandbox.settlementItemsN(txns, assets, ['나', '배우자']);
+  assert.strictEqual(it.included.length, 1);
+  assert.strictEqual(it.included[0].id, 't1');
+  assert.strictEqual(it.excluded.length, 1);
+  assert.strictEqual(it.excluded[0].payer, '공용');
+});
+test('settleUpTransfers: 3명 중 한 명만 전액 결제했으면 나머지 둘이 각자 자기 몫만큼만 그 한 명에게 보낸다(상계 횟수 최소화)', () => {
+  const byOwner = [
+    { owner: '나', net: 20000 },
+    { owner: '배우자', net: -10000 },
+    { owner: '아이', net: -10000 },
+  ];
+  const t = sandbox.settleUpTransfers(byOwner);
+  assert.strictEqual(t.length, 2, '빚진 둘이 각자 한 번씩, 총 2건이면 충분함');
+  const total = t.reduce((a, x) => a + x.amount, 0);
+  assert.strictEqual(total, 20000);
+  t.forEach((x) => assert.strictEqual(x.to, '나'));
+});
+test('settleUpTransfers: net이 전부 0이면(이미 딱 맞게 나눴음) 송금 목록이 비어있다', () => {
+  const t = sandbox.settleUpTransfers([{ owner: '나', net: 0 }, { owner: '배우자', net: 0 }, { owner: '아이', net: 0 }]);
+  assert.strictEqual(t.length, 0);
+});
+test('settleUpTransfers: 금액이 딱 맞게 상계되지 않아도(3명 이상 비대칭) 합계가 전체 빚/받을돈 합과 일치한다', () => {
+  const byOwner = [
+    { owner: 'A', net: 15000 },
+    { owner: 'B', net: 5000 },
+    { owner: 'C', net: -12000 },
+    { owner: 'D', net: -8000 },
+  ];
+  const t = sandbox.settleUpTransfers(byOwner);
+  const total = t.reduce((a, x) => a + x.amount, 0);
+  assert.strictEqual(total, 20000, '받을 돈 합(15000+5000)과 빚진 돈 합(12000+8000) 모두 20000이어야 함');
+});
+test('settleParticipantsFromSettings: participants 배열이 있으면 그대로(복사해) 돌려준다', () => {
+  const r = sandbox.settleParticipantsFromSettings({ participants: [{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 60 }] });
+  assert.strictEqual(JSON.stringify(r), JSON.stringify([{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 60 }]));
+});
+test('settleParticipantsFromSettings: 옛 {ownerA,ownerB,ratioA} 구조를 participants 2개짜리 배열로 마이그레이션한다', () => {
+  const r = sandbox.settleParticipantsFromSettings({ ownerA: '나', ownerB: '배우자', ratioA: 70 });
+  assert.strictEqual(JSON.stringify(r), JSON.stringify([{ owner: '나', ratio: 70 }, { owner: '배우자', ratio: 30 }]));
+});
+test('settleParticipantsFromSettings: ratioA가 없으면(구버전 기본값) 50/50으로 본다', () => {
+  const r = sandbox.settleParticipantsFromSettings({ ownerA: '나', ownerB: '배우자' });
+  assert.strictEqual(JSON.stringify(r), JSON.stringify([{ owner: '나', ratio: 50 }, { owner: '배우자', ratio: 50 }]));
+});
+test('settleParticipantsFromSettings: s가 없으면(정산 미사용) null이다', () => {
+  assert.strictEqual(sandbox.settleParticipantsFromSettings(null), null);
+  assert.strictEqual(sandbox.settleParticipantsFromSettings(undefined), null);
+});
+test('settleTouchesOwner: participants 배열 구조에서도 해당 귀속이 참가자인지 판정한다', () => {
+  const settle = { participants: [{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 20 }] };
+  assert.strictEqual(sandbox.settleTouchesOwner(settle, '아이'), true);
+  assert.strictEqual(sandbox.settleTouchesOwner(settle, '엄마'), false);
+});
+test('settleTouchesOwner: 옛 ownerA/ownerB 구조에서도 그대로 판정한다(하위호환)', () => {
+  const settle = { ownerA: '나', ownerB: '배우자', ratioA: 50 };
+  assert.strictEqual(sandbox.settleTouchesOwner(settle, '나'), true);
+  assert.strictEqual(sandbox.settleTouchesOwner(settle, '아이'), false);
+});
+test('settleTouchesOwner: settle 자체가 없으면 false다', () => {
+  assert.strictEqual(sandbox.settleTouchesOwner(null, '나'), false);
+});
+test('settleReplaceOwner: participants 배열에서 해당 귀속만 새 이름으로 바꾸고 나머지는 그대로 둔다', () => {
+  const settle = { participants: [{ owner: '아빠', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 20 }] };
+  const r = sandbox.settleReplaceOwner(settle, '아빠', '아버지');
+  assert.strictEqual(JSON.stringify(r), JSON.stringify({ participants: [{ owner: '아버지', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 20 }] }));
+});
+test('settleReplaceOwner: 바뀐 뒤 같은 귀속이 두 번 나타나면(합치기로 두 참가자가 하나가 된 경우) null(정산 끄기)을 돌려준다', () => {
+  const settle = { participants: [{ owner: '아빠', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 20 }] };
+  const r = sandbox.settleReplaceOwner(settle, '아빠', '배우자');
+  assert.strictEqual(r, null);
+});
+test('settleReplaceOwner: 옛 ownerA/ownerB 구조는 그 구조 그대로(참가자 배열로 바꾸지 않고) owner 이름만 바꿔 돌려준다(하위호환)', () => {
+  const settle = { ownerA: '아빠', ownerB: '배우자', ratioA: 60 };
+  const r = sandbox.settleReplaceOwner(settle, '아빠', '아버지');
+  assert.strictEqual(JSON.stringify(r), JSON.stringify({ ownerA: '아버지', ownerB: '배우자', ratioA: 60 }));
+});
+test('settleReplaceOwner: settle이 from을 포함하지 않으면 입력을 그대로(변형 없이) 돌려준다', () => {
+  const settle = { ownerA: '나', ownerB: '배우자', ratioA: 50 };
+  assert.strictEqual(sandbox.settleReplaceOwner(settle, '아이', '아기'), settle);
+});
+
 /* ---------- settleAlertBucket: homeAlerts()의 settleDue 카드/OS 푸시가 쓰는 문턱/버킷 판정
  * (app-evolve cycle360 advance) — budgetOver/goalBehind/debtBehind/allocationDrift는 전부 홈
  * 알림이 있는데 정산만 없던 공백을 메운다. diffAmount 자체는 settlementSummary가 이미 계산하므로
@@ -27329,10 +27466,26 @@ test('settleConfigured: DB.settings 자체가 없어도 터지지 않고 null을
   sandbox.DB = { owners: ['나', '아내'] };
   assert.strictEqual(sandbox.settleConfigured(), null);
 });
-test('settleConfigured: 두 귀속이 모두 DB.owners에 실재하면 settle 객체를 그대로 반환한다', () => {
+test('settleConfigured: 두 귀속이 모두 DB.owners에 실재하면 participants로 펼치고 2명이라 ownerA/ownerB/ratioA도 함께 채워 반환한다(app-evolve cycle364 advance로 N명 일반화 — 더는 저장된 객체 참조 그대로가 아니라 매번 새로 정규화한 cfg를 돌려줌)', () => {
   const settle = { ownerA: '나', ownerB: '아내', ratioA: 50 };
   sandbox.DB = { owners: ['나', '아내'], settings: { settle } };
-  assert.strictEqual(sandbox.settleConfigured(), settle);
+  // vm 샌드박스 realm 문제로 deepStrictEqual({...},{...})가 내용이 같아도 실패하는 기존 이슈(cycle309/313)
+  // — JSON.stringify 비교로 피해간다(테스트 전용 이슈, 앱 코드는 무관).
+  assert.strictEqual(JSON.stringify(sandbox.settleConfigured()), JSON.stringify({ participants: [{ owner: '나', ratio: 50 }, { owner: '아내', ratio: 50 }], ownerA: '나', ownerB: '아내', ratioA: 50 }));
+});
+test('settleConfigured: 참가자가 3명 이상이면(N인 분담) participants만 채우고 ownerA/ownerB/ratioA는 undefined다 — "누가 누구에게" 한 줄로 못 줄여서 호출부가 participants를 직접 순회해야 함(app-evolve cycle364 advance)', () => {
+  sandbox.DB = { owners: ['나', '배우자', '아이'], settings: { settle: { participants: [{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 20 }] } } };
+  const cfg = sandbox.settleConfigured();
+  assert.strictEqual(JSON.stringify(cfg.participants), JSON.stringify([{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 20 }]));
+  assert.strictEqual(cfg.ownerA, undefined);
+});
+test('settleConfigured: 참가자 중 하나라도 DB.owners에서 사라졌으면 N명이어도 무효(null)다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: { settle: { participants: [{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 20 }] } } };
+  assert.strictEqual(sandbox.settleConfigured(), null, '아이가 DB.owners에 없으면 무효');
+});
+test('settleConfigured: 참가자가 1명뿐이면(배열 길이 부족) 무효(null)다', () => {
+  sandbox.DB = { owners: ['나'], settings: { settle: { participants: [{ owner: '나', ratio: 100 }] } } };
+  assert.strictEqual(sandbox.settleConfigured(), null);
 });
 test('settleConfigured: ownerA/ownerB 중 하나라도 DB.owners에서 사라졌으면(삭제·합치기 등) null을 반환한다', () => {
   sandbox.DB = { owners: ['나'], settings: { settle: { ownerA: '나', ownerB: '아내', ratioA: 50 } } };
@@ -28281,12 +28434,14 @@ test('mergeOwnerInto: 튜토리얼 모드 중에는 twGuard가 막아서 실제�
 test('mergeOwnerInto: DB.settings.settle의 ownerA/ownerB가 from을 보고 있었다면 toName으로 함께 옮겨간다(doRenameOwner와 동일한 규칙)', () => {
   sandbox.DB = { owners: ['나', '아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '아빠', ownerB: '배우자', ratioA: 60 } } };
   sandbox.mergeOwnerInto(1, '나');
-  assert.deepStrictEqual(sandbox.DB.settings.settle, { ownerA: '나', ownerB: '배우자', ratioA: 60 }, 'ownerA가 from이면 toName으로, ratioA는 그대로 보존돼야 함');
+  // vm 샌드박스 realm 문제(위 settleConfigured 테스트와 동일 클래스) — settleReplaceOwner(logic.js)가
+  // vm 컨텍스트 안에서 새로 만든 객체라 JSON.stringify 비교로 피해간다.
+  assert.strictEqual(JSON.stringify(sandbox.DB.settings.settle), JSON.stringify({ ownerA: '나', ownerB: '배우자', ratioA: 60 }), 'ownerA가 from이면 toName으로, ratioA는 그대로 보존돼야 함');
 });
 test('mergeOwnerInto: settle.ownerB가 from이어도 동일하게 toName으로 옮겨간다', () => {
   sandbox.DB = { owners: ['나', '아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '배우자', ownerB: '아빠', ratioA: 40 } } };
   sandbox.mergeOwnerInto(1, '나');
-  assert.deepStrictEqual(sandbox.DB.settings.settle, { ownerA: '배우자', ownerB: '나', ratioA: 40 });
+  assert.strictEqual(JSON.stringify(sandbox.DB.settings.settle), JSON.stringify({ ownerA: '배우자', ownerB: '나', ratioA: 40 }));
 });
 test('mergeOwnerInto: 정산의 두 당사자(ownerA/ownerB)를 서로 합치면 ownerA===ownerB가 되어 정산 자체가 무의미해지므로 settle을 꺼버린다', () => {
   sandbox.DB = { owners: ['아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '아빠', ownerB: '배우자', ratioA: 50 } } };
@@ -28307,7 +28462,7 @@ test('mergeOwnerInto: DB.settings가 아예 없으면(정산 미사용) settle �
 test('mergeOwnerInto: undoToast로 되돌리면 DB.settings.settle도 합치기 전(ownerA가 from이던) 상태로 복원된다', () => {
   sandbox.DB = { owners: ['나', '아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '아빠', ownerB: '배우자', ratioA: 60 } } };
   sandbox.mergeOwnerInto(1, '나');
-  assert.deepStrictEqual(sandbox.DB.settings.settle, { ownerA: '나', ownerB: '배우자', ratioA: 60 });
+  assert.strictEqual(JSON.stringify(sandbox.DB.settings.settle), JSON.stringify({ ownerA: '나', ownerB: '배우자', ratioA: 60 }));
   sandbox.lastUndo.undoFn();
   // prevSettle이 vm 컨텍스트 안에서 Object.assign으로 만들어지는 새 객체라(mergeOwnerInto의 nwHistory
   // 합산 케이스와 동일한 realm 차이, 위 "DB.nwHistory의 byOwner는..." 테스트 주석 참고) deepStrictEqual이
@@ -28420,98 +28575,142 @@ test('openSettleConfigForm/renderSettleConfigForm: 미설정 상태로 열면 �
   assert.ok(html.includes('value="50"'), '비율 기본값은 50이어야 함');
   assert.ok(!html.includes('정산 끄기'), '아직 설정이 없으면 끄기 링크가 없어야 함');
 });
-test('openSettleConfigForm: 이미 설정돼 있으면 그 값을 그대로 불러오고 "끄기" 링크가 보인다', () => {
+test('openSettleConfigForm: 이미 설정돼 있으면(옛 2귀속 구조) participants로 펼쳐 불러오고 "끄기" 링크가 보인다', () => {
   sandbox.DB = { owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 70 } } };
   sandbox.lastSheetHtml = null;
   sandbox.openSettleConfigForm();
   const html = sandbox.lastSheetHtml;
-  assert.strictEqual(sandbox.settleDraft.ratioA, 70);
+  assert.strictEqual(JSON.stringify(sandbox.settleDraft.rows), JSON.stringify([{ owner: '나', ratio: 70 }, { owner: '배우자', ratio: 30 }]));
   assert.ok(html.includes('value="70"'));
   assert.ok(html.includes('정산 끄기'));
 });
-test('settleConfigPickA/settleConfigPickB: 상대쪽에 고른 귀속을 서로의 선택 목록에서 뺀다', () => {
+test('openSettleConfigForm: 이미 N명(3명 이상) participants로 설정돼 있으면 행이 그만큼 그려진다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '아이'], settings: { settle: { participants: [{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 20 }] } } };
+  sandbox.lastSheetHtml = null;
+  sandbox.openSettleConfigForm();
+  assert.strictEqual(sandbox.settleDraft.rows.length, 3);
+  assert.ok((sandbox.lastSheetHtml.match(/참가자 \d/g) || []).length === 3);
+});
+test('settleConfigPick: 다른 행에 이미 고른 귀속을 이 행의 선택 목록에서 뺀다', () => {
   sandbox.DB = { owners: ['나', '배우자', '아이'] };
-  sandbox.settleDraft = { ownerA: null, ownerB: '배우자', ratioA: 50 };
+  sandbox.settleDraft = { rows: [{ owner: null, ratio: 50 }, { owner: '배우자', ratio: 50 }] };
   sandbox.lastPickerHtml = null;
-  sandbox.settleConfigPickA();
-  assert.ok(!sandbox.lastPickerHtml.includes('data-val="배우자"'), 'A를 고를 때 이미 B로 고른 귀속은 제외돼야 함');
+  sandbox.settleConfigPick(0);
+  assert.ok(!sandbox.lastPickerHtml.includes('data-val="배우자"'), '0번 행을 고를 때 1번 행이 이미 고른 귀속은 제외돼야 함');
   assert.ok(sandbox.lastPickerHtml.includes('data-val="나"') && sandbox.lastPickerHtml.includes('data-val="아이"'));
 
-  sandbox.settleDraft = { ownerA: '나', ownerB: null, ratioA: 50 };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 50 }, { owner: null, ratio: 50 }] };
   sandbox.lastPickerHtml = null;
-  sandbox.settleConfigPickB();
-  assert.ok(!sandbox.lastPickerHtml.includes('data-val="나"'), 'B를 고를 때 이미 A로 고른 귀속은 제외돼야 함');
+  sandbox.settleConfigPick(1);
+  assert.ok(!sandbox.lastPickerHtml.includes('data-val="나"'), '1번 행을 고를 때 0번 행이 이미 고른 귀속은 제외돼야 함');
 });
-test('settleRatioInput: 0~100으로 clamp하고 상대쪽 비율 힌트를 갱신한다', () => {
-  sandbox.settleDraft = { ownerA: '나', ownerB: '배우자', ratioA: 50 };
+test('settleConfigAddRow/settleConfigRemoveRow: 행을 추가·삭제하되 최소 2행, 귀속 수를 넘겨 추가할 수 없다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '아이'], settings: {} };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 50 }, { owner: '배우자', ratio: 50 }] };
+  sandbox.settleConfigAddRow();
+  assert.strictEqual(sandbox.settleDraft.rows.length, 3);
+  sandbox.lastToast = null;
+  sandbox.settleConfigAddRow();
+  assert.strictEqual(sandbox.settleDraft.rows.length, 3, '귀속(3개)보다 더 늘릴 수 없음');
+  assert.ok(sandbox.lastToast.includes('추가할 수 있는'));
+  sandbox.settleConfigRemoveRow(2);
+  assert.strictEqual(sandbox.settleDraft.rows.length, 2);
+  sandbox.settleConfigRemoveRow(0);
+  assert.strictEqual(sandbox.settleDraft.rows.length, 2, '2행 미만으로는 줄일 수 없음');
+});
+test('settleConfigRatioInput: 0~100으로 clamp하고 마지막 행(자동 계산) 비율 힌트를 갱신한다', () => {
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 50 }, { owner: '배우자', ratio: 50 }] };
   sandbox.domstub = sandbox.domstub || domstub;
   const hintEl = { textContent: '' };
   const $orig = sandbox.$;
   sandbox.$ = (id) => (id === 'settleRatioHint' ? hintEl : $orig(id));
   try {
-    sandbox.settleRatioInput({ value: '130' });
-    assert.strictEqual(sandbox.settleDraft.ratioA, 100, '100을 넘으면 100으로 clamp');
+    sandbox.settleConfigRatioInput(0, { value: '130' });
+    assert.strictEqual(sandbox.settleDraft.rows[0].ratio, 100, '100을 넘으면 100으로 clamp');
     assert.strictEqual(hintEl.textContent, '배우자: 0%');
-    sandbox.settleRatioInput({ value: '-10' });
-    assert.strictEqual(sandbox.settleDraft.ratioA, 0, '음수는 0으로 clamp');
+    sandbox.settleConfigRatioInput(0, { value: '-10' });
+    assert.strictEqual(sandbox.settleDraft.rows[0].ratio, 0, '음수는 0으로 clamp');
   } finally {
     sandbox.$ = $orig;
   }
 });
-test('saveSettleConfig: 두 귀속을 모두 고르지 않았거나 서로 같으면 저장을 막고 토스트만 띄운다', () => {
+test('settleConfigEqualSplit: N행 전체를 균등 분배로 채우고 합이 정확히 100이 되게 마지막 행이 나머지를 떠안는다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '아이'], settings: {} };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 0 }, { owner: '배우자', ratio: 0 }, { owner: '아이', ratio: 0 }] };
+  sandbox.settleConfigEqualSplit();
+  const ratios = sandbox.settleDraft.rows.map((r) => r.ratio);
+  assert.strictEqual(ratios.reduce((a, b) => a + b, 0), 100);
+  assert.deepStrictEqual(ratios, [33, 33, 34]);
+});
+test('saveSettleConfig: 참가자를 모두 고르지 않았거나 서로 같으면 저장을 막고 토스트만 띄운다', () => {
   sandbox.DB = { owners: ['나', '배우자'], settings: {} };
-  sandbox.settleDraft = { ownerA: '나', ownerB: null, ratioA: 50 };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 50 }, { owner: null, ratio: 50 }] };
   sandbox.lastToast = null;
   sandbox.saveSettleConfig();
   assert.strictEqual(sandbox.DB.settings.settle, undefined);
   assert.ok(sandbox.lastToast.includes('모두 선택'));
 
-  sandbox.settleDraft = { ownerA: '나', ownerB: '나', ratioA: 50 };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 50 }, { owner: '나', ratio: 50 }] };
   sandbox.lastToast = null;
   sandbox.saveSettleConfig();
   assert.strictEqual(sandbox.DB.settings.settle, undefined);
   assert.ok(sandbox.lastToast.includes('다른 귀속'));
 });
-test('saveSettleConfig: 유효하면 DB.settings.settle에 저장하고 시트를 닫는다', () => {
+test('saveSettleConfig: 앞 행들의 비율 합이 100%를 넘으면(마지막 행 몫이 음수) 저장을 막는다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '아이'], settings: {} };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 70 }, { owner: '배우자', ratio: 50 }, { owner: '아이', ratio: 0 }] };
+  sandbox.lastToast = null;
+  sandbox.saveSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settle, undefined);
+  assert.ok(sandbox.lastToast.includes('100%'));
+});
+test('saveSettleConfig: 2명이 유효하면 DB.settings.settle에 participants로 저장하고(마지막 행은 자동 계산된 나머지) 시트를 닫는다', () => {
   sandbox.DB = { owners: ['나', '배우자'], settings: {} };
-  sandbox.settleDraft = { ownerA: '나', ownerB: '배우자', ratioA: 65 };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 65 }, { owner: '배우자', ratio: 0 }] };
   sandbox.closeSheetCalls = 0;
   sandbox.saveSettleConfig();
   // vm 샌드박스 realm 문제로 deepStrictEqual({...}, {...})가 내용이 같아도 실패하는 기존 이슈
   // (cycle309/313 로그와 동일 클래스) — JSON.stringify 비교로 피해간다(테스트 전용 이슈, 앱 코드는 무관).
-  assert.strictEqual(JSON.stringify(sandbox.DB.settings.settle), JSON.stringify({ ownerA: '나', ownerB: '배우자', ratioA: 65 }));
+  assert.strictEqual(JSON.stringify(sandbox.DB.settings.settle), JSON.stringify({ participants: [{ owner: '나', ratio: 65 }, { owner: '배우자', ratio: 35 }] }));
   assert.strictEqual(sandbox.closeSheetCalls, 1);
 });
-/* settledThrough(정산 하한)는 openSettlement/confirmSettlement의 유일한 집계 기준이라, 귀속쌍이
- * 바뀌면 이전 쌍의 하한을 물려받지 않아야 한다 — 같은 쌍으로 비율만 바꾸는 흔한 재조정은 하한을
- * 유지해야 하고, 역할(A/B)만 뒤바뀐 경우도 '같은 쌍'으로 봐야 한다(app-evolve cycle347). */
+test('saveSettleConfig: 3명(N인 분담)이 유효하면 participants 배열 그대로 저장된다(app-evolve cycle364 advance)', () => {
+  sandbox.DB = { owners: ['나', '배우자', '아이'], settings: {} };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 0 }] };
+  sandbox.saveSettleConfig();
+  assert.strictEqual(JSON.stringify(sandbox.DB.settings.settle), JSON.stringify({ participants: [{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 20 }] }));
+});
+/* settledThrough(정산 하한)는 openSettlement/confirmSettlement의 유일한 집계 기준이라, 참가자
+ * 구성이 바뀌면 이전 구성의 하한을 물려받지 않아야 한다 — 같은 구성으로 비율만 바꾸는 흔한 재조정은
+ * 하한을 유지해야 하고, 순서만 뒤바뀐 경우도 '같은 구성'으로 봐야 한다(app-evolve cycle347,
+ * cycle364 advance에서 N명 집합 비교로 일반화). */
 test('saveSettleConfig: 처음 설정하면(이전 settle 없음) settledThrough가 null로 초기화된다', () => {
   sandbox.DB = { owners: ['나', '배우자'], settings: { settledThrough: '2026-01-05' } };
-  sandbox.settleDraft = { ownerA: '나', ownerB: '배우자', ratioA: 50 };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 50 }, { owner: '배우자', ratio: 50 }] };
   sandbox.saveSettleConfig();
-  assert.strictEqual(sandbox.DB.settings.settledThrough, null, '이전 settle이 없었다면 이전 하한이 무엇이었든 새 쌍에 물려주면 안 됨');
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null, '이전 settle이 없었다면 이전 하한이 무엇이었든 새 구성에 물려주면 안 됨');
 });
-test('saveSettleConfig: 전혀 다른 귀속쌍으로 바꾸면 settledThrough가 null로 초기화된다', () => {
+test('saveSettleConfig: 전혀 다른 참가자 구성으로 바꾸면 settledThrough가 null로 초기화된다', () => {
   sandbox.DB = { owners: ['나', '배우자', '아이'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' } };
-  sandbox.settleDraft = { ownerA: '나', ownerB: '아이', ratioA: 50 };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 50 }, { owner: '아이', ratio: 50 }] };
   sandbox.saveSettleConfig();
-  assert.strictEqual(sandbox.DB.settings.settledThrough, null, '귀속쌍이 바뀌면 이전 쌍의 하한이 새 쌍의 과거 공동지출을 조용히 누락시키므로 리셋해야 함');
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null, '참가자 집합이 바뀌면 이전 구성의 하한이 새 구성의 과거 공동지출을 조용히 누락시키므로 리셋해야 함');
 });
-test('saveSettleConfig: 같은 쌍으로 비율만 바꾸면 settledThrough를 그대로 유지한다', () => {
+test('saveSettleConfig: 같은 참가자 집합으로 비율만 바꾸면 settledThrough를 그대로 유지한다', () => {
   sandbox.DB = { owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' } };
-  sandbox.settleDraft = { ownerA: '나', ownerB: '배우자', ratioA: 70 };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 70 }, { owner: '배우자', ratio: 0 }] };
   sandbox.saveSettleConfig();
-  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-05', '같은 쌍이면 비율만 바꾸는 흔한 재조정이라 하한을 리셋하면 안 됨');
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-05', '같은 구성이면 비율만 바꾸는 흔한 재조정이라 하한을 리셋하면 안 됨');
 });
-test('saveSettleConfig: 같은 두 귀속의 A/B 역할만 뒤바뀌어도 같은 쌍으로 보고 settledThrough를 유지한다', () => {
+test('saveSettleConfig: 같은 두 귀속의 행 순서만 뒤바뀌어도 같은 구성으로 보고 settledThrough를 유지한다', () => {
   sandbox.DB = { owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' } };
-  sandbox.settleDraft = { ownerA: '배우자', ownerB: '나', ratioA: 30 };
+  sandbox.settleDraft = { rows: [{ owner: '배우자', ratio: 30 }, { owner: '나', ratio: 0 }] };
   sandbox.saveSettleConfig();
-  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-05', 'A/B 역할만 뒤바뀐 것은 귀속 집합이 같으므로 쌍 변경이 아님');
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-05', '행 순서만 뒤바뀐 것은 참가자 집합이 같으므로 구성 변경이 아님');
 });
 test('saveSettleConfig: undoToast로 되돌리면 settle과 settledThrough 모두 호출 전 값으로 복원된다', () => {
   sandbox.DB = { owners: ['나', '배우자', '아이'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' } };
-  sandbox.settleDraft = { ownerA: '나', ownerB: '아이', ratioA: 50 };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 50 }, { owner: '아이', ratio: 50 }] };
   sandbox.lastUndo = null;
   sandbox.saveSettleConfig();
   assert.strictEqual(sandbox.DB.settings.settledThrough, null);
@@ -28522,7 +28721,7 @@ test('saveSettleConfig: undoToast로 되돌리면 settle과 settledThrough 모�
 test('saveSettleConfig: 튜토리얼 모드 중에는 twGuard가 막아서 저장되지 않는다(addOwner 등과 동일 패턴)', () => {
   sandbox.TWi = 0;
   sandbox.DB = { owners: ['나', '배우자'], settings: {} };
-  sandbox.settleDraft = { ownerA: '나', ownerB: '배우자', ratioA: 50 };
+  sandbox.settleDraft = { rows: [{ owner: '나', ratio: 50 }, { owner: '배우자', ratio: 50 }] };
   sandbox.saveSettleConfig();
   assert.strictEqual(sandbox.DB.settings.settle, undefined);
   sandbox.TWi = -1;
@@ -28694,6 +28893,107 @@ test('doSettle: 튜토리얼 모드 중에는 twGuard가 막아서 이체 내역
   assert.strictEqual(sandbox.DB.txns.length, 0);
   sandbox.TWi = -1;
 });
+/* ---------- openSettlement/confirmSettlementN/doSettleN: 참가자 3명 이상(N인 분담) 정산 화면
+ * (app-evolve cycle364 advance) — 2명일 때는 위 openSettlement/confirmSettlement/doSettle 테스트가
+ * 그대로 커버하는 기존 코드 경로를 쓰고(회귀 없음), 3명 이상일 때만 이 N인 전용 경로를 탄다. ---------- */
+function setupSettlement3DB(extra) {
+  sandbox.DB = Object.assign({
+    owners: ['나', '배우자', '아이'],
+    settings: { settle: { participants: [{ owner: '나', ratio: 34 }, { owner: '배우자', ratio: 33 }, { owner: '아이', ratio: 33 }] }, settledThrough: null },
+    assets: [{ id: 'a1', type: 'cash', owner: '나' }, { id: 'a2', type: 'cash', owner: '배우자' }, { id: 'a3', type: 'cash', owner: '아이' }],
+    txns: [],
+    recurrences: [],
+  }, extra || {});
+  sandbox.lastSheetHtml = null;
+}
+test('openSettlement: 참가자가 3명이면 "A가 B에게" 한 줄 문구 대신 참가자별 낸 돈/몫 목록과 송금 제안 목록을 보여준다', () => {
+  setupSettlement3DB({ txns: [
+    { type: 'expense', fromAssetId: 'a1', amount: 30000, shared: true, date: '2026-01-01' },
+  ] });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.openSettlement();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('나') && html.includes('배우자') && html.includes('아이'));
+  assert.ok(html.includes('30,000원 냄'));
+  assert.ok(html.includes('onclick="confirmSettlementN()"'));
+  assert.ok(!html.includes('onclick="confirmSettlement()"'), '3명 이상이면 2인 전용 confirmSettlement가 아니라 confirmSettlementN을 써야 함');
+});
+test('openSettlement: 3명이 균등 분배대로 딱 맞게 나눠 냈으면(net 전부 0) 완료 문구만 보이고 완료 버튼이 없다', () => {
+  setupSettlement3DB({
+    settings: { settle: { participants: [{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 40 }, { owner: '아이', ratio: 20 }] }, settledThrough: null },
+    txns: [
+      { type: 'expense', fromAssetId: 'a1', amount: 40000, shared: true, date: '2026-01-01' },
+      { type: 'expense', fromAssetId: 'a2', amount: 40000, shared: true, date: '2026-01-02' },
+      { type: 'expense', fromAssetId: 'a3', amount: 20000, shared: true, date: '2026-01-03' },
+    ],
+  });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.openSettlement();
+  assert.ok(sandbox.lastSheetHtml.includes('이미 딱 맞게 나눠 냈어요'));
+  assert.ok(!sandbox.lastSheetHtml.includes('confirmSettlementN()'));
+});
+test('openSettlement: 3명 중 참가자 아닌 제3 귀속("공용")이 결제한 지출은 제외됨 안내에 포함된다', () => {
+  setupSettlement3DB({
+    assets: [{ id: 'a1', type: 'cash', owner: '나' }, { id: 'a2', type: 'cash', owner: '배우자' }, { id: 'a3', type: 'cash', owner: '아이' }, { id: 'a4', type: 'cash', owner: '공용' }],
+    txns: [
+      { id: 't1', type: 'expense', fromAssetId: 'a1', amount: 10000, shared: true, date: '2026-01-01', memo: '식비' },
+      { id: 't2', type: 'expense', fromAssetId: 'a4', amount: 5000, shared: true, date: '2026-01-02', memo: '관리비' },
+    ],
+  });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.openSettlement();
+  assert.ok(sandbox.lastSheetHtml.includes('제외됨 1건'));
+});
+test('confirmSettlementN: 참가자가 2명이면(아직 N인 분담 아님) 아무 일도 하지 않는다', () => {
+  setupSettlementDB({ txns: [
+    { type: 'expense', fromAssetId: 'a1', amount: 30000, shared: true, date: '2026-01-01' },
+    { type: 'expense', fromAssetId: 'a2', amount: 10000, shared: true, date: '2026-01-02' },
+  ] });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.confirmSheetCalls = [];
+  sandbox.confirmSettlementN();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+});
+test('confirmSettlementN: 송금 제안이 있으면 확인 시트를 띄우고, 확인하면 doSettleN이 실행돼 각 건마다 이체 내역이 생긴다', () => {
+  setupSettlement3DB({ txns: [
+    { type: 'expense', fromAssetId: 'a1', amount: 30000, shared: true, date: '2026-01-01' },
+  ] });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.confirmSheetCalls = [];
+  sandbox.confirmSettlementN();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.strictEqual(sandbox.DB.txns.length, 1, '확인 전엔 아직 이체 내역이 생기면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.txns.length, 3, '빚진 2명(배우자/아이) 각자 1건씩, 원래 지출 1건 포함 총 3건');
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-10');
+});
+test('doSettleN: 여러 건의 송금을 각각 이체 거래로 남기고, undoToast로 되돌리면 생성된 거래가 모두 한번에 사라진다', () => {
+  setupSettlement3DB();
+  sandbox.TODAY = '2026-01-10';
+  sandbox.lastUndo = null;
+  sandbox.doSettleN([{ from: '배우자', to: '나', amount: 5000 }, { from: '아이', to: '나', amount: 3000 }]);
+  assert.strictEqual(sandbox.DB.txns.length, 2);
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-10');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.txns.length, 0, '되돌리면 생성된 거래가 모두 사라져야 함');
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null);
+});
+test('doSettleN: 중간에 현금성 자산이 없는 참가자가 있으면 그 전까지 만든 거래는 유지한 채 멈추고 안내한다', () => {
+  setupSettlement3DB({ assets: [{ id: 'a1', type: 'cash', owner: '나' }, { id: 'a2', type: 'cash', owner: '배우자' }] }); // '아이'의 현금 자산 없음
+  sandbox.TODAY = '2026-01-10';
+  sandbox.lastToast = null;
+  sandbox.doSettleN([{ from: '배우자', to: '나', amount: 5000 }, { from: '아이', to: '나', amount: 3000 }]);
+  assert.strictEqual(sandbox.DB.txns.length, 1, '첫 건(배우자->나)은 성공해 그대로 남아야 함');
+  assert.ok(sandbox.lastToast.includes('아이') && sandbox.lastToast.includes('현금성 자산이 없어요'));
+});
+test('doSettleN: 튜토리얼 모드 중에는 twGuard가 막아서 이체 내역이 생기지 않는다', () => {
+  sandbox.TWi = 0;
+  setupSettlement3DB();
+  sandbox.doSettleN([{ from: '배우자', to: '나', amount: 5000 }]);
+  assert.strictEqual(sandbox.DB.txns.length, 0);
+  sandbox.TWi = -1;
+});
+
 test('renderMenu: "가계부" 그룹에 정산(openSettlement) 진입점이 있고, 설정 여부에 따라 값 라벨이 바뀐다(소스 패턴 검증)', () => {
   const body = extractFunction('renderMenu');
   assert.ok(body.includes("{ic:'users',l:'정산',v:settleConfigured()?'설정됨':'미설정',a:\"openSettlement()\"}"), 'renderMenu에 정산 진입점이 정확히 연결돼 있지 않음');
