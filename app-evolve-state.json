@@ -1,15 +1,8 @@
 {
  "cycle": 365,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 359,
-   "phase": "advance",
-   "timestamp": "2026-11-15T08:09:30.412Z",
-   "summary": "critique(cycle359) 계획대로 buildExpenseBarHtml()의 PAL(8색) 고정 팔레트가 9개 이상 카테고리에서 col(i%8) 모듈로 순환으로 색이 겹치던 버그를 고쳤다. cats를 v 내림차순으로 방어적으로 재정렬한 뒤 상위 PAL.length-1(7)개까지만 PAL 색을 각자 고유하게 배정하고, 8번째부터는 금액을 합산한 '기타' 버킷 하나로 묶어 PAL에 없는 전용 중립색(var(--text-3))을 준다 — 7개는 PAL 8색 중 7개만 쓰므로 '기타'와도 절대 겹치지 않는다. 호출부 5곳(expenseBreakdownCard/incomeBreakdownCard/openSpendAnalysis/openIncomeAnalysis/openYearReview TOP3)이 전부 이 공유 함수 하나를 거쳐 수정이 자동 전파됨. 퍼센트 최대잔여법 등 기존 집계 공식은 items(정렬+기타 묶음 후 배열)에 그대로 적용. 테스트 3건 추가: 7개 이하는 기타 버킷 없이 완전히 기존과 동일(하위호환), 9개 입력 시 상위7+기타로 묶이고 8개 행의 색이 전부 서로 다름, 호출부가 비정렬로 넘겨도 내부에서 금액 내림차순 정렬함. 수정 전 index.html로 되돌려 새 테스트 2건이 실제로 FAIL함을 직접 확인(stash로 검증). node test/run.js 3458->3461/3461 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.458->1.47.459, sw.js CACHE v725->v726. pending_advance_plan null로 비움.",
-   "commit": null
-  },
   {
    "cycle": 360,
    "phase": "develop",
@@ -142,6 +135,13 @@
    "timestamp": "2026-11-17T13:40:00.000Z",
    "summary": "critique(cycle364) 계획대로 정산(settlement)의 2귀속(ownerA/ownerB) 하드코딩을 참가자 배열(N명, 2명 이상)로 일반화했다. 데이터 모델: DB.settings.settle을 옛 {ownerA,ownerB,ratioA}에서 {participants:[{owner,ratio},...]}로 바꾸되, logic.js settleParticipantsFromSettings()가 읽을 때마다 옛 구조를 동등한 participants 2개로 조용히 마이그레이션해 하위호환을 유지한다(저장은 항상 새 구조). settleConfigured()를 '참가자 2명 이상·전부 DB.owners에 실재·중복 없음'으로 일반화하고, 가장 흔한 2명 케이스는 ownerA/ownerB/ratioA도 함께 채워 기존 2인 전용 코드 경로(openSettlement/confirmSettlement/doSettle/homeAlerts의 settleDue)가 전혀 안 바뀌어도 그대로 동작하게 했다 — 3명 이상일 때만 cfg.participants를 직접 쓰는 새 경로(openSettlement 내 분기, settlementBreakdownHTMLN, confirmSettlementN, doSettleN)를 탄다. logic.js에 settlementSummaryN(참가자별 paid/expected/net 계산, 마지막 참가자가 반올림 나머지를 떠안아 expected 합이 항상 total과 정확히 일치)·settlementItemsN(N명 포함/제외 내역)·settleUpTransfers(순부담 net 배열을 받아 최소 송금 목록을 만드는 탐욕 매칭 — 계획이 명시한 대로 최적 송금 매트릭스는 범위 밖)을 추가하고, 옛 settlementSummary/settlementItems(2귀속 전용)는 이 N명 함수를 호출해 바이트 단위로 동일한 결과를 내는 얇은 래퍼로 재구현했다. UI: settleDraft를 {ownerA,ownerB,ratioA}에서 {rows:[{owner,ratio}]}로 바꿔 참가자 추가/삭제(최소 2명, DB.owners 수까지)와 '균등 분배' 버튼을 지원하고, 마지막 행의 비율은 항상 '100-앞사람들 합'으로 자동 계산(편집 불가)해 합계가 100%를 벗어날 일 자체를 없앴다. doRenameOwner/mergeOwnerInto/delOwner의 '이 귀속이 정산에 쓰이는가/이름이 바뀌면 따라가야 하는가' 판정도 settleTouchesOwner/settleReplaceOwner(logic.js, 옛 구조는 옛 구조 그대로 owner만 바꿔 돌려줘 2인 사용자 저장값이 뜻밖에 participants로 통째로 바뀌어 보이지 않게 함)로 일반화했다. 테스트: settlementSummaryN/settlementItemsN/settleUpTransfers/settleParticipantsFromSettings/settleTouchesOwner/settleReplaceOwner 신규 단위 테스트와 3명 참가자 openSettlement/confirmSettlementN/doSettleN 통합 테스트를 추가하고, settleConfigPickA/B·settleRatioInput 등 이름이 바뀐 기존 UI 테스트 전체를 rows 기반 API로 재작성했다(vm 샌드박스 realm 문제로 몇몇은 기존 관례대로 JSON.stringify 비교로 전환). node test/run.js 3502->3529/3529 통과(기존 테스트 포함 전부 그대로 녹색 — 2인 사용자 동작은 회귀 없음). node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.468->1.47.469, sw.js CACHE v735->v736. 범위가 커서(계획이 허용한 대로) 정산 알림(homeAlerts의 settleDue)은 여전히 2명 전용으로 남겨뒀다 — 3명 이상 설정이면 알림 없이 openSettlement()을 직접 열어야 확인 가능(호출부에 그 이유를 주석으로 남김, 다음 critique가 후보로 재검토할 수 있음). pending_advance_plan null로 비움.",
    "commit": null
+  },
+  {
+   "cycle": 365,
+   "phase": "develop",
+   "timestamp": "2026-11-17T14:12:35.000Z",
+   "summary": "코드를 직접 탐색해 반복이체 편집 시트의 '주말이면' 설정(WK 어휘, recOpenWeekend())이 UI 문구와 실제 동작이 어긋나 있음을 발견했다. '앞당겨 금요일'/'미뤄서 월요일'처럼 조정 결과 요일을 못박아 말하고, 설명도 '토·일요일과 겹칠 때'로만 적혀 있었다. 하지만 실제 shiftWeekend()/isKrNonBusinessDay()는 토·일뿐 아니라 KR_FIXED_HOLIDAYS/KR_LUNAR_HOLIDAYS(공휴일, cycle344/361 critique/advance에서 추가)까지 보고 최대 10일 반복 이동한다 — 금요일/월요일 자체가 공휴일이면 실제로는 목요일/화요일 등으로 더 밀리는데 UI는 항상 금요일/월요일이라고 말해 문구와 동작이 어긋났고, 공휴일 조정이 들어간다는 사실 자체도 안내되지 않았다. 수정: label('주말이면'→'주말·공휴일이면'), 시트 제목/설명, WK의 두 줄 설명(none/earlier/later)을 모두 결과 요일을 특정하지 않는 '그 전/다음 평일로' 표현으로 바꿨다. 로직(shiftWeekend/recDates 등)은 건드리지 않은 순수 문구 수정이라 기존 날짜 계산 동작·테스트는 전부 그대로다. grep으로 '주말이면'/'금요일'/'월요일' 잔존 참조가 더 없음을 확인했고, test/run.js에 WK 문구 자체를 단언하는 테스트가 없어 회귀 위험이 없음을 확인했다. node test/run.js 3529/3529 통과(신규 테스트는 추가하지 않음 — 순수 UI 텍스트라 단위 테스트 대상 로직이 없음). node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.469->1.47.470, sw.js CACHE v736->v737. 참고: 이번 사이클 시작 시 로컬 git이 detached HEAD였고 로컬 'main' 브랜치 ref가 origin/main과 50커밋씩 서로 갈라져 있는 걸 발견했다(과거 어느 시점의 stale/orphan 상태로 추정) — origin/main(=시작 시 detached HEAD였던 커밋, state.json이 cycle365/develop을 가리키던 바로 그 커밋)을 기준으로 로컬 main을 재설정(git checkout -B main origin/main)한 뒤 그 위에서 작업했다. 로컬 main이 전에 가리키던 쪽 커밋들은 origin에 없고 이번 작업과 무관한 과거 lineage라 그대로 둠(삭제/강제 아님, 단순 로컬 브랜치 포인터 재설정).",
+   "commit": "c45454e"
   }
  ]
 }
