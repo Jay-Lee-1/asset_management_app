@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.469';
+const APP_VERSION='1.47.470';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -6937,13 +6937,18 @@ function recSplitAmt(i,el){fmtAmt(el);recDraft.splits[i].amount=num(el);splitHin
  * 전체 금액 변경에 반응하지 않았다(app-evolve cycle297 develop). */
 function recAmtInput(el){fmtAmt(el);recDraft.amount=num(el);if(Array.isArray(recDraft.splits)&&recDraft.splits.length)splitHintUpdate(recDraft)}
 function recSplitMemo(i,el){if(el.value.length>MEMO_MAX)el.value=el.value.slice(0,MEMO_MAX);recDraft.splits[i].memo=el.value}
-const WK={ /* 주말 조정 어휘 */
- none:['당일 유지','주말이어도 그 날짜에'],
- earlier:['앞당겨 금요일','주말이면 하루 앞 금요일에 (급여)'],
- later:['미뤄서 월요일','주말이면 다음 월요일에 (카드값·적금)'],
+/* 문구는 shiftWeekend()의 실제 동작(isKrNonBusinessDay: 토·일 + KR_FIXED_HOLIDAYS +
+ * KR_LUNAR_HOLIDAYS)과 맞춰야 한다. 예전엔 "앞당겨 금요일"/"미뤄서 월요일"처럼 결과 요일을
+ * 못박아 말했지만, 금요일/월요일 자체가 공휴일이면 shiftWeekend가 거기서 한 번 더 밀려 실제론
+ * 목요일/화요일 등에 떨어질 수 있어 문구와 동작이 어긋났다(공휴일은 아예 언급도 없었음).
+ * "평일로"처럼 결과 요일을 특정하지 않는 표현으로 바꾼다(app-evolve cycle365 develop). */
+const WK={ /* 주말·공휴일 조정 어휘 */
+ none:['당일 유지','주말·공휴일이어도 그 날짜에'],
+ earlier:['앞당겨서 평일로','주말·공휴일이면 그 전 평일로 (급여)'],
+ later:['미뤄서 평일로','주말·공휴일이면 그 다음 평일로 (카드값·적금)'],
 };
 function recOpenWeekend(){syncRecInputs();const cur=recDraft.weekend||'none';
- openSheet(`<h3>주말이면</h3><div class="desc">반복일이 토·일요일과 겹칠 때 처리할 방법이에요.</div>
+ openSheet(`<h3>주말·공휴일이면</h3><div class="desc">반복일이 주말(토·일요일)이거나 공휴일과 겹칠 때 처리할 방법이에요.</div>
   <div class="opt-list">${Object.entries(WK).map(([v,[t,sub]])=>`<button class="${cur===v?'on':''}" onclick="setRecWeekend('${v}')"><span class="rd"></span><div><div>${t}</div><div class="ol-sub">${sub}</div></div></button>`).join('')}</div>`);
 }
 function setRecWeekend(v){recDraft.weekend=v;recalcEndCond(recDraft,recDraft.startDate);renderRecSheet(!!recDraft.id)}
@@ -6983,7 +6988,7 @@ function renderRecSheet(){
     <input id="rStart" type="hidden" value="${d.startDate}"></div>
   ${endCondFields(d,'rec')}
   ${(d.type==='transfer'&&DB.settings.confirmTransfers)?`<div class="card" style="box-shadow:none;margin-bottom:14px"><div class="toggle-row"><div><div class="tl">이체 자동 확인</div><div style="font-size:12px;color:var(--text-3);margin-top:2px">끄면 이체일마다 완료 확인을 받아요</div></div><button type="button" class="switch ${d.autoConfirm!==false?'on':''}" role="switch" aria-checked="${d.autoConfirm!==false?'true':'false'}" aria-label="이체 자동 확인" onclick="recDraft.autoConfirm=!(recDraft.autoConfirm!==false);this.classList.toggle('on');this.setAttribute('aria-checked',this.classList.contains('on'))"><i></i></button></div></div>`:''}
-  ${d.freq==='monthly'?`<div class="field"><label>주말이면</label><button class="pick" onclick="recOpenWeekend()">
+  ${d.freq==='monthly'?`<div class="field"><label>주말·공휴일이면</label><button class="pick" onclick="recOpenWeekend()">
     <div class="pav a-etc">${svg('ledger')}</div>
     <div class="pbody"><div class="pn">${WK[d.weekend||'none'][0]}</div><div class="psub">${WK[d.weekend||'none'][1]}</div></div>
     <div class="pc">${svg('chevR')}</div></button></div>`:''}
