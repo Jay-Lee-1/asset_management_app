@@ -1,22 +1,8 @@
 {
  "cycle": 364,
- "phase": "review",
+ "phase": "critique",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 364,
-   "phase": "develop",
-   "timestamp": "2026-11-17T07:55:00.000Z",
-   "summary": "PWA 설치 유도 배너(#installBar)가 txRowCore/asset-item/date-picker(cycle362-363)와 똑같은 WAI-ARIA role=\"button\" 중첩 결함을 갖고 있었음을 발견 — 배너 전체에 role=\"button\"/tabindex를 주면서 그 자손에 실제 <button class=\"ib-x\">(나중에)를 중첩시켜 스크린리더가 전체를 탐색 불가 단위로 묶었다. role=\"button\"/tabindex/onkeydown을 아이콘+텍스트만 감싸는 내부 wrapper .row-tap으로 옮기고 ib-x(이미 stopPropagation 있음)는 형제로 유지, innerHTML 생성 로직을 순수 함수 installBarHTML(isIOS)로 분리해 buildExpenseBarHtml 관례를 따랐다. 기존 txRowCore 테스트 헬퍼(divInnerHTML/assertRowTapHasNoNestedInteractive) 재사용해 수정 전 마크업으로 되돌리면 실제로 FAIL함을 확인. node test/run.js 3493->3494/3494 통과. APP_VERSION 1.47.467->1.47.468, sw.js CACHE v734->v735.",
-   "commit": "0e06d18"
-  },
-  {
-   "cycle": 359,
-   "phase": "develop",
-   "timestamp": "2026-11-15T05:00:00.000Z",
-   "summary": "Explore 서브에이전트가 cycle340-358의 모든 주제를 배제하고 조사해 발견: netlify/functions/stock.js의 fetchFxToKrw()가 네이버에서 USD/JPY/EUR 3통화를 독립적으로 병렬 조회한 뒤 'if(out.USD) return out;' 한 줄로 전체를 바로 반환해, USD만 네이버에서 성공하고 JPY/EUR가 개별 실패하면 fxapi.app/open.er-api.com 폴백 체인을 JPY/EUR에 대해 전혀 시도하지 않는 버그였다. 동일한 3통화 네이버→폴백 구조를 쓰는 자매 파일 rates.js(fxFallbackChain)는 통화별 missing을 걸러 보충하는데 stock.js만 USD 단일 게이트라 비대칭이었고, fetchFxToKrw는 module.exports에도 test/run.js에도 전혀 없어 회귀 테스트가 0건이었다 — 결과적으로 JPY/EUR 보유 해외종목은 네이버가 USD는 되고 그 종목 통화만 잠깐 실패하면 매번 '환율 없음'으로 가격이 조용히 빠졌다. 수정: 네이버 Promise.all 이후 missing=curs.filter(c=>!out[c])로 통화별 공백만 계산해 비어있지 않으면 폴백 루프를 계속 타게 하고, 폴백에서도 missing에 든 통화만 채우며 이미 있는 out.USD는 덮어쓰지 않도록 했다(기존 소스 우선권 보존). 'throw' 조건도 '네이버+폴백 모두에서 USD를 못 구했을 때만'으로 좁혀 JPY/EUR만 못 구해도 이미 구한 USD/다른 통화까지 던져서 날리는 일이 없게 했다. test/run.js에 stock.handler 레벨 회귀 테스트 1건 추가(네이버 USD 성공+JPY/EUR 404, fxapi 폴백으로 EUR 보충, VOW.O 해외종목의 KRW 환산이 성공하고 USD 값은 네이버 값 그대로 보존됨을 확인) — 수정 전 코드에 되돌려 FAIL함을 직접 확인해 테스트가 실제로 이 버그를 잡아내는지 검증했다. node test/run.js 3457->3458/3458 통과. node --check stock.js/test/run.js 통과. 이 파일은 서버 백엔드(Netlify function)라 APP_VERSION/sw.js CACHE 적용 대상 아님(index.html/sw.js 클라이언트 변경 없음).",
-   "commit": null
-  },
   {
    "cycle": 359,
    "phase": "review",
@@ -148,6 +134,13 @@
    "phase": "advance",
    "timestamp": "2026-11-17T07:20:00.000Z",
    "summary": "critique(cycle363)의 pending_advance_plan('전역 검색 부재')이 실제로는 무효임을 확인했다 — openGlobalSearch()/globalSearchBody()(index.html 7681-7746행)가 이미 거래·자산·카테고리·목표·반복을 matchTxnQuery/matchAssetQuery/matchCatQuery/matchGoalQuery/matchRecQuery로 통합 검색하고 있고, 홈/plan/menu 탭 모두에 검색 아이콘 진입점이 있었다(critique의 Explore가 이 기능을 놓치고 중복 제안한 것으로 판단). 계획을 폐기하고 develop과 동일한 방식으로 Explore 서브에이전트에게 완전히 새 영역을 조사시켰다(전역검색이 이미 존재함을 명시해 재제안 방지). 발견: txRowCore(cycle362)/asset-item(cycle363 develop)과 똑같은 WAI-ARIA 'role=button 하위 인터랙티브 엘리먼트 중첩' 결함이 날짜 선택 picker 3곳(renderGoalForm의 목표일 4194행, costBasisField의 매입일 5328행, renderAssetSheet의 만기일 5360행)에도 있었다 — 날짜가 이미 설정돼 있으면 .pick 전체에 role=\"button\"/tabindex를 주면서 그 자손으로 실제 <button class=\"fc-x\">(날짜 지우기)를 중첩시켜, 스크린리더 사용자가 '지우기' 버튼에 포커스를 옮길 방법이 없고 날짜 선택 화면만 열 수 있었다. 세 곳 모두 asset-item 패턴을 그대로 적용해 수정: role=\"button\"/tabindex/onkeydown을 .pick 자체가 아니라 pav+pbody만 감싸는 내부 wrapper .row-tap으로 옮기고, .pick의 onclick(날짜 피커 열기)은 그대로 둬 클릭 동작을 보존했으며, fc-x/chevron(.pc)은 .row-tap의 형제로 남겼다. 공유 .row-tap 기본 gap(12px)이 .pick의 기존 gap(11px)과 달라 .pick .row-tap{gap:11px} CSS 한 줄을 추가해 레이아웃을 바이트 단위로 유지(asset-item이 쓴 것과 동일한 기법). 테스트 3건 추가(목표일/매입일/만기일 각각 지우기 버튼이 role=\"button\"(.row-tap) 밖에 있는지, txRowCore/asset-item 테스트가 쓰는 divInnerHTML()/assertRowTapHasNoNestedInteractive() 재사용) — git stash로 index.html을 수정 전 상태로 되돌려 새 테스트 3건이 실제로 FAIL함을 확인한 뒤 복원. 기존 costBasisField 전체 HTML 스냅샷 테스트(29213행)도 새 마크업에 맞게 갱신. node test/run.js 3490->3493/3493 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.466->1.47.467, sw.js CACHE v733->v734.",
+   "commit": null
+  },
+  {
+   "cycle": 364,
+   "phase": "review",
+   "timestamp": "2026-11-17T08:30:00.000Z",
+   "summary": "develop 커밋(0e06d18, installBar role=\"button\" 중첩 수정)을 검토: 변경 diff가 txRowCore/asset-item/date-picker에서 쓴 동일 패턴(role=\"button\"/tabindex/onkeydown을 .row-tap 내부 wrapper로 옮기고 실제 button은 형제로 분리)을 올바르게 따름. installBar의 onclick은 유지돼 버블링 클릭이 보존되고, ib-x는 이미 stopPropagation으로 격리됨. installBarHTML() 순수 함수 분리와 전용 테스트(Android/iOS 양쪽)도 적절. node test/run.js 3494/3494 통과, 추가 수정 불필요.",
    "commit": null
   }
  ]
