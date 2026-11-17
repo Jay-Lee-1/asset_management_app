@@ -1,15 +1,12 @@
 {
  "cycle": 364,
- "phase": "critique",
- "pending_advance_plan": null,
+ "phase": "advance",
+ "pending_advance_plan": {
+  "title": "정산(settlement) 기능을 2귀속(ownerA/ownerB) 고정 구조에서 N귀속(3인 이상) 분담 지원으로 확장",
+  "why": "DB.owners 기본값이 이미 3개('나','배우자','공용', index.html:2830)이고 사용자가 귀속을 자유롭게 추가할 수 있는데, DB.settings.settle={ownerA,ownerB,ratioA} 구조와 settleConfigured()(5746-5789행 부근, 6229행)가 정확히 2귀속만 받아들여서, '같이 냈어요' 공동지출 토글(6250/6281/6849행)과 정산 요약(logic.js settlementSummary/settlementItems, 222-257행)이 제3의 귀속이 지불한 공용 지출을 아예 다루지 못하고 조용히 제외한다. 앱의 핵심 기능인 '공동지출 정산'이 앱 자체 기본 구성(나/배우자/공용)에서조차 3인 분담을 지원하지 못하는 구조적 결함이다.",
+  "approach": "1) 데이터 모델: DB.settings.settle을 {ownerA,ownerB,ratioA}에서 참가자 배열(예: {participants:[{owner,ratio}]})로 확장하되, 기존 사용자의 2귀속 설정을 로드 시 자동 마이그레이션(ownerA/ownerB/ratioA → participants 2개로 변환)해 하위호환을 깨지 않는다. 2) settleConfigured()를 '참가자 2명 이상, 각 귀속이 DB.owners에 존재, ratio 합계 100%'로 일반화한다. 3) renderSettleConfigForm/openOwnerPicker 흐름을 N명을 추가/제거하고 비율을 재분배할 수 있도록 확장한다(처음엔 균등분배 또는 마지막 1명은 나머지로 자동 계산하는 단순한 UX로 시작해도 됨 — 최적 송금 매트릭스 같은 고도화는 1차 범위에서 제외해도 된다). 4) logic.js의 settlementSummary/settlementItems를 단일 diffAmount/oweOwner 대신 귀속별 순부담액(net balance) 배열을 반환하도록 일반화하고, openSettlement()의 결과 화면을 '누가 누구에게 얼마'가 아니라 귀속별 순부담 목록으로 보여주는 최소 버전으로 시작한다. 5) doRenameOwner/doMergeOwner(5575-5689행 부근)의 ownerA/ownerB 동기화 로직도 participants 배열 기준으로 같이 수정한다. 6) test/run.js에 3인 이상 참가자 settlementSummary 회귀 테스트를 추가한다. 범위가 크므로 한 사이클에 전부 못 끝내면 1차로 데이터 모델+마이그레이션+N명 선택 UI까지만 완료하고 요약 로직 일반화는 다음 advance로 넘겨도 된다 — 일부만 완료해도 빌드/테스트가 깨지지 않는 중간 상태로 커밋할 것."
+ },
  "history": [
-  {
-   "cycle": 359,
-   "phase": "review",
-   "timestamp": "2026-11-15T05:45:00.000Z",
-   "summary": "develop(cycle359, 8682576: stock.js fetchFxToKrw의 통화별 missing 폴백 수정)을 검토했다. missing=curs.filter(c=>!out[c])를 네이버 직후와 각 폴백 소스 이후 모두 재계산해 아직 못 구한 통화만 다음 소스로 넘기는 구조가 올바름을 확인 — out.USD가 이미 있을 때 폴백에서 다시 덮어쓰지 않는 보존 로직, missing이 비면 루프를 break하는 조기 종료, throw 조건이 USD 단일 기준으로 좁혀진 것 모두 자매 파일 rates.js의 fxFallbackChain 패턴과 일관됨을 확인. 유일한 호출부(handler 53행)가 try/catch로 감싸 fx 전체 실패만 처리하므로 부분 성공(JPY만 못 구함 등) 시 out에 KRW 환산 불가한 통화가 섞여도 toKrw() 쪽에서 해당 통화 자산만 건너뛸 뿐 전체가 깨지지 않음을 grep으로 확인. 새로 추가된 테스트가 수정 전 코드로 되돌리면 실제로 FAIL함을 커밋 메시지에서 이미 직접 검증했다고 기록돼 있어 재확인 생략. node test/run.js 3458/3458 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-   "commit": null
-  },
   {
    "cycle": 359,
    "phase": "critique",
@@ -141,6 +138,13 @@
    "phase": "review",
    "timestamp": "2026-11-17T08:30:00.000Z",
    "summary": "develop 커밋(0e06d18, installBar role=\"button\" 중첩 수정)을 검토: 변경 diff가 txRowCore/asset-item/date-picker에서 쓴 동일 패턴(role=\"button\"/tabindex/onkeydown을 .row-tap 내부 wrapper로 옮기고 실제 button은 형제로 분리)을 올바르게 따름. installBar의 onclick은 유지돼 버블링 클릭이 보존되고, ib-x는 이미 stopPropagation으로 격리됨. installBarHTML() 순수 함수 분리와 전용 테스트(Android/iOS 양쪽)도 적절. node test/run.js 3494/3494 통과, 추가 수정 불필요.",
+   "commit": null
+  },
+  {
+   "cycle": 364,
+   "phase": "critique",
+   "timestamp": "2026-11-17T12:12:09.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-364의 모든 주제(반복거래 override, 클라우드 동기화, undoToast WCAG, App Lock, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력 공휴일, 저축 만기 overdue, assetGainLossBadge, 전역검색(이미 존재), txRowCore/asset-item/date-picker/installBar의 role=button 중첩 접근성 패턴)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: 정산(settlement) 기능이 구조적으로 정확히 2귀속(ownerA/ownerB)으로 하드코딩돼 있다 — DB.owners는 기본값부터 3개('나','배우자','공용', index.html:2830)이고 사용자가 자유롭게 늘릴 수 있는데(5567행, 상한 없음), DB.settings.settle은 {ownerA,ownerB,ratioA} 구조뿐이고 settleConfigured()(6229행 부근)가 정확히 두 귀속만 요구한다. '같이 냈어요' 토글도 settleConfigured()가 true일 때만(즉 2귀속 설정이 끝났을 때만) 노출되고(6250/6281/6849행), logic.js의 settlementSummary/settlementItems(222-257행)는 제3의 귀속이 지불한 공용 지출을 합계에서 조용히 제외한다 — 앱 자체의 기본 3귀속 구성에서조차 핵심 기능인 공동지출 정산이 3인 분담을 전혀 지원하지 못한다. 러너업으로 (1) filteredHist()가 매 키입력/필터칩 토글마다 allTxns 전체 재계산·재정렬을 하는 성능 이슈, (2) exportData/doExport가 동기적으로 전체 JSON/CSV를 메모리에 쌓아 대용량 데이터에서 멈춤 위험, (3) ST.hist.preset 류 '도달 불가 UI 상태 필드' 패턴의 전수 점검도 검토했으나 우선순위는 settlement 2인 제약이 가장 높다고 판단. 이미 다룬 '가구 공유 인증'(household invite 인증 문제) 및 '정산 breakdown/알림'(기존 2인 모델의 표시/알림 문제)과는 범위가 다름 — 이번 건은 2인이라는 구조적 제약 자체. pending_advance_plan에 N인 정산 지원 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
    "commit": null
   }
  ]
