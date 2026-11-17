@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.472';
+const APP_VERSION='1.47.473';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5951,13 +5951,21 @@ function doSettleN(transfers){
  if(twGuard())return;
  const prevSettledThrough=DB.settings.settledThrough;
  const created=[];
+ let failed=false;
  for(const t of transfers){
   const fromId=firstCashForOwner(t.from),toId=firstCashForOwner(t.to);
-  if(!fromId||!toId){toast(`${fromId?t.to:t.from}의 현금성 자산이 없어요`);break}
+  if(!fromId||!toId){toast(`${fromId?t.to:t.from}의 현금성 자산이 없어요`);failed=true;break}
   const tx=touch({id:uid(),type:'transfer',category:'이체',memo:'정산',amount:t.amount,fromAssetId:fromId,toAssetId:toId,date:TODAY,confirmed:true});
   DB.txns.push(tx);created.push(tx.id);
  }
  if(!created.length)return;
+ if(failed){
+  /* 부분 실패: 이미 만든 거래는 그대로 두되(위 주석의 의도) settledThrough는 당기지 않고
+   * '완료로 표시했어요' 성공 토스트도 띄우지 않는다 — 실패 toast를 덮어쓰며 미지급 참가자
+   * 몫이 조용히 다음 정산 범위에서 영구히 빠지는 걸 막는다(app-evolve cycle367 develop). */
+  save({recsChanged:false});invalidateBalances(null,{recsChanged:false});renderCurrent();
+  return;
+ }
  DB.settings.settledThrough=TODAY;
  save({recsChanged:false});invalidateBalances(null,{recsChanged:false});closeSheet();renderCurrent();
  undoToast('정산 완료로 표시했어요',()=>{

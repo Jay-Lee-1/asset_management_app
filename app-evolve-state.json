@@ -1,6 +1,6 @@
 {
  "cycle": 367,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
   {
@@ -134,6 +134,13 @@
    "phase": "advance",
    "timestamp": "2026-11-17T21:19:00.740Z",
    "summary": "critique(cycle366)의 계획대로 openSheet() 바텀시트 생명주기를 실행형으로 테스트했다 — 다만 계획이 제안한 FUNCTIONS 전역 목록 등록 방식은 폐기했다(openSheet를 main shared sandbox의 FUNCTIONS에 올리면 그 sandbox를 공유하는 기존 수백 개 테스트가 전부 openSheet의 실제 DOM 부작용을 받게 돼 범위가 한 사이클을 훨씬 넘어섬) — 대신 wireSheetGestures/ensureEdgeGesture가 이미 쓰던 sheetGestureCtx와 같은 \"좁은 ad hoc vm 컨텍스트\" 패턴을 그대로 따라 openSheetCtx()를 새로 만들었다. 조사해보니 wireSheetGestures/ensureEdgeGesture 자체는 cycle209/210 때 이미 이 패턴으로 실행형 전환이 끝나 있었다(critique의 \"전혀 실행된 적 없다\"는 진술과 달리) — 남은 공백은 openSheet 자신(aria-labelledby 연결/포커스 트랩/syncOverlayInert)과 sheetFocusables/applyHeight/attachDetent였다. domstub.js를 확장해 (1) innerHTML 대입이 이제 parseHTMLInto()로 실제 자식 엘리먼트를 만들고(기존엔 문자열만 저장 — openSheet가 querySelector(\"h3,.pk-h\")로 그 결과를 되읽는 걸 실행형으로 보려면 실제 파싱이 필요했음, getter는 여전히 원본 문자열 반환), (2) contains()/focus()/blur()+document.activeElement 추적(모듈 스코프 변수, createDocument() 호출마다 리셋), (3) getBoundingClientRect() 기본값(0 사각형), (4) disabled/tabIndex getter/setter, (5) \"[attr]\" 속성 셀렉터(sheetFocusables가 쓰는 \"[href]\"/\"[tabindex]\")를 추가했다. innerHTML이 실제 파싱되면서 기존 undoToast 실행형 테스트(37505행 근처)가 \"innerHTML 대입은 children을 비울 뿐 파싱 안 함\"이라는 옛 domstub 동작에 의존해 t.children[0]을 버튼으로 가정하던 게 깨져(실제로는 span이 먼저 생김) t.querySelector(\"button\")으로 고쳤다 — 이게 오히려 실제 브라우저 동작과 더 가까워진 것이지 새 버그는 아님(다른 domstub 사용 테스트 6곳을 모두 훑어 innerHTML 뒤 위치 의존 children 인덱싱이 더 없음을 확인). openSheetCtx에서 openSheet/syncOverlayInert/sheetFocusables/applyHeight/attachDetent/wireSheetGestures/ensureEdgeGesture/ovHistPush/ovHistPop을 함께 실제 실행하는 테스트 10건 추가: (1)(2) h3 제목 있음/없음에 따른 aria-labelledby 연결·해제와 show 클래스, syncOverlayInert() 실제 호출로 #app/#fab에 inert가 걸리되 dpModal/dpWheel이 안 열려있으면 #sheet 자신엔 안 걸림, (3)(4) topBtn 기본값(sheet-x)/커스텀 둘 다 열릴 때 그쪽으로 실제 포커스 이동(document.activeElement), (5) sheetFocusables가 disabled/tabindex=-1을 실제로 제외, (6) syncOverlayInert가 dpModal 열림에 따라 #sheet에도 inert를 걸고 떼는 두 분기, (7)(8) applyHeight의 확장 전/후 cap·min-height 계산, (9)(10) attachDetent의 44px 임계값 도달 시 1회성 확장과 드래그 중 가드. closeSheet() 자체(ST.recSel/goalSel/TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING/applyForeignSave/applyPendingCloudConflictMerge 등 훨씬 넓은 전역)는 이번 범위 밖으로 명시적으로 남겨둠(다음 cycle 후보). 검증: openSheet의 aria-labelledby 대입과 syncOverlayInert의 dpOn 판정을 각각 임시로 깨서(index.html을 임시 수정 후 git checkout으로 원복, 실제 diff에는 포함 안 됨) 새 테스트 2건이 실제로 FAIL함을 직접 확인했다. 이번 사이클은 test/domstub.js·test/run.js만 수정했고 index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 올리지 않는다(사용자에게 배포되는 내용이 바뀐 게 없음). node test/run.js 3546->3556/3556 통과. node --check logic.js/sw.js/test/run.js/test/domstub.js 통과.",
+   "commit": null
+  },
+  {
+   "cycle": 367,
+   "phase": "develop",
+   "timestamp": "2026-11-17T21:50:00.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-366의 모든 주제(반복거래/주말·공휴일 조정, 정산 2인/N인/settleDueN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 저장공간 정리, openSheet 실행형 테스트)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: doSettleN()(index.html, N인 정산 완료 처리, cycle364 advance에서 추가)이 송금 여러 건 중 중간에 현금성 자산이 없는 참가자가 있어 루프가 break돼도(created.length>0이기만 하면) 뒤이어 DB.settings.settledThrough=TODAY를 그대로 실행하고 '정산 완료로 표시했어요' 성공 undoToast를 띄워 방금 띈 실패 toast를 덮어썼다 — 바로 위 함수 주석(confirmSettlementN 위, cycle364 advance 작성)이 명시한 의도('부분 실패 시... 안내만 하고 멈춘다')와 실제 동작이 어긋났고, 그 결과 미지급 참가자의 몫이 다음 openSettlement() 호출(settledThrough+1부터 시작)에서 조용히 영구 누락된다. 기존 테스트(doSettleN 부분 실패 테스트)는 DB.txns.length와 toast 문구만 확인해 이 회귀를 못 잡고 있었다. 수정: doSettleN에 failed 플래그를 추가해 루프 중 실패가 있었으면(생성된 거래가 1건 이상이어도) settledThrough를 당기지 않고 성공 undoToast도 띄우지 않은 채 save/invalidateBalances/renderCurrent만으로 멈춘다(이미 만든 거래는 그대로 유지, 주석의 원래 의도와 일치). 기존 부분 실패 테스트에 settledThrough가 null로 유지되는지, lastUndo가 null로 유지되는지(성공 토스트가 실패 토스트를 덮지 않는지) 단언 2개를 추가 — git stash로 index.html을 되돌려 새 단언이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3556/3556 통과(기존 테스트 수 그대로, 신규 test() 없이 기존 테스트에 단언만 추가). node --check sw.js/test/run.js 통과, index.html은 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.472->1.47.473, sw.js CACHE v739->v740.",
    "commit": null
   }
  ]

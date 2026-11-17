@@ -29163,9 +29163,12 @@ test('doSettleN: 중간에 현금성 자산이 없는 참가자가 있으면 그
   setupSettlement3DB({ assets: [{ id: 'a1', type: 'cash', owner: '나' }, { id: 'a2', type: 'cash', owner: '배우자' }] }); // '아이'의 현금 자산 없음
   sandbox.TODAY = '2026-01-10';
   sandbox.lastToast = null;
+  sandbox.lastUndo = null;
   sandbox.doSettleN([{ from: '배우자', to: '나', amount: 5000 }, { from: '아이', to: '나', amount: 3000 }]);
   assert.strictEqual(sandbox.DB.txns.length, 1, '첫 건(배우자->나)은 성공해 그대로 남아야 함');
   assert.ok(sandbox.lastToast.includes('아이') && sandbox.lastToast.includes('현금성 자산이 없어요'));
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null, '부분 실패면 미지급 참가자 몫이 다음 정산 범위에서 빠지지 않게 settledThrough를 당기면 안 됨(app-evolve cycle367 develop에서 발견된 회귀)');
+  assert.strictEqual(sandbox.lastUndo, null, '부분 실패면 "정산 완료로 표시했어요" 성공 undoToast가 실패 안내 토스트를 덮어쓰면 안 됨');
 });
 test('doSettleN: 튜토리얼 모드 중에는 twGuard가 막아서 이체 내역이 생기지 않는다', () => {
   sandbox.TWi = 0;
