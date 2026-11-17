@@ -4741,6 +4741,34 @@ test('archiveBaselines: isPendingFn을 생략하면 모든 거래를 확정된 �
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, txns, '2025-01-01'))), { a1: 500 });
 });
 
+/* ---------- archiveQtyLogGainBaselines: 오래된 보유수량 변경기록(DB.assetQtyLog) 아카이브용
+ * cutoffDate 이전 realizedGain 합산 (순수, logic.js) (app-evolve cycle365 critique/advance) ----------
+ * archiveTxnsBefore가 DB.txns만 cutoffDate 기준으로 정리하고 DB.assetQtyLog는 손대지 않아 '오래된
+ * 내역 정리'를 실행해도 끝없이 늘어나던 공백을 메운다. archiveBaselines와 같은 '지워지는 몫을
+ * 베이스라인에 접어 넣는다' 원칙을 realizedGain!=null인 기록에만 적용한다(totalRealizedGain과
+ * 동일한 필터). */
+test('archiveQtyLogGainBaselines: cutoffDate 이전 realizedGain만 자산별로 합산한다(이후 기록·null 기록은 제외)', () => {
+  const items = [
+    { assetId: 'a1', date: '2023-01-01', realizedGain: 10000 },
+    { assetId: 'a1', date: '2023-06-01', realizedGain: -3000 },
+    { assetId: 'a1', date: '2026-01-01', realizedGain: 50000 }, // cutoff 이후 — 제외
+    { assetId: 'a2', date: '2023-01-01', realizedGain: null }, // 매도금액 미입력 — 제외
+  ];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveQtyLogGainBaselines(items, '2025-12-31'))), { a1: 7000 });
+});
+test('archiveQtyLogGainBaselines: cutoffDate 당일 기록은 경계 포함으로 합산한다(archiveBaselines와 동일한 "<=cutoff")', () => {
+  const items = [{ assetId: 'a1', date: '2025-01-01', realizedGain: 1000 }];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveQtyLogGainBaselines(items, '2025-01-01'))), { a1: 1000 });
+});
+test('archiveQtyLogGainBaselines: realizedGain이 있는 기록이 하나도 없는 자산은 map에 키 자체가 없다(0과 "안 건드림"을 구분)', () => {
+  const items = [{ assetId: 'a1', date: '2023-01-01', realizedGain: null }, { assetId: 'a1', date: '2023-02-01', addedAmount: 5000 }];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveQtyLogGainBaselines(items, '2025-01-01'))), {});
+});
+test('archiveQtyLogGainBaselines: 빈 배열/undefined 입력도 안 터지고 빈 객체를 돌려준다', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveQtyLogGainBaselines([], '2025-01-01'))), {});
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveQtyLogGainBaselines(undefined, '2025-01-01'))), {});
+});
+
 /* ---------- recArchiveStartDate: 아카이브 후 반복거래 startDate 전진 (순수, logic.js)
  * (app-evolve cycle230 critique/advance) ----------
  * archiveBaselines()는 cutoffDate까지의 반복거래 발생분(expandRec(RANGE_FROM,cutoffDate))까지
@@ -10943,6 +10971,33 @@ test('openAssetQtyLog: saleProceeds/realizedGain이 있는 매도 기록은 "매
   assert.ok(html.includes('매도 100,000원 · 실현손익 -20,000원'), '손실은 - 기호와 함께(comma가 음수 부호를 그대로 포함) 표시');
   assert.ok(!html.includes('매도 0원'), 'saleProceeds가 없는 기록(q3, 투입/매도 입력 없이 단순 조정)엔 매도 문구가 없어야 함');
 });
+/* a.archivedRealizedGain은 archiveTxnsBefore(아래 섹션)가 cutoffDate 이전 realizedGain을 접어
+ * 넣는 베이스라인(app-evolve cycle365 critique/advance) — '오래된 내역 정리'를 거듭해도 누적
+ * 실현손익이 0으로 끊기지 않는지 확인한다. */
+test('openAssetQtyLog: a.archivedRealizedGain(정리로 접힌 과거 실현손익)이 있으면 남은 기록의 합계에 더해 누적 실현손익을 보여준다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10, archivedRealizedGain: 30000 }],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 20, newQty: 10, field: 'stockQty', updatedAt: 100, saleProceeds: 200000, realizedGain: 50000 }],
+  };
+  sandbox.openAssetQtyLog('a1');
+  assert.ok(sandbox.lastSheetHtml.includes('>+80,000원<'), '베이스라인(30000)+남은 기록 합계(50000)=80000이 누적 실현손익으로 보여야 함');
+});
+test('openAssetQtyLog: 정리로 남은 기록에 realizedGain이 하나도 없어도 a.archivedRealizedGain만으로 누적 실현손익 카드를 보여준다(0이면 0도 보여줌)', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10, archivedRealizedGain: 0 }],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 15, newQty: 10, field: 'stockQty', updatedAt: 100 }],
+  };
+  sandbox.openAssetQtyLog('a1');
+  assert.ok(sandbox.lastSheetHtml.includes('누적 실현손익'), 'archivedRealizedGain이 0이어도(정리한 적은 있음) null과 구분해 카드를 보여줘야 함');
+});
+test('openAssetQtyLog: archivedRealizedGain도 남은 기록의 realizedGain도 없으면 기존처럼 누적 실현손익 카드를 아예 숨긴다(회귀)', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 15, newQty: 10, field: 'stockQty', updatedAt: 100 }],
+  };
+  sandbox.openAssetQtyLog('a1');
+  assert.ok(!sandbox.lastSheetHtml.includes('누적 실현손익'), '실현손익을 전혀 모르면(추측하지 않는다는 원칙) 카드가 없어야 함');
+});
 test('delAssetQtyLog: 바로 지우지 않고 확인 시트를 띄우며, 확인해야 DB.assetQtyLog에서 제거되고 DB.deletedIds에 톰스톤이 남는다', () => {
   sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
     assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 }], deletedIds: {} };
@@ -12088,6 +12143,58 @@ test('archiveTxnsBefore: undo하면 baseAmount와 지워진 거래가 정확히 
   assert.strictEqual(a1.baseAmount, 0, 'undo하면 baseAmount가 원래 값으로 복원되어야 함');
   assert.ok(sandbox.DB.txns.some(t => t.id === 't1'), 'undo하면 지웠던 거래가 되살아나야 함');
   assert.strictEqual(sandbox.DB.deletedIds.t1, undefined, 'undo하면 톰스톤도 지워져야 함');
+});
+/* DB.assetQtyLog(fx/gold/stock/crypto 보유수량 변경 기록)가 archiveTxnsBefore에서 유일하게 빠져
+ * '오래된 내역 정리'를 실행해도 끝없이 늘어나던 공백(app-evolve cycle365 critique/advance)을
+ * DB.txns와 나란히 cutoffDate 기준으로 정리하는지, realizedGain 합이 a.archivedRealizedGain
+ * 베이스라인으로 접히는지 확인한다. */
+test('archiveTxnsBefore: cutoffDate 이전 assetQtyLog만 지우고 그 realizedGain 합을 a.archivedRealizedGain에 접어 넣는다(이후 기록은 그대로 남김)', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'stock', stockCode: 'X', stockQty: 10 };
+  const q1 = { id: 'q1', assetId: 'a1', date: '2023-02-01', prevQty: 20, newQty: 15, realizedGain: 10000 };
+  const q2 = { id: 'q2', assetId: 'a1', date: '2023-06-01', prevQty: 15, newQty: 10, realizedGain: -3000 };
+  const q3 = { id: 'q3', assetId: 'a1', date: '2025-01-01', prevQty: 10, newQty: 8, realizedGain: 500 }; // cutoff 이후 — 남아야 함
+  sandbox.DB = { assets: [a1], txns: [], assetQtyLog: [q1, q2, q3], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.deepStrictEqual(sandbox.DB.assetQtyLog.map(q => q.id), ['q3'], 'cutoff 이전 기록만 지워지고 이후 기록은 남아야 함');
+  assert.strictEqual(a1.archivedRealizedGain, 7000, 'cutoff 이전 realizedGain 합(10000-3000)이 베이스라인으로 접혀야 함');
+  assert.ok(typeof sandbox.DB.deletedIds.q1 === 'number' && typeof sandbox.DB.deletedIds.q2 === 'number', '지워진 수량기록엔 톰스톤이 남아야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.q3, undefined, '남은 기록은 톰스톤이 없어야 함');
+});
+test('archiveTxnsBefore: undo하면 assetQtyLog와 a.archivedRealizedGain이 정확히 원래대로 돌아온다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'stock', stockCode: 'X', stockQty: 10 };
+  const q1 = { id: 'q1', assetId: 'a1', date: '2023-02-01', prevQty: 20, newQty: 15, realizedGain: 10000 };
+  sandbox.DB = { assets: [a1], txns: [], assetQtyLog: [q1], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(a1.archivedRealizedGain, 10000);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(a1.archivedRealizedGain, undefined, 'undo하면 archivedRealizedGain 필드 자체가 정리 전(미설정) 상태로 돌아가야 함');
+  assert.ok(sandbox.DB.assetQtyLog.some(q => q.id === 'q1'), 'undo하면 지웠던 수량기록이 되살아나야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.q1, undefined, 'undo하면 수량기록 톰스톤도 지워져야 함');
+});
+test('archiveTxnsBefore: 이미 archivedRealizedGain이 있는 자산을 다시 정리하면 기존 값에 더해지고, undo하면 그 이전 값으로(0/미설정이 아니라) 돌아온다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'stock', stockCode: 'X', stockQty: 5, archivedRealizedGain: 1000 };
+  const q1 = { id: 'q1', assetId: 'a1', date: '2023-02-01', prevQty: 10, newQty: 5, realizedGain: 2000 };
+  sandbox.DB = { assets: [a1], txns: [], assetQtyLog: [q1], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(a1.archivedRealizedGain, 3000, '기존 베이스라인(1000)에 이번 정리분(2000)이 더해져야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(a1.archivedRealizedGain, 1000, 'undo하면 이번 정리 전의 베이스라인(1000)으로 돌아가야 함(0/미설정이 아님)');
+});
+test('archiveTxnsBefore: realizedGain이 있는 수량기록이 없는 자산은 archivedRealizedGain 필드가 새로 생기지 않는다(fx/stock baseAmount 회귀 테스트와 동일한 원칙)', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'stock', stockCode: 'X', stockQty: 5 };
+  const q1 = { id: 'q1', assetId: 'a1', date: '2023-02-01', prevQty: 10, newQty: 5 }; // realizedGain 없음(단순 조정)
+  sandbox.DB = { assets: [a1], txns: [], assetQtyLog: [q1], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(a1.archivedRealizedGain, undefined, 'realizedGain 없는 기록만 지워지면 archivedRealizedGain이 생기면 안 됨');
+  assert.deepStrictEqual(sandbox.DB.assetQtyLog, [], '기록 자체는 cutoff 이전이므로 지워져야 함');
 });
 /* budgetCarryFor(위 '토글 opt-in 이월' 섹션)가 정리된 달의 이월을 전액으로 잘못 부풀리지 않도록
  * archiveTxnsBefore가 남기는 DB.settings.archivedThroughDate 마커(app-evolve cycle295 develop). */

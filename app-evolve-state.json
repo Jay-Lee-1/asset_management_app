@@ -1,19 +1,8 @@
 {
- "cycle": 365,
- "phase": "advance",
- "pending_advance_plan": {
-  "title": "DB.assetQtyLog가 저장공간 정리(archiveTxnsBefore)에서 누락되어 활성 트레이더의 용량 경고가 영구히 재발함",
-  "why": "archiveTxnsBefore(index.html:12590-12627, 앱 유일의 \"오래된 내역 정리\" 기능)는 DB.txns를 cutoffDate 이전 기준으로 잘라내고 자산 잔액을 baseline(baseAmount/amountKRW)으로 접어 넣지만, fx/gold/stock/crypto 수량 변경마다 push되는 DB.assetQtyLog(index.html:2873, 5465-5474에서 DB.txns와 1:1로 함께 쌓임)는 전혀 건드리지 않는다. grep으로 assetQtyLog에 대한 archive/prune/trim/cutoff 로직이 전혀 없음을 확인했고, DB.nwHistory(pruneNwHistory)나 DB.trash*(gcTrashTxns+TRASH_MAX_AGE_DAYS)와 달리 유일하게 무제한으로 증가한다. openAssetQtyLog(7247-7261)가 totalRealizedGain을 전체 미필터 이력에서 합산하므로 단순 삭제는 누적 실현손익 표시를 깨뜨린다 — 그래서 방치된 것으로 보인다. 결과적으로 활성 트레이더가 용량 경고를 보고 \"오래된 내역 정리\"를 실행해도 DB.assetQtyLog는 계속 커져서 경고가 반복된다.",
-  "approach": "1) archiveTxnsBefore에서 DB.txns와 동일하게 DB.assetQtyLog 항목을 date<=cutoffDate 기준으로 분리. 2) 잘려나가는 자산별 realizedGain 합계를 DB.assets[i].archivedRealizedGain 같은 새 baseline 필드로 접어넣어(12598-12601의 baseAmount/amountKRW 패턴을 따름) openAssetQtyLog/totalRealizedGain이 0이 아닌 이 baseline에서 시작하게 한다. 3) 제거된 assetQtyLog 항목의 id를 DB.deletedIds에 tombstone 처리(12620의 txns 패턴과 동일)해 클라우드 merge가 되살리지 않게 한다. 4) 기존 undoToast 클로저(12628~)를 확장해 제거된 assetQtyLog 항목과 이전 baseline도 복원하게 한다(assets/recurrences에 이미 있는 prevBase/prevRec 패턴). 5) test/run.js에 archiveTxnsBefore 기존 테스트를 본떠 회귀 테스트 추가: qty-log 항목 제거+baseline 요약, 아카이브 전후 totalRealizedGain 동일, undo 시 정확한 복원."
- },
+ "cycle": 366,
+ "phase": "develop",
+ "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 360,
-   "phase": "critique",
-   "timestamp": "2026-11-15T11:40:00.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-360의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: DB.owners/정산(settle) 등 2인 공동 가계부 기능이 앱 핵심에 깊게 구현돼 있고 index.html:2326 주석도 '부부 공유 계정'을 직접 언급하는데, 클라우드 동기화는 user_data 테이블이 Supabase auth uid 1개로만 키잉돼(CLOUD_UID=data.session.user.id, README.txt:38-54) '같은 이메일·비밀번호를 공유'하는 방법 하나만 지원한다 — 비밀번호 분실/변경 시 한쪽이 영구 차단되고, 감사 추적이 없으며, App Lock PIN도 공유해야 하는 근본적인 인증 모델 불일치. 후보로 클라우드 폴링 지연(이미 3분 스테일 체크+자동병합으로 완화됨)과 전체내역 재스캔(이미 _histCache 등으로 캐싱됨)도 검토했으나 기각. pending_advance_plan에 초대 코드 기반 household_members 매핑 테이블+보조 로그인 계획 저장(단, 실제 원격 Supabase 스키마를 이 세션이 만들거나 검증할 수 없는 cycle356과 동일한 인프라 제약이 있어, advance 단계가 안전하게 구현 불가능하다고 판단하면 보류하고 대체 과제를 고를 수 있다고 명시). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
   {
    "cycle": 360,
    "phase": "advance",
@@ -145,6 +134,13 @@
    "phase": "critique",
    "timestamp": "2026-11-17T16:11:35.658Z",
    "summary": "앱 전체를 한 걸음 물러나 비평(Explore 서브에이전트, 이미 다룬 반복거래/부채상환/정산/goalBehind/costBasis/NAME_MAX/클라우드동기화/fx폴백/팔레트/comma -0/undoToast WCAG/App Lock/사진 페이로드/전역검색(존재 확인됨)/role=button 중첩 전체 제외). DB.assetQtyLog가 archiveTxnsBefore(저장공간 정리)에서 유일하게 누락되어, DB.nwHistory/trash*와 달리 무제한 증가하며 활성 트레이더의 용량 경고가 정리 후에도 재발하는 문제를 발견. pending_advance_plan에 구체적 구현안(baseline 접기+tombstone+undo 확장+회귀테스트) 저장.",
+   "commit": null
+  },
+  {
+   "cycle": 365,
+   "phase": "advance",
+   "timestamp": "2026-11-17T17:12:27.297Z",
+   "summary": "critique(cycle365) 계획대로 DB.assetQtyLog가 archiveTxnsBefore(저장공간 정리)에서 누락돼 무제한 증가하던 문제를 고쳤다. logic.js에 순수 함수 archiveQtyLogGainBaselines(assetQtyLog,cutoffDate) 추가(archiveBaselines와 같은 \"지워지는 몫을 베이스라인에 접는다\" 원칙, realizedGain!=null인 cutoffDate 이전 기록만 자산별 합산 — totalRealizedGain과 동일 필터). archiveTxnsBefore(index.html)가 DB.txns와 나란히 DB.assetQtyLog도 cutoffDate 기준으로 잘라내고, 지워지는 realizedGain 합을 a.archivedRealizedGain 베이스라인으로 접어 넣은 뒤 제거된 항목을 DB.deletedIds에 톰스톤 처리(클라우드 merge가 되살리지 않게)하도록 확장. 기존 undoToast 클로저도 확장해 지워진 assetQtyLog 항목과 이전 archivedRealizedGain 값을 정확히 복원(0/미설정이 아니라 직전 값으로). openAssetQtyLog의 누적 실현손익 계산을 a.archivedRealizedGain+남은 기록 합계로 바꿔(baseline과 items 둘 다 없을 때만 null 유지) 정리를 거듭해도 합계가 끊기지 않게 했다. 테스트 15건 추가(archiveQtyLogGainBaselines 단위 4건, openAssetQtyLog 베이스라인 표시 3건, archiveTxnsBefore 통합 4건: 정리/undo/기존 베이스라인에 누적/realizedGain 없는 기록은 필드 안 생김). git stash로 index.html/logic.js를 수정 전 상태로 되돌려 새 테스트 10건이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3529->3540/3540 통과(vm 샌드박스 realm 문제로 빈 객체 비교 1건만 JSON.stringify 비교로 전환, 기존 cycle364 관례와 동일). node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.470->1.47.471, sw.js CACHE v737->v738. 범위가 커 보이는 yearRealizedGain(연도별 집계)의 과거 연도 archiving 영향은 범위 밖으로 남겨둠(budgetCarryFor의 archivedThroughDate 클램프와 같은 종류의 기존 한계, 이번 계획이 명시한 범위는 openAssetQtyLog 누적 합계뿐).",
    "commit": null
   }
  ]

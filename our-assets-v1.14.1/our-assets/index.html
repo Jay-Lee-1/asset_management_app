@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.470';
+const APP_VERSION='1.47.471';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -7248,7 +7248,8 @@ function openAssetQtyLog(assetId){
  const a=DB.assets.find(x=>x.id===assetId);if(!a)return;
  const unit=a.type==='fx'?a.currency:(a.type==='gold'?'돈':(a.type==='crypto'?'개':'주'));
  const items=(DB.assetQtyLog||[]).filter(q=>q.assetId===assetId).sort((x,y)=>(y.updatedAt||0)-(x.updatedAt||0));
- const totalGain=totalRealizedGain(items); /* 부분매도를 여러 번 나눠 한 경우 각 행의 실현손익을 일일이 더하지 않아도 되도록 합계를 보여준다(app-evolve cycle266 develop) */
+ const itemsGain=totalRealizedGain(items); /* 부분매도를 여러 번 나눠 한 경우 각 행의 실현손익을 일일이 더하지 않아도 되도록 합계를 보여준다(app-evolve cycle266 develop) */
+ const totalGain=(a.archivedRealizedGain!=null||itemsGain!=null)?(a.archivedRealizedGain||0)+(itemsGain||0):null; /* a.archivedRealizedGain은 archiveTxnsBefore가 cutoffDate 이전 기록을 지우며 접어 넣는 베이스라인(app-evolve cycle365 advance) — 정리를 거듭해도 누적 실현손익이 0으로 끊기지 않게 한다 */
  const row=q=>{const delta=q.newQty-q.prevQty;const sign=delta>0?'+':'';
   const gainTxt=q.realizedGain!=null?` · 실현손익 ${q.realizedGain>0?'+':''}${comma(q.realizedGain)}원`:'';
   return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
@@ -12599,6 +12600,18 @@ function archiveTxnsBefore(cutoffDate){
   prevBase[a.id]={baseAmount:a.baseAmount,amountKRW:a.amountKRW};
   if(a.baseAmount!=null)a.baseAmount=baselines[a.id];else a.amountKRW=baselines[a.id];
   touch(a);});
+ /* DB.assetQtyLog(fx/gold/stock/crypto 수량 변경 기록)도 DB.txns와 나란히 cutoffDate 이전 몫을
+  * 지운다 — 손대지 않으면 '오래된 내역 정리'를 아무리 실행해도 끝없이 늘어나 저장공간 경고가
+  * 정리 뒤에도 재발한다(app-evolve cycle365 critique/advance). 지워지는 realizedGain 합을
+  * a.archivedRealizedGain 베이스라인으로 접어 넣어 openAssetQtyLog의 누적 실현손익(totalRealizedGain)
+  * 합계가 끊기지 않게 한다(baseAmount/amountKRW를 접는 바로 위 패턴과 동일한 원칙). */
+ const qtyLogGainBaselines=archiveQtyLogGainBaselines(DB.assetQtyLog,cutoffDate);
+ const removedQtyLog=(DB.assetQtyLog||[]).filter(q=>q.date<=cutoffDate);
+ const prevArchivedGain={};
+ DB.assets.forEach(a=>{const g=qtyLogGainBaselines[a.id];if(!g)return;
+  prevArchivedGain[a.id]=a.archivedRealizedGain;
+  a.archivedRealizedGain=(a.archivedRealizedGain||0)+g;
+  touch(a);});
  /* 활성 반복거래(active!==false)는 DB.txns처럼 실제로 지워지는 레코드가 아니라 매번 RANGE_FROM부터
   * recDates()/expandRec()로 다시 전개되므로, 위에서 cutoffDate까지의 발생분을 베이스라인에
   * 흡수해놓고 반복 자체는 그대로 두면 같은 과거 회차가 다음 잔액 계산에서 또 더해져 이중
@@ -12618,6 +12631,8 @@ function archiveTxnsBefore(cutoffDate){
  });
  DB.txns=DB.txns.filter(t=>t.date>cutoffDate);
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();removed.forEach(t=>DB.deletedIds[t.id]=now);
+ DB.assetQtyLog=(DB.assetQtyLog||[]).filter(q=>q.date>cutoffDate);
+ removedQtyLog.forEach(q=>DB.deletedIds[q.id]=now); /* delAssetQtyLog와 동일한 톰스톤 — 없으면 클라우드 merge가 지운 기록을 되살린다 */
  DB.settings=DB.settings||{};
  const prevArchivedThrough=DB.settings.archivedThroughDate; /* budgetCarryFor(index.html)가 정리된
   달의 이월을 전액으로 잘못 부풀리지 않도록 남기는 마커(app-evolve cycle295 develop) — 이미 정리한
@@ -12628,8 +12643,10 @@ function archiveTxnsBefore(cutoffDate){
  undoToast(`${removed.length}개의 오래된 내역을 정리했어요`,()=>{
   clearTimeout(archivePushT);try{localStorage.removeItem(backupKey)}catch(e){}
   DB.assets.forEach(a=>{const p=prevBase[a.id];if(!p)return;a.baseAmount=p.baseAmount;a.amountKRW=p.amountKRW;touch(a)});
+  DB.assets.forEach(a=>{if(!(a.id in prevArchivedGain))return;const p=prevArchivedGain[a.id];if(p==null)delete a.archivedRealizedGain;else a.archivedRealizedGain=p;touch(a)});
   (DB.recurrences||[]).forEach(r=>{const p=prevRec[r.id];if(!p)return;r.startDate=p.startDate;r.skip=p.skip;r.edits=p.edits;r.confirmedDates=p.confirmedDates;touch(r)});
   DB.txns.push(...removed);removed.forEach(t=>delete DB.deletedIds[t.id]);
+  DB.assetQtyLog.push(...removedQtyLog);removedQtyLog.forEach(q=>delete DB.deletedIds[q.id]);
   DB.settings.archivedThroughDate=prevArchivedThrough;
   save();renderCurrent();toast('되돌렸어요')});
 }

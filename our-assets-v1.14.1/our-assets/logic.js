@@ -2051,6 +2051,24 @@ function archiveBaselines(assets,expandedTxns,cutoffDate,isPendingFn){
  });
  return map;
 }
+/* archiveTxnsBefore(index.html)는 DB.txns만 cutoffDate 기준으로 흡수·삭제했을 뿐, fx/gold/stock/
+ * crypto 수량 변경마다 DB.txns와 나란히 쌓이는 DB.assetQtyLog는 전혀 건드리지 않아 '오래된 내역
+ * 정리'를 아무리 실행해도 끝없이 늘어났다(app-evolve cycle365 critique) — DB.nwHistory/trash*와
+ * 달리 유일하게 무제한 증가하는 컬렉션이었다. archiveBaselines와 같은 '지워지는 몫을 베이스라인에
+ * 접어 넣는다' 원칙을 적용: openAssetQtyLog/totalRealizedGain이 realizedGain!=null인 기록만 더하므로
+ * (totalRealizedGain 주석 참고), cutoffDate 이전 기록 중 realizedGain이 있는 것만 자산별로 합산해
+ * 돌려준다. 합이 0인 자산(이익/손실 기록이 아예 없던 자산)은 map에 키 자체가 없다 — 호출부가
+ * '이 자산은 안 건드린다'와 '베이스라인이 정확히 0이다'를 구분해야 하는 archiveBaselines 패턴과
+ * 달리, 여긴 호출부(archiveTxnsBefore)가 "0이면 스킵"으로 처리하는 쪽이 archiveBaselines의 기존
+ * '실제로 안 바뀌면 건드리지 않는다' 테스트 관례와 맞는다. */
+function archiveQtyLogGainBaselines(assetQtyLog,cutoffDate){
+ const map={};
+ (assetQtyLog||[]).forEach(q=>{
+  if(q.date>cutoffDate||q.realizedGain==null)return;
+  map[q.assetId]=(map[q.assetId]||0)+q.realizedGain;
+ });
+ return map;
+}
 
 /* ================= WCAG 명도대비 (순수) ================= */
 /* .a-cash/.a-bank만 라이트 테마 전용 어두운 변형(--brand-ink)을 써 WCAG 1.4.11(비텍스트
