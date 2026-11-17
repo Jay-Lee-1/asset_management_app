@@ -1,6 +1,6 @@
 {
  "cycle": 365,
- "phase": "review",
+ "phase": "critique",
  "pending_advance_plan": null,
  "history": [
   {
@@ -142,6 +142,13 @@
    "timestamp": "2026-11-17T14:12:35.000Z",
    "summary": "코드를 직접 탐색해 반복이체 편집 시트의 '주말이면' 설정(WK 어휘, recOpenWeekend())이 UI 문구와 실제 동작이 어긋나 있음을 발견했다. '앞당겨 금요일'/'미뤄서 월요일'처럼 조정 결과 요일을 못박아 말하고, 설명도 '토·일요일과 겹칠 때'로만 적혀 있었다. 하지만 실제 shiftWeekend()/isKrNonBusinessDay()는 토·일뿐 아니라 KR_FIXED_HOLIDAYS/KR_LUNAR_HOLIDAYS(공휴일, cycle344/361 critique/advance에서 추가)까지 보고 최대 10일 반복 이동한다 — 금요일/월요일 자체가 공휴일이면 실제로는 목요일/화요일 등으로 더 밀리는데 UI는 항상 금요일/월요일이라고 말해 문구와 동작이 어긋났고, 공휴일 조정이 들어간다는 사실 자체도 안내되지 않았다. 수정: label('주말이면'→'주말·공휴일이면'), 시트 제목/설명, WK의 두 줄 설명(none/earlier/later)을 모두 결과 요일을 특정하지 않는 '그 전/다음 평일로' 표현으로 바꿨다. 로직(shiftWeekend/recDates 등)은 건드리지 않은 순수 문구 수정이라 기존 날짜 계산 동작·테스트는 전부 그대로다. grep으로 '주말이면'/'금요일'/'월요일' 잔존 참조가 더 없음을 확인했고, test/run.js에 WK 문구 자체를 단언하는 테스트가 없어 회귀 위험이 없음을 확인했다. node test/run.js 3529/3529 통과(신규 테스트는 추가하지 않음 — 순수 UI 텍스트라 단위 테스트 대상 로직이 없음). node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.469->1.47.470, sw.js CACHE v736->v737. 참고: 이번 사이클 시작 시 로컬 git이 detached HEAD였고 로컬 'main' 브랜치 ref가 origin/main과 50커밋씩 서로 갈라져 있는 걸 발견했다(과거 어느 시점의 stale/orphan 상태로 추정) — origin/main(=시작 시 detached HEAD였던 커밋, state.json이 cycle365/develop을 가리키던 바로 그 커밋)을 기준으로 로컬 main을 재설정(git checkout -B main origin/main)한 뒤 그 위에서 작업했다. 로컬 main이 전에 가리키던 쪽 커밋들은 origin에 없고 이번 작업과 무관한 과거 lineage라 그대로 둠(삭제/강제 아님, 단순 로컬 브랜치 포인터 재설정).",
    "commit": "c45454e"
+  },
+  {
+   "cycle": 365,
+   "phase": "review",
+   "timestamp": "2026-11-17T14:40:00.000Z",
+   "summary": "develop(cycle365, c45454e: 반복이체 '주말이면' WK 문구를 '주말·공휴일이면'/결과 요일 미특정으로 수정)을 검토했다. diff가 label/시트 제목·설명/WK 두 줄 설명만 바꾸고 shiftWeekend/isKrNonBusinessDay/recDates 등 로직은 전혀 건드리지 않았음을 확인. grep으로 index.html·logic.js 전체에서 '앞당겨 금요일'/'미뤄서 월요일'/'주말이면' 등 옛 문구의 잔존 참조가 0건임을 재확인(로직 주석에 남은 '금요일/월요일' 언급은 매주 반복 레이블 설명으로 이번 건과 무관). node test/run.js 3529/3529 재실행 통과, node --check sw.js/logic.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+   "commit": null
   }
  ]
 }
