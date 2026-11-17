@@ -37521,7 +37521,11 @@ test('[실행형] undoToast(): mouseenter/focus로 6초 타이머를 멈추고 m
   ctx.undoToast('삭제했어요', () => { undone++; });
   assert.strictEqual(toastWrap.children.length, 1, 'toastWrap에 토스트 엘리먼트를 붙이지 않음');
   const t = toastWrap.children[0];
-  const btn = t.children[0]; // innerHTML 대입이 domstub에서 children을 비우므로, 이후 appendChild(btn)된 버튼이 유일한 자식
+  // t.innerHTML=svg('check')+`<span>...</span>`로 먼저 채워진 뒤 t.appendChild(btn)이 이어지므로
+  // (실제 브라우저와 마찬가지로, domstub.js도 innerHTML 대입이 실제 자식 엘리먼트를 만들게 된
+  // 뒤로는(app-evolve cycle366 advance) children[0]이 그 span이지 btn이 아니다 — 위치가 아니라
+  // 태그로 찾는다.
+  const btn = t.querySelector('button');
   assert.ok(btn && btn.tagName === 'button', '되돌리기 버튼이 토스트 안에 없음');
   assert.strictEqual(timers.length, 1, '생성 즉시 6초 타이머를 1개 걸어야 함(arm())');
   const firstTm = timers[0].id;
@@ -39101,6 +39105,160 @@ test('[실행형] ensureEdgeGesture: 뒤로갈 화면이 없을 때(window._pkBa
   edge.dispatchEvent({ type: 'touchmove', touches: [{ clientX: 150, clientY: 0 }] }); // dx=150>110 커밋
   edge.dispatchEvent({ type: 'touchend' });
   assert.strictEqual(ctx.closeSheetCalls, 1, '되돌아갈 화면이 없는 상태로 엣지 스와이프를 커밋하면(dx>110) closeSheet()가 불려야 함');
+});
+
+/* ---------- openSheet/syncOverlayInert/sheetFocusables/applyHeight/attachDetent: 시트
+ * 생명주기 자체의 실행형 테스트 ---------- */
+// 위 wireSheetGestures/ensureEdgeGesture(cycle209/210)는 이미 실행형으로 검증되지만, 모든 화면
+// 진입점이 거치는 openSheet() 자체는 지금까지 거의 모든 테스트에서 no-op 스텁
+// (`openSheet: (html) => { ctx.lastSheetHtml = html }`, 954/9458/25523/29245/29265/29280/29643행 등)으로
+// 대체돼 aria-labelledby 연결/포커스 트랩 준비(_sheetReturnFocus)/inert 접근성 게이트
+// (syncOverlayInert)/sheetFocusables의 실제 DOM 필터링이 한 번도 실행된 적이 없었다(app-evolve
+// cycle366 critique). domstub.js에 실제 HTML 파싱(innerHTML→자식 엘리먼트), focus()/
+// document.activeElement 추적, contains(), '[attr]' 셀렉터를 추가해(위 domstub.js 참고) 이
+// 함수들을 실제로 실행하는 좁은 ad hoc vm 컨텍스트를 만든다(sheetGestureCtx와 같은 패턴).
+// closeSheet() 자체는 ST.recSel/goalSel/TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING/
+// applyForeignSave/applyPendingCloudConflictMerge 등 훨씬 넓은 전역에 엮여 있어 이번 범위
+// 밖으로 남긴다(다음 cycle 후보 — onclick="closeSheetGuarded()"/aria-labelledby 쪽은 이미
+// 위 extractFunction 기반 소스-패턴 테스트가 일부 다룬다).
+function openSheetCtx() {
+  const dom = domstub.createDocument();
+  const sheetEl = dom.createElement('div'); sheetEl.id = 'sheet'; dom.body.appendChild(sheetEl);
+  const scrimEl = dom.createElement('div'); scrimEl.id = 'scrim'; dom.body.appendChild(scrimEl);
+  const appEl = dom.createElement('div'); appEl.id = 'app'; dom.body.appendChild(appEl);
+  const fabEl = dom.createElement('div'); fabEl.id = 'fab'; dom.body.appendChild(fabEl);
+  const dpModalEl = dom.createElement('div'); dpModalEl.id = 'dpModal'; dom.body.appendChild(dpModalEl);
+  const dpWheelEl = dom.createElement('div'); dpWheelEl.id = 'dpWheel'; dom.body.appendChild(dpWheelEl);
+  const ctx = {
+    document: dom,
+    window: {},
+    $: (id) => dom.getElementById(id),
+    svg: () => '',
+    moveSegBlobs: () => {},
+    fcWire: () => {},
+    requestAnimationFrame: () => {},
+    setTimeout: (fn) => fn(),
+    history: { pushState: () => {}, back: () => {} },
+    innerHeight: 800,
+    // ensureEdgeGesture()의 up() 핸들러와 wireSheetGestures()의 endClose()가 참조하는 전역 —
+    // 이번 범위(openSheet 자체)는 터치 드래그를 일으키지 않아 실제로 호출될 일은 없지만,
+    // sheetGestureCtx와 같은 이유로(참조만 있어도 ReferenceError 없이 안전하게) 스텁해 둔다.
+    closeSheet: () => {}, closeSheetGuarded: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [
+      extractLet('_segPrev'),
+      extractLet('_sheetReturnFocus'),
+      extractLet('_ovHistDepth'),
+      extractFunction('ovHistPush'),
+      extractFunction('ovHistPop'),
+      extractFunction('applyHeight'),
+      extractFunction('attachDetent'),
+      extractFunction('sheetFocusables'),
+      extractFunction('syncOverlayInert'),
+      extractFunction('wireSheetGestures'),
+      extractFunction('ensureEdgeGesture'),
+      extractFunction('openSheet'),
+    ].join('\n'),
+    ctx, { filename: 'open-sheet-real' }
+  );
+  return { ctx, dom, sheetEl, scrimEl, appEl, fabEl, dpModalEl, dpWheelEl };
+}
+test('[실행형] openSheet: h3 제목이 있으면 그 h3의 id로 #sheet에 aria-labelledby를 연결하고 show 클래스를 붙인다', () => {
+  const { ctx, sheetEl, scrimEl, appEl, fabEl } = openSheetCtx();
+  ctx.openSheet('<h3>설정</h3><button>확인</button>');
+  assert.ok(sheetEl.classList.contains('show'), '#sheet에 show 클래스가 붙어야 함');
+  assert.ok(scrimEl.classList.contains('show'), '#scrim에도 show 클래스가 붙어야 함');
+  const labelledby = sheetEl.getAttribute('aria-labelledby');
+  assert.ok(labelledby, 'aria-labelledby가 설정돼야 함');
+  const h3 = sheetEl.querySelector('h3');
+  assert.strictEqual(h3.id, labelledby, 'aria-labelledby가 실제로 그려진 h3의 id를 가리켜야 함');
+  // syncOverlayInert()가 실제로 불렸는지 — 시트가 열렸으니 #app/#fab엔 inert가 걸려야 하고
+  // (dpModal/dpWheel은 안 열려 있으니) #sheet 자신에는 걸리면 안 된다.
+  assert.strictEqual(appEl.getAttribute('inert'), '', 'openSheet가 syncOverlayInert()를 불러 #app에 inert를 걸어야 함');
+  assert.strictEqual(fabEl.getAttribute('inert'), '', '#fab에도 inert가 걸려야 함');
+  assert.strictEqual(sheetEl.getAttribute('inert'), null, 'dpModal/dpWheel이 안 열려 있으면 #sheet 자신엔 inert가 걸리면 안 됨');
+});
+test('[실행형] openSheet: 제목(h3/.pk-h)이 없으면 이전에 남아있던 aria-labelledby를 지운다', () => {
+  const { ctx, sheetEl } = openSheetCtx();
+  sheetEl.setAttribute('aria-labelledby', 'stale-from-previous-screen');
+  ctx.openSheet('<div class="desc">안내문</div>');
+  assert.strictEqual(sheetEl.getAttribute('aria-labelledby'), null, '제목이 없는 화면으로 바뀌면 이전 aria-labelledby도 지워야 함(안 지우면 스크린리더가 엉뚱한 제목을 읽음)');
+});
+test('[실행형] openSheet: topBtn을 안 넘기면 기본 닫기 버튼(sheet-x)이 문서상 맨 앞이라 열릴 때 거기로 포커스가 이동한다', () => {
+  const { ctx, dom, sheetEl } = openSheetCtx();
+  ctx.openSheet('<h3>확인</h3><button id="innerBtn">실행</button>');
+  assert.notStrictEqual(dom.activeElement, dom.body, '시트가 열리면 포커스가 body에 머물러 있으면 안 됨(포커스 트랩 시작점)');
+  assert.ok(sheetEl.contains(dom.activeElement), '포커스가 시트 안의 엘리먼트로 이동해야 함');
+  assert.ok(dom.activeElement.classList.contains('sheet-x'), '커스텀 topBtn이 없으면 기본 닫기 버튼(sheet-x)이 html 콘텐츠보다 먼저 그려지므로(마크업 순서) 그쪽이 먼저 포커스를 받아야 함');
+});
+test('[실행형] openSheet: topBtn을 직접 넘기면 그 버튼이 기본 닫기 버튼 대신 맨 앞에 와 먼저 포커스된다', () => {
+  const { ctx, dom } = openSheetCtx();
+  ctx.openSheet('<h3>확인</h3>', '<button id="customTop">커스텀</button>');
+  assert.strictEqual(dom.activeElement.id, 'customTop', 'topBtn으로 넘긴 버튼이 포커스를 받아야 함(기본 sheet-x 버튼은 안 그려짐)');
+});
+test('[실행형] sheetFocusables: disabled 버튼과 tabindex=-1 엘리먼트를 제외하고 나머지만 돌려준다', () => {
+  const { ctx, dom } = openSheetCtx();
+  const container = dom.createElement('div');
+  const ok = dom.createElement('button'); ok.id = 'ok';
+  const disabledBtn = dom.createElement('button'); disabledBtn.disabled = true;
+  const unreachable = dom.createElement('button'); unreachable.tabIndex = -1;
+  container.appendChild(ok); container.appendChild(disabledBtn); container.appendChild(unreachable);
+  const list = ctx.sheetFocusables(container);
+  assert.strictEqual(list.length, 1, 'disabled/tabindex=-1 엘리먼트를 제외하면 하나만 남아야 함');
+  assert.strictEqual(list[0], ok, '남는 하나는 disabled도 tabindex=-1도 아닌 버튼이어야 함');
+});
+test('[실행형] syncOverlayInert: dpModal/dpWheel이 열려 있으면 그 아래인 #sheet에도 inert를 걸어 Tab이 새지 않게 한다', () => {
+  const { ctx, sheetEl, dpModalEl, appEl, fabEl } = openSheetCtx();
+  sheetEl.classList.add('show');
+  dpModalEl.classList.add('show');
+  ctx.syncOverlayInert();
+  assert.strictEqual(sheetEl.getAttribute('inert'), '', 'dpModal이 떠 있으면 그 아래 레이어인 #sheet에도 inert가 걸려야 함');
+  assert.strictEqual(appEl.getAttribute('inert'), '', '#app에도 inert가 걸려야 함');
+  assert.strictEqual(fabEl.getAttribute('inert'), '', '#fab에도 inert가 걸려야 함');
+
+  dpModalEl.classList.remove('show');
+  ctx.syncOverlayInert();
+  assert.strictEqual(sheetEl.getAttribute('inert'), null, 'dpModal이 닫히면 시트가 여전히 열려 있어도 #sheet의 inert는 제거돼야 함(시트 자신은 최상단이 됐으니 다시 조작 가능해야 함)');
+  assert.strictEqual(appEl.getAttribute('inert'), '', '시트는 여전히 열려 있으므로 #app/#fab의 inert는 유지돼야 함');
+});
+test('[실행형] applyHeight: 확장 전엔 lockH와 뷰포트 cap(88%) 중 작은 쪽으로 min-height를 고정한다', () => {
+  const { ctx } = openSheetCtx();
+  const sh = { _expanded: false, _lockH: 500 };
+  const sc = { style: {} };
+  ctx.applyHeight(sh, sc);
+  assert.strictEqual(sc.style.maxHeight, '88dvh');
+  assert.strictEqual(sc.style.minHeight, '500px', 'min(500, 800*0.88=704)=500이어야 함');
+});
+test('[실행형] applyHeight: 확장되면 cap이 97%로 늘고 min-height도 뷰포트 기준(innerHeight*0.97)으로 계산한다', () => {
+  const { ctx } = openSheetCtx();
+  const sh = { _expanded: true, _lockH: 0 };
+  const sc = { style: {} };
+  ctx.applyHeight(sh, sc);
+  assert.strictEqual(sc.style.maxHeight, '97dvh');
+  assert.strictEqual(sc.style.minHeight, `${800 * 0.97}px`);
+});
+test('[실행형] attachDetent: 아래로 스크롤해 44px를 넘으면 expanded로 바뀌고, 한 번 되면 다시 위로 올려도 유지된다', () => {
+  const { ctx, dom } = openSheetCtx();
+  const sh = dom.createElement('div'); sh._expanded = false;
+  const sc = dom.createElement('div'); sc.scrollTop = 0;
+  ctx.attachDetent(sh, sc);
+  sc.scrollTop = 50;
+  sc.onscroll();
+  assert.ok(sh.classList.contains('expanded'), '44px를 넘으면 expanded 클래스가 붙어야 함');
+  assert.strictEqual(sh._expanded, true);
+  sc.scrollTop = 0;
+  sc.onscroll();
+  assert.ok(sh.classList.contains('expanded'), '한 번 확장되면(한 번 되면 유지) 다시 위로 스크롤해도 expanded가 유지돼야 함');
+});
+test('[실행형] attachDetent: 시트 드래그 중(sh._drag)이면 스크롤 임계값을 넘어도 확장하지 않는다', () => {
+  const { ctx, dom } = openSheetCtx();
+  const sh = dom.createElement('div'); sh._expanded = false; sh._drag = true;
+  const sc = dom.createElement('div'); sc.scrollTop = 100;
+  ctx.attachDetent(sh, sc);
+  sc.onscroll();
+  assert.strictEqual(sh.classList.contains('expanded'), false, '드래그 중엔 onscroll이 즉시 return해 확장하면 안 됨(wireSheetGestures의 pull-to-close와 충돌 방지)');
 });
 
 /* ---------- hideBootSplash/#bootSplash: 부팅 중(SDK 로딩·클라우드 세션 복원 순차 대기, 최대
