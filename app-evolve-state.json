@@ -1,15 +1,8 @@
 {
  "cycle": 363,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 358,
-   "phase": "develop",
-   "timestamp": "2026-11-15T01:15:00.000Z",
-   "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — duplicateAsset()(index.html:5237-5241)과 duplicateGoal()(4118-4124)이 원본 이름에 ' 복사' 접미사를 NAME_MAX(60) clamp 없이 그대로 붙였는데, saveAsset/saveGoal 저장 시 cleanName()이 slice(0,60)으로 잘라낸다 — 원본 이름이 58~60자(폼 maxlength=60으로 실제 입력 가능한 범위)면 붙인 접미사가 저장 시 통째로 잘려 복제본 이름이 원본과 완전히 같아져 버렸다. 자산 쪽은 saveAsset()의 동명·동종 자산 차단(normName 비교, 5384행)에 걸려 매번 '같은 이름·종류의 자산이 있어요' 토스트로 저장이 막히는 실사용 버그였다(목표는 중복 차단이 없어 이름만 조용히 망가짐). duplicateAsset/duplicateGoal 양쪽 모두 cleanName(name).slice(0,NAME_MAX-접미사길이)+접미사로 베이스 이름을 미리 줄여 접미사가 항상 들어갈 자리를 확보하도록 고쳤다(짧은 이름은 기존과 동일하게 그대로 접미사만 붙음). 테스트 3건 추가(duplicateGoal 경계값 2케이스, duplicateAsset draft 단위+saveAsset 통합 2케이스). node test/run.js 3451->3454/3454 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.456->1.47.457, sw.js CACHE v723->v724.",
-   "commit": null
-  },
   {
    "cycle": 358,
    "phase": "review",
@@ -142,6 +135,13 @@
    "timestamp": "2026-11-17T05:13:40.711Z",
    "summary": "critique(cycle362) 계획대로 txRowCore()의 비선택 모드 행에서 .swipe-content 전체에 role=\"button\"/tabindex를 주면서 그 자손으로 실제 <button class=\"dup-btn\">(복제)/<button class=\"confirm-btn\">(반복이체 확인)을 중첩시키던 WAI-ARIA 위반을 고쳤다. role=\"button\" tabindex=\"0\" onclick=\"rowTap(this)\" onkeydown=\"rowKeydown(...)\"을 .swipe-content 자체가 아니라 아바타+메모+금액만 감싸는 새 내부 wrapper .row-tap으로 옮기고, dup-btn/confirm-btn/photo(onclick=\"openPhotoViewer\")는 .row-tap의 형제로 .swipe-content 바로 아래에 그대로 둬 DOM 중첩만 해소했다. CSS는 .row-tap{display:flex;align-items:center;gap:12px;flex:1;min-width:0}만 추가(.swipe-content .amt/.nm/.tag는 이미 자손 선택자라 그대로 적용됨, amt의 margin-left:auto는 .row-tap이 display:flex가 되면서 그 안에서 동일하게 동작) — 레이아웃은 바이트 단위로 동일하게 유지됨을 눈으로 확인. :focus-visible 아웃라인 규칙에도 .row-tap을 추가. rowTap(this)의 this가 이제 .row-tap을 가리키지만 el.closest(\".swipe\")로 조상을 찾으므로 무해함을 확인. 선택 모드(sel.mode) 분기는 원래부터 role=\"button\" 안에 버튼이 중첩돼 있지 않아 손대지 않음(검토만). 테스트: role=\"button\" 엘리먼트를 div 중첩 깊이로 직접 추적해 그 안에 <button>/<img>가 전혀 없음을 확인하는 헬퍼(divInnerHTML)를 추가하고, (1) dup-btn+photo가 있는 일반 행, (2) confirm-btn이 있는 반복이체 확인 대기 행, (3) 선택 모드(원래부터 안전함을 확인하는 회귀) 3건의 테스트를 추가. git stash로 index.html을 수정 전 상태로 되돌려 (1)(2) 테스트가 실제로 FAIL함을 직접 확인한 뒤 복원. node test/run.js 3482->3487/3487 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.464->1.47.465, sw.js CACHE v731->v732. pending_advance_plan null로 비움.",
    "commit": null
+  },
+  {
+   "cycle": 363,
+   "phase": "develop",
+   "timestamp": "2026-11-17T06:20:53.898Z",
+   "summary": "코드를 직접 탐색해 assetBodyHTML()(자산 관리 목록)의 일반 모드 자산 행이 txRowCore(cycle362)와 똑같은 WAI-ARIA 위반을 갖고 있음을 발견했다 — asset-item 전체에 role=\"button\" tabindex를 주면서 그 자손으로 실제 <button class=\"act-btn\">(복제/내역 보기)을 중첩시켜, VoiceOver/TalkBack이 전체를 하나의 탐색 불가 단위로 묶어 스크린리더 사용자가 안쪽 버튼에 포커스를 옮길 수 없었다. 수정: role=\"button\"/tabindex/onkeydown을 아바타+이름만 감싸는 내부 wrapper .row-tap으로 옮기고, row-acts는 그 밖(asset-item의 형제)에 그대로 둔다. asset-item 자체의 onclick은 유지해 row-acts를 제외한 나머지 영역(아바타/이름/금액) 클릭이 여전히 버블링으로 openAssetSheet를 열도록 보존했다(val의 기존 클릭 동작 보존, txRowCore처럼 amt를 row-tap 안으로 옮기는 대신 DOM 순서/레이아웃을 그대로 유지하는 쪽을 택함). 공유 .row-tap 클래스의 기본 gap(12px, txRowCore 기준)이 asset-item의 gap(13px)과 달라 .asset-item .row-tap{gap:13px}로 덮어써 레이아웃을 바이트 단위로 유지했다. 일괄선택 모드(ST.aSel.mode)는 원래부터 문제가 없어 손대지 않음. 테스트 3건 추가(row-acts가 role=\"button\" 밖에 있는지, asset-item 자체에 role=\"button\"/tabindex가 더는 없는지(onclick은 남아있는지), 선택 모드 회귀 없음) — git stash로 되돌려 새 테스트 2건이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3487->3490/3490 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.465->1.47.466, sw.js CACHE v732->v733. 커밋 전 이 세션의 로컬 main ref가 origin과 다른 과거 커밋(f676877)을 가리키고 있던 걸 발견했으나, git fetch로 재확인한 결과 실제 origin/main은 98f9f05(이 develop가 기반한 바로 그 커밋)이었음을 확인 — 단순히 fetch 전 캐시된 stale ref였고 실제 분기(diverge)는 없었다.",
+   "commit": "4993ba3"
   }
  ]
 }
