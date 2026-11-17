@@ -1,15 +1,12 @@
 {
  "cycle": 363,
- "phase": "critique",
- "pending_advance_plan": null,
+ "phase": "advance",
+ "pending_advance_plan": {
+  "title": "전역(글로벌) 검색 부재 — 5개 도메인별 검색창이 서로 분리되어 있어 한 번에 전체를 검색할 방법이 없음",
+  "why": "전체내역(histQ, index.html~7234), 자산(assetQ, ~5156), 목표(goalQ, ~7687/8690), 반복내역(recQ), 카테고리 관리(gsQ, ~7687) 검색창이 각자 자기 탭의 데이터만 뒤진다. 'Netflix'가 반복이체인지, 거래 메모인지, 리네임된 카테고리인지 알려면 사용자가 3~4개 화면을 순서대로 수동으로 열어봐야 한다. 이 앱이 타겟으로 하는, 수년치 거래/수십 개 자산/반복이체/목표를 쌓아둔 파워유저일수록 이 분절된 검색의 불편을 가장 크게 겪는다. 또한 220ms 디바운스+클리어 버튼 와이어링이 5곳에 각자 복붙되어 있어(서로를 참조하는 주석만 존재), 공유 가능한 '검색' 추상화가 전혀 없다는 아키텍처적 신호이기도 하다.",
+  "approach": "logic.js에 이미 있는 테스트된 매처(matchTxnQuery/matchAssetQuery/matchCatQuery 등 기존 도메인별 매칭 함수)를 그대로 재사용해, 홈 헤더나 메뉴에 전역 검색 진입점(검색 아이콘/시트) 하나를 추가한다. 입력 시 DB.txns(및 expandRec로 펼친 반복 발생분)/DB.assets/DB.goals/DB.recurrences/카테고리 이름을 함께 질의하고, 결과를 도메인별로 그룹핑한 시트에 렌더링하며 각 결과 항목은 기존 상세 화면(editTx/openAssetHistory/openGoalForm/반복내역 상세 등)으로 라우팅한다. 기존 화면 로직은 전혀 바꾸지 않는 완전히 추가(additive)적인 구현이라 회귀 위험이 낮다. 범위가 크면 1차로 거래+자산+반복내역 3개 도메인만 묶고 목표/카테고리는 다음 단계로 미뤄도 된다."
+ },
  "history": [
-  {
-   "cycle": 358,
-   "phase": "critique",
-   "timestamp": "2026-11-15T03:05:00.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-358의 모든 주제(클라우드 충돌 가드, recSave memo, undoToast WCAG, 부채 상환, 정산 breakdown, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 사진 페이로드 등)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: isRlsPolicyError()(index.html:2048)는 RLS/policy 에러만 구분하고 cloudSyncFailed()(2058-2065)가 나머지 전부를 'network'로 묶어 cloudSyncLabel()이 '인터넷 연결을 확인해 주세요'를 띄우는데, README 안내대로 Supabase SQL 에디터에서 user_data 테이블을 직접 만들어야 하는 첫 설정 단계를 빠뜨리면 Postgres 42P01(relation does not exist)이 나지만 이 코드/메시지를 체크하는 곳이 전혀 없다(grep 42P01 전체 0건) — 멀티기기 동기화가 핵심 가치인 앱에서 가장 흔한 첫 실패를 엉뚱한 메시지로 오도하는 공백. SRI hash TODO(1388행, CDN 접근 불가로 인프라 제약 동일), localStorage 쿼터 리스크(이미 storageOutcomeMsg/STORAGE_OK 배너로 커버됨), 테스트가 텍스트매칭뿐이라는 의심(실제로는 vm.runInContext로 대부분 실행 검증함, 비이슈)은 기각. pending_advance_plan에 isMissingTableError(42P01) 분류 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
   {
    "cycle": 358,
    "phase": "advance",
@@ -141,6 +138,13 @@
    "phase": "review",
    "timestamp": "2026-11-17T06:30:00.000Z",
    "summary": "develop(cycle363, 4993ba3: asset-item row-acts role=\"button\" 중첩 접근성 결함 수정)을 검토했다. .row-tap이 아바타+이름만 감싸고 row-acts/val은 그 밖의 형제로 남아 WAI-ARIA의 role=\"button\" 하위 인터랙티브 요소 중첩 금지를 더는 어기지 않음을 확인. asset-item의 onclick(openAssetSheet)이 그대로 남아 row-tap 클릭이 버블링으로 동일하게 열리고, row-tap엔 onclick 없이 onkeydown(rowKeydown)만 있어 키보드 Enter/Space도 중복 호출 없이 한 번만 fn()을 부름을 rowKeydown(event,fn) 구현(합성 클릭 디스패치 없음, e.preventDefault만)으로 확인. wireLongPress()가 data-id/data-lp(여전히 asset-item에 있음)와 touchstart/mousedown만 쓰고 tabindex/role과 무관함을 확인해 long-press 동작 무영향. .asset-item .row-tap{gap:13px}가 공유 .row-tap 기본 gap(12px, display:flex;flex:1;min-width:0)을 덮어써 아바타-이름 간격을 기존과 바이트 단위로 유지하고, .val은 여전히 asset-item의 직계 자식이라 margin-left:auto가 그대로 작동해 레이아웃 변화 없음을 확인. node test/run.js 3490/3490 재실행 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 363,
+   "phase": "critique",
+   "timestamp": "2026-11-17T06:40:00.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-363의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력 공휴일, 저축 만기 overdue, assetGainLossBadge, txRowCore/asset-item role=button 중첩)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: histQ(전체내역)/assetQ(자산)/goalQ(목표)/recQ(반복내역)/gsQ(카테고리 관리) 검색창 5개가 전부 독립적으로 구현돼 있어 자기 탭 데이터만 뒤진다 — 'Netflix'가 반복이체인지 거래 메모인지 리네임된 카테고리인지 알려면 사용자가 3~4개 화면을 순서대로 열어봐야 하고, 220ms 디바운스+클리어 버튼 와이어링이 5곳에 복붙돼 공유 '검색' 추상화가 전혀 없다. 수년치 데이터를 쌓은 파워유저일수록 이 분절된 검색의 불편을 가장 크게 겪는 구조적 공백. 후보로 목표(Goal)가 전체 순자산 또는 단일 연결 자산만 지원해 자산 서브셋/카테고리 목표('모든 저축 계좌 합쳐 5천만원')를 표현 못 하는 점(renderGoalForm 등)과, 445개 인라인 onclick에 비해 CSP script-src가 없는 점(이미 배제된 SRI hash 토픽과 같은 '빌드 스텝 없는 단일 HTML' 구조적 제약과 겹치고 리팩터 범위가 한 사이클을 넘어섬)도 검토했으나 순위를 낮게 매겼다. pending_advance_plan에 logic.js의 기존 매처(matchTxnQuery/matchAssetQuery/matchCatQuery 등)를 재사용한 전역 검색 시트 추가 계획 저장(거래+자산+반복내역부터 우선 구현하고 목표/카테고리는 다음 단계로 미뤄도 됨을 명시). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
    "commit": null
   }
  ]
