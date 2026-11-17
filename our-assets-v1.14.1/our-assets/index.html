@@ -1007,6 +1007,7 @@ html[data-theme="dark"] .toast.undo .toast-undo{color:var(--brand-ink)}
 .install-bar svg{width:18px;height:18px;flex-shrink:0}
 .install-bar .ib-txt{flex:1}
 .install-bar .ib-x{flex-shrink:0;background:transparent;border:0;color:var(--on-brand);font-weight:700;font-size:13px;padding:6px 10px;opacity:.85;cursor:pointer}
+.install-bar .row-tap{gap:10px} /* 공유 .row-tap(기본 gap:12px, 515행)을 install-bar 자체의 기존 gap(10px)과 맞춘다 — role="button"을 아이콘+문구만 감싸는 .row-tap으로 좁히면서(app-evolve cycle364 develop) 아이콘-문구 간격이 바뀌지 않도록 유지 */
 .err-banner{display:none;position:fixed;left:0;right:0;top:0;z-index:400;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;background:var(--expense);color:#fff;font-size:13.5px;font-weight:700;box-shadow:var(--sh-lg)}
 .err-banner.show{display:flex}
 .err-banner svg{width:18px;height:18px;flex-shrink:0}
@@ -1381,7 +1382,7 @@ body.selmode .fab{display:none}
 <button class="fab" id="fab" onclick="fabTap()" aria-label="추가"></button>
 <div class="selbar-bottom" id="selBarBottom"></div>
 <div class="sw-update-bar" id="swUpdateBar" onclick="reloadForUpdate()" role="button" tabindex="0" onkeydown="rowKeydown(event,reloadForUpdate)"></div>
-<div class="install-bar" id="installBar" role="button" tabindex="0" onclick="onInstallBarClick()" onkeydown="rowKeydown(event,onInstallBarClick)"></div>
+<div class="install-bar" id="installBar" onclick="onInstallBarClick()"></div>
 <div class="toast-wrap" id="toastWrap"></div>
 <div class="sr-only" id="ariaLivePolite" role="status" aria-live="polite" aria-atomic="true"></div>
 <div class="sr-only" id="ariaLiveAssertive" role="alert" aria-live="assertive" aria-atomic="true"></div>
@@ -1423,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.467';
+const APP_VERSION='1.47.468';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1466,13 +1467,26 @@ function installBarVisible(){
  if(IS_IOS)return true; /* iOS는 beforeinstallprompt가 없어 캡처 여부와 무관하게 안내문구만 보여준다 */
  return !!window._deferredInstallPrompt;
 }
+/* installBar 전체에 role="button"을 주면서 그 자손으로 실제 <button class="ib-x">(나중에)를
+ * 중첩시켜, txRowCore/asset-item/날짜 선택 필드(app-evolve cycle362/363)와 똑같은 WAI-ARIA
+ * "role=button 하위 인터랙티브 엘리먼트 중첩 금지" 위반이 설치 유도 배너에도 있었다(app-evolve
+ * cycle364 develop가 찾은 재발) — VoiceOver/TalkBack이 전체를 하나의 탐색 불가 단위로 묶어버려
+ * '나중에' 버튼에 포커스를 옮길 수 없었다. role="button"/tabindex/onkeydown을 installBar 자체가
+ * 아니라 아이콘+문구만 감싸는 내부 wrapper .row-tap으로 옮기고, ib-x는 그 형제(installBar의
+ * 직계 자식)로 그대로 둔다. installBar의 onclick(배너 영역 클릭 시 onInstallBarClick)은 그대로 둬
+ * ib-x를 제외한 나머지 영역 클릭이 여전히 버블링으로 동작하게 한다(asset-item과 동일한 원칙,
+ * ib-x는 이미 event.stopPropagation()으로 버블링을 막음). 순수 함수로 분리해 DOM 없이 마크업을
+ * 직접 검증할 수 있게 한다(buildExpenseBarHtml 등과 동일 관례). */
+function installBarHTML(isIOS){
+ return `<div class="row-tap" role="button" tabindex="0" aria-label="홈 화면에 추가" onkeydown="rowKeydown(event,onInstallBarClick)">${svg('download',18)}${isIOS
+   ?'<span class="ib-txt">홈 화면에 추가하면 더 빠르게 열 수 있어요 · 공유 버튼 → 홈 화면에 추가</span>'
+   :'<span class="ib-txt">홈 화면에 추가하고 더 빠르게 열어보세요</span>'}</div>`
+   +'<button type="button" class="ib-x" onclick="event.stopPropagation();dismissInstallBar()">나중에</button>';
+}
 function maybeShowInstallBar(){
  const el=$('installBar');if(!el)return;
  if(!installBarVisible()){el.classList.remove('show');return}
- el.innerHTML=svg('download',18)+(IS_IOS
-   ?'<span class="ib-txt">홈 화면에 추가하면 더 빠르게 열 수 있어요 · 공유 버튼 → 홈 화면에 추가</span>'
-   :'<span class="ib-txt">홈 화면에 추가하고 더 빠르게 열어보세요</span>')
-   +'<button type="button" class="ib-x" onclick="event.stopPropagation();dismissInstallBar()">나중에</button>';
+ el.innerHTML=installBarHTML(IS_IOS);
  el.classList.add('show');
 }
 function hideInstallBar(){const el=$('installBar');if(el)el.classList.remove('show')}

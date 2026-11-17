@@ -371,6 +371,10 @@ const FUNCTIONS = [
   // 실행형 전환한 첫 두 함수 — svg()는 togglePwVis가 아이콘을 그릴 때 부른다(실제 I 아이콘
   // 테이블과 비교하려면 같이 끌어와야 함). 아래 togglePwVis/wireWhHead 테스트 참고.
   'togglePwVis', 'svg', 'wireWhHead',
+  // installBarHTML은 maybeShowInstallBar()가 el.innerHTML에 쓰는 마크업을 DOM 없이 순수 함수로
+  // 뽑아낸 것(app-evolve cycle364 develop, 아래 "installBarHTML:" 테스트 참고) — svg()만 있으면
+  // 바로 돌릴 수 있다.
+  'installBarHTML',
   // hideBootSplash는 app-evolve cycle216 advance(#bootSplash 부팅 로딩 화면) 구현 검증용 —
   // $('bootSplash')/.remove() 두 줄뿐인 순수 유틸이라 기존 $ 스텁(bootSplashEl)만으로 실행형
   // 검증이 가능하다.
@@ -21993,6 +21997,7 @@ function installBarCtx() {
     extractFunction('bumpInstallVisitCount'),
     extractFunction('installVisitGateOk'),
     extractFunction('installBarVisible'),
+    extractFunction('installBarHTML'),
     extractFunction('maybeShowInstallBar'),
     extractFunction('hideInstallBar'),
     extractFunction('snoozeInstallBar'),
@@ -22110,6 +22115,22 @@ test('[실행형] maybeShowInstallBar: Android 조건 충족 시 show 클래스�
   assert.ok(bar.classList.contains('show'));
   assert.ok(/dismissInstallBar/.test(bar.innerHTML), '닫기 버튼이 dismissInstallBar()를 호출하지 않음');
   assert.ok(!/공유 버튼/.test(bar.innerHTML), 'Android 분기인데 iOS 안내 문구가 섞임');
+});
+/* installBar 전체(바깥 div)에 role="button"을 주면서 그 자손으로 실제 <button class="ib-x">
+ * (나중에)를 중첩시키던 WAI-ARIA 결함 — txRowCore/asset-item/날짜 선택 필드(cycle362/363)와
+ * 동일한 패턴의 재발이었다(app-evolve cycle364 develop). role="button"이 installBarHTML()의
+ * 아이콘+문구 wrapper(.row-tap)로만 좁혀졌는지, ib-x는 그 밖에 있는지를 txRowCore 테스트가 쓰는
+ * divInnerHTML()/assertRowTapHasNoNestedInteractive()로 그대로 검증한다(이 둘은 html 문자열만
+ * 받는 순수 헬퍼라 installBarCtx()의 격리된 vm 컨텍스트와 무관하게 재사용 가능). */
+test('installBarHTML: "나중에"(ib-x)는 role="button"(.row-tap) 밖에 있다(Android/iOS 둘 다)', () => {
+  const htmlAndroid = sandbox.installBarHTML(false);
+  assert.ok(htmlAndroid.includes('ib-x') && htmlAndroid.includes('나중에'), '테스트 자체가 의미 있으려면 닫기 버튼이 실제로 렌더돼야 함');
+  const endIdxA = assertRowTapHasNoNestedInteractive(htmlAndroid);
+  assert.ok(htmlAndroid.slice(endIdxA).includes('나중에'), 'Android: 닫기 버튼은 role="button" 바깥(형제)에 있어야 함');
+  const htmlIos = sandbox.installBarHTML(true);
+  assert.ok(htmlIos.includes('공유 버튼'), '테스트 자체가 의미 있으려면 iOS 안내 문구가 실제로 렌더돼야 함');
+  const endIdxI = assertRowTapHasNoNestedInteractive(htmlIos);
+  assert.ok(htmlIos.slice(endIdxI).includes('나중에'), 'iOS: 닫기 버튼도 role="button" 바깥(형제)에 있어야 함');
 });
 test('[실행형] maybeShowInstallBar: iOS 조건 충족 시 "공유 버튼 → 홈 화면에 추가" 안내 문구로 분기한다', () => {
   const ctx = installBarCtx();
