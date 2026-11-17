@@ -29214,8 +29214,8 @@ test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 E
   assert.strictEqual(
     sandbox.costBasisField({ costBasis: 0 }, false),
     '<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput(\'asCostBasis\')">✕</button></div><div class="day-warn" id="asQtyBasisWarn" style="display:none"></div></div>\n' +
-    ' <div class="field"><label>매입일 (선택)</label><div class="pick placeholder" style="cursor:pointer" tabindex="0" role="button" aria-label="매입일 선택" onclick="syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail(\'매입일은 오늘보다 미래일 수 없어요\');return}asDraft.acquiredAt=ds;renderAssetSheet(false)})" onkeydown="rowKeydown(event,()=>{syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail(\'매입일은 오늘보다 미래일 수 없어요\');return}asDraft.acquiredAt=ds;renderAssetSheet(false)})})">\n' +
-    '   <div class="pav a-save">' + sandbox.svg('calendar') + '</div><div class="pbody"><div class="pn">모르면 비워두세요</div></div><div class="pc">' + sandbox.svg('chev') + '</div></div>\n' +
+    ' <div class="field"><label>매입일 (선택)</label><div class="pick placeholder" style="cursor:pointer" onclick="syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail(\'매입일은 오늘보다 미래일 수 없어요\');return}asDraft.acquiredAt=ds;renderAssetSheet(false)})">\n' +
+    '   <div class="row-tap" tabindex="0" role="button" aria-label="매입일 선택" onkeydown="rowKeydown(event,()=>{syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail(\'매입일은 오늘보다 미래일 수 없어요\');return}asDraft.acquiredAt=ds;renderAssetSheet(false)})})"><div class="pav a-save">' + sandbox.svg('calendar') + '</div><div class="pbody"><div class="pn">모르면 비워두세요</div></div></div><div class="pc">' + sandbox.svg('chev') + '</div></div>\n' +
     '   <input id="asAcquiredAt" type="hidden" value=""></div>\n' +
     ' <div class="field" id="asAddedCostField" style="display:none"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput(\'asAddedCost\')">✕</button></div></div>\n' +
     ' <div class="field" id="asSaleProceedsField" style="display:none"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput(\'asSaleProceeds\')">✕</button></div></div>\n' +
@@ -34561,6 +34561,38 @@ test('txRowCore: 선택 모드(sel.mode)는 원래부터 role="button" 안에 �
   const divOpenIdx = html.lastIndexOf('<div', rbIdx);
   const { inner } = divInnerHTML(html, divOpenIdx);
   assert.ok(!inner.includes('<button') && !inner.includes('<img'), '선택 모드 행에는 애초에 dup-btn/confirm-btn/photo가 없어야 함');
+});
+
+/* ---------- renderGoalForm/costBasisField/renderAssetSheet: 날짜 선택 필드(목표일/매입일/만기일)도
+ * txRowCore(cycle362)/asset-item(cycle363)과 동일한 WAI-ARIA "role=button 하위 인터랙티브 엘리먼트
+ * 중첩" 결함이 있었다(app-evolve cycle363 advance) — 날짜가 이미 있으면 .pick 전체에 role="button"을
+ * 주면서 그 자손으로 실제 <button class="fc-x">(날짜 지우기)를 중첩시켜, 스크린리더 사용자가 지우기
+ * 버튼에 포커스를 옮길 방법이 없었다. role="button"을 아바타+본문만 감싸는 .row-tap으로 좁히고
+ * fc-x/chevron(.pc)은 그 형제로 뺐다 — txRowCore/asset-item 테스트가 쓰는 divInnerHTML()/
+ * assertRowTapHasNoNestedInteractive()를 그대로 재사용한다. */
+test('renderGoalForm: 목표일 지우기(fc-x)는 role="button"(.row-tap) 밖에 있다', () => {
+  sandbox.DB = { owners: [] };
+  sandbox.goalDraft = { id: 'g1', name: '', targetAmount: 0, targetDate: '2026-12-31', type: 'networth', owner: 'all' };
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(true);
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('fc-x') && html.includes('목표일 지우기'), '테스트 자체가 의미 있으려면 지우기 버튼이 실제로 렌더돼야 함');
+  const endIdx = assertRowTapHasNoNestedInteractive(html);
+  assert.ok(html.slice(endIdx).includes('목표일 지우기'), '목표일 지우기 버튼은 role="button" 바깥(형제)에 있어야 함');
+});
+test('costBasisField: 매입일 지우기(fc-x)는 role="button"(.row-tap) 밖에 있다', () => {
+  const html = sandbox.costBasisField({ type: 'stock', acquiredAt: '2026-01-01', costBasis: 0 }, false);
+  assert.ok(html.includes('fc-x') && html.includes('매입일 지우기'), '테스트 자체가 의미 있으려면 지우기 버튼이 실제로 렌더돼야 함');
+  const endIdx = assertRowTapHasNoNestedInteractive(html);
+  assert.ok(html.slice(endIdx).includes('매입일 지우기'), '매입일 지우기 버튼은 role="button" 바깥(형제)에 있어야 함');
+});
+test('renderAssetSheet: 만기일 지우기(fc-x)는 role="button"(.row-tap) 밖에 있다', () => {
+  sandbox.asDraft = { type: 'savings', owner: '나', includeInTotal: true, name: '적금', maturityDate: '2027-01-01' };
+  sandbox.renderAssetSheet(false);
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('fc-x') && html.includes('만기일 지우기'), '테스트 자체가 의미 있으려면 지우기 버튼이 실제로 렌더돼야 함');
+  const endIdx = assertRowTapHasNoNestedInteractive(html);
+  assert.ok(html.slice(endIdx).includes('만기일 지우기'), '만기일 지우기 버튼은 role="button" 바깥(형제)에 있어야 함');
 });
 
 /* ---------- renderPlan: 렌더 함수 스모크 테스트 (app-evolve cycle57 critique/advance) ----------

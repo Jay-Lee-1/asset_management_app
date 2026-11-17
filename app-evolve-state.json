@@ -1,19 +1,8 @@
 {
- "cycle": 363,
- "phase": "advance",
- "pending_advance_plan": {
-  "title": "전역(글로벌) 검색 부재 — 5개 도메인별 검색창이 서로 분리되어 있어 한 번에 전체를 검색할 방법이 없음",
-  "why": "전체내역(histQ, index.html~7234), 자산(assetQ, ~5156), 목표(goalQ, ~7687/8690), 반복내역(recQ), 카테고리 관리(gsQ, ~7687) 검색창이 각자 자기 탭의 데이터만 뒤진다. 'Netflix'가 반복이체인지, 거래 메모인지, 리네임된 카테고리인지 알려면 사용자가 3~4개 화면을 순서대로 수동으로 열어봐야 한다. 이 앱이 타겟으로 하는, 수년치 거래/수십 개 자산/반복이체/목표를 쌓아둔 파워유저일수록 이 분절된 검색의 불편을 가장 크게 겪는다. 또한 220ms 디바운스+클리어 버튼 와이어링이 5곳에 각자 복붙되어 있어(서로를 참조하는 주석만 존재), 공유 가능한 '검색' 추상화가 전혀 없다는 아키텍처적 신호이기도 하다.",
-  "approach": "logic.js에 이미 있는 테스트된 매처(matchTxnQuery/matchAssetQuery/matchCatQuery 등 기존 도메인별 매칭 함수)를 그대로 재사용해, 홈 헤더나 메뉴에 전역 검색 진입점(검색 아이콘/시트) 하나를 추가한다. 입력 시 DB.txns(및 expandRec로 펼친 반복 발생분)/DB.assets/DB.goals/DB.recurrences/카테고리 이름을 함께 질의하고, 결과를 도메인별로 그룹핑한 시트에 렌더링하며 각 결과 항목은 기존 상세 화면(editTx/openAssetHistory/openGoalForm/반복내역 상세 등)으로 라우팅한다. 기존 화면 로직은 전혀 바꾸지 않는 완전히 추가(additive)적인 구현이라 회귀 위험이 낮다. 범위가 크면 1차로 거래+자산+반복내역 3개 도메인만 묶고 목표/카테고리는 다음 단계로 미뤄도 된다."
- },
+ "cycle": 364,
+ "phase": "develop",
+ "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 358,
-   "phase": "advance",
-   "timestamp": "2026-11-15T04:10:00.000Z",
-   "summary": "critique(cycle358) 계획대로 Supabase user_data 테이블 누락(Postgres 42P01)이 네트워크 장애로 뭉개지던 공백을 고쳤다. index.html에 isRlsPolicyError() 옆 isMissingTableError(e) 추가(e.code==='42P01' 또는 'relation ... does not exist' 메시지 매칭). CLOUD_SYNC_ERR_KIND에 'missing_table' 분기 추가, cloudSyncFailed()가 isRlsPolicyError보다 먼저 체크하도록 순서 배치, cloudSyncLabel()/toast 모두 '테이블이 아직 없어요 · 설정 안내의 SQL을 실행해 주세요' 계열 문구로 구체화. homeAlertCard()의 cloudSyncError 카드도 isRls와 동일하게 missing_table이면 openHelpCloud()로 보내고 '테이블이 아직 없어요' 안내를 보여주도록 확장(plan에는 없었지만 CLOUD_SYNC_ERR_KIND 소비처라 빠뜨리면 '자동으로 다시 시도 중'이라는 오도성 문구가 그대로 남음). isMissingTableError 단위 테스트 7건, cloudSyncFailed/cloudSyncLabel 실행형 테스트 1건, homeAlertCard 테스트 1건 추가. node test/run.js 3454->3457/3457 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.457->1.47.458, sw.js CACHE v724->v725. pending_advance_plan null로 비움.",
-   "commit": null
-  },
   {
    "cycle": 359,
    "phase": "develop",
@@ -145,6 +134,13 @@
    "phase": "critique",
    "timestamp": "2026-11-17T06:40:00.000Z",
    "summary": "Explore 서브에이전트에게 cycle340-363의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력 공휴일, 저축 만기 overdue, assetGainLossBadge, txRowCore/asset-item role=button 중첩)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: histQ(전체내역)/assetQ(자산)/goalQ(목표)/recQ(반복내역)/gsQ(카테고리 관리) 검색창 5개가 전부 독립적으로 구현돼 있어 자기 탭 데이터만 뒤진다 — 'Netflix'가 반복이체인지 거래 메모인지 리네임된 카테고리인지 알려면 사용자가 3~4개 화면을 순서대로 열어봐야 하고, 220ms 디바운스+클리어 버튼 와이어링이 5곳에 복붙돼 공유 '검색' 추상화가 전혀 없다. 수년치 데이터를 쌓은 파워유저일수록 이 분절된 검색의 불편을 가장 크게 겪는 구조적 공백. 후보로 목표(Goal)가 전체 순자산 또는 단일 연결 자산만 지원해 자산 서브셋/카테고리 목표('모든 저축 계좌 합쳐 5천만원')를 표현 못 하는 점(renderGoalForm 등)과, 445개 인라인 onclick에 비해 CSP script-src가 없는 점(이미 배제된 SRI hash 토픽과 같은 '빌드 스텝 없는 단일 HTML' 구조적 제약과 겹치고 리팩터 범위가 한 사이클을 넘어섬)도 검토했으나 순위를 낮게 매겼다. pending_advance_plan에 logic.js의 기존 매처(matchTxnQuery/matchAssetQuery/matchCatQuery 등)를 재사용한 전역 검색 시트 추가 계획 저장(거래+자산+반복내역부터 우선 구현하고 목표/카테고리는 다음 단계로 미뤄도 됨을 명시). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 363,
+   "phase": "advance",
+   "timestamp": "2026-11-17T07:20:00.000Z",
+   "summary": "critique(cycle363)의 pending_advance_plan('전역 검색 부재')이 실제로는 무효임을 확인했다 — openGlobalSearch()/globalSearchBody()(index.html 7681-7746행)가 이미 거래·자산·카테고리·목표·반복을 matchTxnQuery/matchAssetQuery/matchCatQuery/matchGoalQuery/matchRecQuery로 통합 검색하고 있고, 홈/plan/menu 탭 모두에 검색 아이콘 진입점이 있었다(critique의 Explore가 이 기능을 놓치고 중복 제안한 것으로 판단). 계획을 폐기하고 develop과 동일한 방식으로 Explore 서브에이전트에게 완전히 새 영역을 조사시켰다(전역검색이 이미 존재함을 명시해 재제안 방지). 발견: txRowCore(cycle362)/asset-item(cycle363 develop)과 똑같은 WAI-ARIA 'role=button 하위 인터랙티브 엘리먼트 중첩' 결함이 날짜 선택 picker 3곳(renderGoalForm의 목표일 4194행, costBasisField의 매입일 5328행, renderAssetSheet의 만기일 5360행)에도 있었다 — 날짜가 이미 설정돼 있으면 .pick 전체에 role=\"button\"/tabindex를 주면서 그 자손으로 실제 <button class=\"fc-x\">(날짜 지우기)를 중첩시켜, 스크린리더 사용자가 '지우기' 버튼에 포커스를 옮길 방법이 없고 날짜 선택 화면만 열 수 있었다. 세 곳 모두 asset-item 패턴을 그대로 적용해 수정: role=\"button\"/tabindex/onkeydown을 .pick 자체가 아니라 pav+pbody만 감싸는 내부 wrapper .row-tap으로 옮기고, .pick의 onclick(날짜 피커 열기)은 그대로 둬 클릭 동작을 보존했으며, fc-x/chevron(.pc)은 .row-tap의 형제로 남겼다. 공유 .row-tap 기본 gap(12px)이 .pick의 기존 gap(11px)과 달라 .pick .row-tap{gap:11px} CSS 한 줄을 추가해 레이아웃을 바이트 단위로 유지(asset-item이 쓴 것과 동일한 기법). 테스트 3건 추가(목표일/매입일/만기일 각각 지우기 버튼이 role=\"button\"(.row-tap) 밖에 있는지, txRowCore/asset-item 테스트가 쓰는 divInnerHTML()/assertRowTapHasNoNestedInteractive() 재사용) — git stash로 index.html을 수정 전 상태로 되돌려 새 테스트 3건이 실제로 FAIL함을 확인한 뒤 복원. 기존 costBasisField 전체 HTML 스냅샷 테스트(29213행)도 새 마크업에 맞게 갱신. node test/run.js 3490->3493/3493 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.466->1.47.467, sw.js CACHE v733->v734.",
    "commit": null
   }
  ]
