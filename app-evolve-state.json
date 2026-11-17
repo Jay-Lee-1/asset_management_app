@@ -1,15 +1,8 @@
 {
  "cycle": 363,
- "phase": "review",
+ "phase": "critique",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 358,
-   "phase": "review",
-   "timestamp": "2026-11-15T02:05:00.000Z",
-   "summary": "develop(cycle358, aa1b986: duplicateAsset/duplicateGoal NAME_MAX clamp 수정)을 검토했다. cleanName(name).slice(0,NAME_MAX-dupSuffix.length)+dupSuffix 수식이 dupSuffix.length=3(' 복사')을 정확히 반영해 항상 길이 60을 넘지 않음을 확인 — slice 결과에 saveAsset/saveGoal이 다시 적용할 cleanName(trim+NFC+slice60)을 통과시켜도 더 잘리지 않아 idempotent함을 확인(테스트가 이미 이 경계를 직접 단언). 이름이 undefined/null인 기존 엣지케이스도 cleanName(undefined)===''로 수정 전후 동일하게 처리됨을 확인. d.name 대신 a.name(원본)을 참조하도록 바뀐 점도 d=JSON.parse(JSON.stringify(a)) 직후라 값이 동일해 무해함을 확인. node test/run.js 3454/3454 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-   "commit": null
-  },
   {
    "cycle": 358,
    "phase": "critique",
@@ -142,6 +135,13 @@
    "timestamp": "2026-11-17T06:20:53.898Z",
    "summary": "코드를 직접 탐색해 assetBodyHTML()(자산 관리 목록)의 일반 모드 자산 행이 txRowCore(cycle362)와 똑같은 WAI-ARIA 위반을 갖고 있음을 발견했다 — asset-item 전체에 role=\"button\" tabindex를 주면서 그 자손으로 실제 <button class=\"act-btn\">(복제/내역 보기)을 중첩시켜, VoiceOver/TalkBack이 전체를 하나의 탐색 불가 단위로 묶어 스크린리더 사용자가 안쪽 버튼에 포커스를 옮길 수 없었다. 수정: role=\"button\"/tabindex/onkeydown을 아바타+이름만 감싸는 내부 wrapper .row-tap으로 옮기고, row-acts는 그 밖(asset-item의 형제)에 그대로 둔다. asset-item 자체의 onclick은 유지해 row-acts를 제외한 나머지 영역(아바타/이름/금액) 클릭이 여전히 버블링으로 openAssetSheet를 열도록 보존했다(val의 기존 클릭 동작 보존, txRowCore처럼 amt를 row-tap 안으로 옮기는 대신 DOM 순서/레이아웃을 그대로 유지하는 쪽을 택함). 공유 .row-tap 클래스의 기본 gap(12px, txRowCore 기준)이 asset-item의 gap(13px)과 달라 .asset-item .row-tap{gap:13px}로 덮어써 레이아웃을 바이트 단위로 유지했다. 일괄선택 모드(ST.aSel.mode)는 원래부터 문제가 없어 손대지 않음. 테스트 3건 추가(row-acts가 role=\"button\" 밖에 있는지, asset-item 자체에 role=\"button\"/tabindex가 더는 없는지(onclick은 남아있는지), 선택 모드 회귀 없음) — git stash로 되돌려 새 테스트 2건이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3487->3490/3490 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.465->1.47.466, sw.js CACHE v732->v733. 커밋 전 이 세션의 로컬 main ref가 origin과 다른 과거 커밋(f676877)을 가리키고 있던 걸 발견했으나, git fetch로 재확인한 결과 실제 origin/main은 98f9f05(이 develop가 기반한 바로 그 커밋)이었음을 확인 — 단순히 fetch 전 캐시된 stale ref였고 실제 분기(diverge)는 없었다.",
    "commit": "4993ba3"
+  },
+  {
+   "cycle": 363,
+   "phase": "review",
+   "timestamp": "2026-11-17T06:30:00.000Z",
+   "summary": "develop(cycle363, 4993ba3: asset-item row-acts role=\"button\" 중첩 접근성 결함 수정)을 검토했다. .row-tap이 아바타+이름만 감싸고 row-acts/val은 그 밖의 형제로 남아 WAI-ARIA의 role=\"button\" 하위 인터랙티브 요소 중첩 금지를 더는 어기지 않음을 확인. asset-item의 onclick(openAssetSheet)이 그대로 남아 row-tap 클릭이 버블링으로 동일하게 열리고, row-tap엔 onclick 없이 onkeydown(rowKeydown)만 있어 키보드 Enter/Space도 중복 호출 없이 한 번만 fn()을 부름을 rowKeydown(event,fn) 구현(합성 클릭 디스패치 없음, e.preventDefault만)으로 확인. wireLongPress()가 data-id/data-lp(여전히 asset-item에 있음)와 touchstart/mousedown만 쓰고 tabindex/role과 무관함을 확인해 long-press 동작 무영향. .asset-item .row-tap{gap:13px}가 공유 .row-tap 기본 gap(12px, display:flex;flex:1;min-width:0)을 덮어써 아바타-이름 간격을 기존과 바이트 단위로 유지하고, .val은 여전히 asset-item의 직계 자식이라 margin-left:auto가 그대로 작동해 레이아웃 변화 없음을 확인. node test/run.js 3490/3490 재실행 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+   "commit": null
   }
  ]
 }
