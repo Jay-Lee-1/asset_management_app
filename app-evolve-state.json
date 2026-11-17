@@ -1,15 +1,8 @@
 {
  "cycle": 366,
- "phase": "review",
+ "phase": "critique",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 361,
-   "phase": "develop",
-   "timestamp": "2026-11-15T13:28:05.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-361의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: 은행/카드사 CSV 가져오기(mapGenericCsvRow, logic.js:1575)가 '기본 카테고리' 하나만 받아, 실제로는 입금/출금(split 모드) 또는 금액 부호(signed 모드)에 따라 행마다 type이 income/expense로 갈리는데도 type과 무관하게 같은 카테고리를 그대로 찍고 있었다 — 실제 은행 CSV는 월급 입금과 카드값 출금이 한 파일에 공존하는 게 보통이라, 사용자가 지출 카테고리를 고르면 수입 행에까지 그 지출 카테고리가 붙어버렸다(반대도 동일). 그 카테고리는 저장된 type의 카테고리 목록(DB.categories.income/expense)에 없어 카테고리 관리 화면에서 보이지도 않는 '유령 카테고리'가 돼 분석/예산 집계에 조용히 뒤섞였다. test/run.js:9016의 기존 테스트도 expense.txn.category만 단언하고 income.txn.category는 전혀 확인하지 않아 이 공백이 가려져 있었다. 수정: mapping.category(지출)와 mapping.categoryIncome(수입)을 분리해 mapGenericCsvRow가 type에 따라 올바른 카테고리를 고르게 했다(categoryIncome이 없으면 category로 대체해 옛 mapping shape과 호환 유지). index.html의 openCsvColumnMap/renderCsvColumnMap에서 catKind 3단 토글(expense/income/saving)과 단일 '기본 카테고리' 필드를 지우고 '지출 카테고리'/'수입 카테고리' 두 피커로 교체(csvMapPickCategory(kind)), 각자 DB.categories.expense/income 목록에서만 고르게 했다 — 'saving'은 이 경로가 만드는 type(income/expense)과 애초에 대응하는 목록이 아니라 같이 제거했다. canImport 가드도 두 카테고리 모두 선택해야 통과한다. 이제 안 쓰는 csvMapSetCatKind()를 지우고 test/run.js의 FUNCTIONS 목록에서도 제거. 테스트: mapGenericCsvRow 직접 단위 테스트 2건(양수/음수 각자 올바른 카테고리, categoryIncome 없을 때 구버전 호환), buildGenericImportPreview 기존 split-mode 테스트에 income.txn.category 단언 추가, csvMapPickCategory/csvMapApply/openCsvColumnMap 관련 기존 테스트 4건을 새 두-필드 shape에 맞게 갱신. logic.js를 git stash로 수정 전 상태로 되돌려 새로 추가한 단언 2건이 실제로 FAIL함을 직접 확인한 뒤 복원했다. node test/run.js 3476(수정 전, FAIL 2건)->3478/3478(수정 후) 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.461->1.47.462, sw.js CACHE v728->v729.",
-   "commit": null
-  },
   {
    "cycle": 361,
    "phase": "review",
@@ -141,6 +134,13 @@
    "phase": "develop",
    "timestamp": "2026-11-17T18:19:08.000Z",
    "summary": "index.html의 homeAlerts() 주석(\"3인 이상 정산(N인 분담, cycle364 advance)은 ... 알림 일반화는 다음 사이클로 미룸\")이 남겨둔 공백을 메웠다 — settleDue(정산 알림)가 참가자 2명일 때만 동작하고 3명 이상이면 homeAlerts()에서 아예 계산되지 않던 문제를 고쳤다. settleConfigured().participants.length===2 분기는 그대로 두고, else 분기에서 settlementSummaryN+settleUpTransfers(둘 다 cycle364가 이미 만든 순수 함수, 새 계산식 없음)로 송금 목록을 구해 그 총액(net 합이 0이 되게 맞춘 마지막 참가자 보정 덕에 빚/받을돈 총액이 항상 일치)에 기존 settleAlertBucket 문턱/버킷 판정을 그대로 적용하는 새 kind \"settleDueN\"을 추가했다. notifyAlertInfo(OS 푸시, key는 송금 쌍 from>to 집합+bucket, group은 기존 settleDue와 동일한 'settle'이라 뮤트 토글도 그대로 공유)/homeAlertCard(송금 1건이면 2인 때와 같은 문구, 2건 이상이면 총액+건수)에도 대칭 분기를 추가했다. 테스트 6건 추가(문턱 미달/중립 참가자로 송금 1건으로 줄어드는 경우/중립 없이 2건인 경우/settledThrough 제외/notifyAlertInfo 키 버킷팅/homeAlertCard 1건·다건 렌더) — index.html을 원래 커밋으로 되돌려 4건이 실제로 실패하는 것을 확인한 뒤 복원. node test/run.js 3540->3546/3546 통과, node --check logic.js/sw.js/test/run.js 및 추출한 인라인 <script> 블록 통과. APP_VERSION 1.47.471->1.47.472, sw.js CACHE v738->v739.",
+   "commit": "df51ae3"
+  },
+  {
+   "cycle": 366,
+   "phase": "review",
+   "timestamp": "2026-11-17T18:45:00.000Z",
+   "summary": "develop(cycle366, df51ae3: homeAlerts의 settleDueN 3인 이상 정산 알림 추가)을 검토했다. settlementSummaryN(logic.js:238)이 {byOwner,total}을 돌려주고 settleUpTransfers(byOwner)가 이를 그대로 받는 시그니처가 호출부와 일치함을 확인. settleUpTransfers가 채무자/채권자를 탐욕 매칭해 만드는 transfers 합계가 항상 total(마지막 참가자가 반올림 나머지를 떠안는 settlementSummaryN 덕에 net 합이 0)과 일치해 settleAlertBucket 문턱 판정이 2인 경로와 같은 기준으로 적용됨을 확인. notifyAlertInfo의 key가 송금 쌍(from>to) 집합+bucket으로만 잡혀 금액이 미세하게 바뀌어도 같은 버킷이면 dedupe되는 것이 2인 settleDue와 동일 원칙임을 확인. homeAlertCard의 새 카드가 기존 settleDue와 똑같이 class=\"home-alert mat\"/svg('users') 조합을 쓰고 있어 스타일 일관성도 확인(svg('users')가 1574행에 정의돼 있음을 grep으로 확인). transfers가 빈 배열(총액 0)이면 settleAlertBucket(0,...)이 null이라 알림이 안 뜨는 것도 로직상 확인. node test/run.js 3546/3546 재실행 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
    "commit": null
   }
  ]
