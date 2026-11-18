@@ -1,7 +1,11 @@
 {
   "cycle": 372,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "openTxSheet()/openRecSheet() 실행형 테스트 커버리지 추가",
+    "why": "거래/반복거래 신규 작성 진입점(txDraft/recDraft 초기화)이 index.html 전체에서 가장 호출 빈도 높은 쓰기 경로(FAB 빈 상태 CTA, 스와이프/탭 핸들러, PWA 숏컷/딥링크 4곳, 반복관리 UI 등 10곳 이상)인데 test/run.js FUNCTIONS 목록 밖에 있어 한 번도 실행형으로 테스트된 적이 없다. load()/openSheet/acctSafety/twScreen과 동일한 '공유 핵심인데 실행형 커버리지 0' 공백 클래스지만 영향 범위가 가장 넓다 — 새 필드 추가 시 초기화 누락, firstCash()가 현금성 자산 없음으로 null을 반환하는 엣지 케이스 등이 테스트로 잡히지 않고 런타임(앱 최초 실행 시)에서만 터질 수 있다.",
+    "approach": "test/run.js FUNCTIONS 배열에 'openTxSheet','openRecSheet' 추가(renderTxSheet/renderRecSheet/firstCash/snapDraft/openSheet(stub)는 이미 메인 sandbox에 있어 저항 적음). openTxSheet() 테스트: txDraft 기본 shape(type='expense', date=ST.ledger.sel, category=DB.categories.expense[0], fromAssetId=firstCash() 결과, amount=0, repeat=false, photo=null, shared=false), window._recCtx/_txFocusAmt/_txCatSuggAnnounced 리셋, snapDraft('tx') 호출, renderTxSheet() 실행(lastSheetHtml 채워짐) 확인. openRecSheet()도 recDraft로 동일 패턴. firstCash()가 null을 반환하는(현금성 자산 없음) 엣지 케이스에서 크래시 없음도 커버."
+  },
   "history": [
     {
       "cycle": 368,
@@ -120,6 +124,13 @@
       "phase": "review",
       "timestamp": "2026-11-18T19:40:00.000Z",
       "summary": "develop(cycle372, 09553f5: notifyAlertInfo()의 budgetOver/goalBehind/debtBehind dedupe 키에 20%p/30일/10만원 단위 버킷 추가)을 검토했다. 경계 조건을 직접 추적: budgetOver는 호출부(_bo 필터, index.html:12062)가 b>0&&r.v>b를 보장해 al.spent/al.budget*100/20 나눗셈에서 분모 0이 될 수 없음을 확인. goalBehind는 호출부(_gb 필터, index.html:12099)가 !p.projectedDate||p.projectedDate>g.targetDate를 보장해, daysBetween(targetDate,projectedDate)가 항상 양수(또는 projectedDate가 null→'na')이므로 음수 버킷이 나올 여지가 없음을 확인. debtBehind는 assetEval()이 음수(잔액식 부채)를 돌려줄 수 있는데 Math.abs로 올바르게 처리함을 재확인. 새/갱신 테스트 6건이 구현과 정확히 일치하고(동일 버킷 dedupe/다른 버킷 재알림/na 전환 모두 커버) allocationDrift/settleDue와 같은 패턴을 그대로 따름을 diff로 확인. node test/run.js 3609/3609 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전). 참고: 이번 사이클도 시작 시 로컬 git이 detached HEAD였다(cycle369-372에서 반복) — git checkout -B main HEAD로 재설정해 origin/main과 일치시킨 뒤 진행했다.",
+      "commit": null
+    },
+    {
+      "cycle": 372,
+      "phase": "critique",
+      "timestamp": "2026-11-18T20:50:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-372에서 이미 다룬 모든 주제(반복거래, 정산, goalBehind/costBasis, 클라우드동기화/fx폴백, 팔레트, PIN/생체인증, 사진페이로드/가구공유, SRI/CSP/쿼터, CSV/csvDedupeKey, 전역검색, role=button 중첩, assetQtyLog, openSheet/closeSheet/load() 실행형 테스트, duplicateRec 포커스, acctSafety, netlify 가격조회, SVG 차트 접근성, FAB 팝업 오버레이 접근성, reloadForUpdate/SW배너, kakaoReady, 온보딩 튜토리얼, notifyAlertInfo dedupe 버킷팅)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: openTxSheet()/openRecSheet()(index.html:6345,6899 — 신규 거래/반복거래 작성 시 txDraft/recDraft를 초기화하는 유일한 진입점, FAB 빈상태 CTA/스와이프탭/PWA 숏컷 4곳/반복관리 UI 등 10곳 이상에서 호출되는 앱 전체에서 가장 호출 빈도 높은 쓰기 경로)가 test/run.js FUNCTIONS 목록 밖에 있어 실행형 테스트가 전혀 없다 — load()/openSheet/acctSafety/twScreen과 동일한 공백 클래스이면서 영향 범위가 이 중 가장 넓다고 판단. renderTxSheet/renderRecSheet/firstCash/snapDraft/openSheet(stub)가 이미 메인 sandbox에 있어 추가 저항이 적다는 것도 확인(renderMenu/doImportPinSubmit 계열은 DOM/암호화 I/O에 더 깊이 엉켜 있어 러너업으로 낮게 평가). pending_advance_plan에 FUNCTIONS 등록 + txDraft/recDraft 기본 shape 검증 + firstCash() null(현금성 자산 없음) 엣지케이스 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
