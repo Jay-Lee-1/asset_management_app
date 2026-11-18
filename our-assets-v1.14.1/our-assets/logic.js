@@ -1547,12 +1547,19 @@ function csvDateValid(s){
 }
 /* 중복 판정 키 — 날짜/구분/금액/카테고리/보내는·받는 자산(연결된 자산이면 id, 아니면 이름)/메모가
    모두 같으면 같은 내역으로 본다. 같은 파일을 두 번 가져오거나, 이미 앱에 있는 내역을 다시
-   가져오려 할 때(예: doExport로 내보낸 CSV를 그대로 재가져오기) 중복 추가를 막기 위함. */
+   가져오려 할 때(예: doExport로 내보낸 CSV를 그대로 재가져오기) 중복 추가를 막기 위함.
+   필드를 '|'로 그냥 이어붙이면 카테고리/메모 중 하나에 '|'가 실제로 들어있을 때 경계가 밀려
+   서로 다른 내역이 같은 키로 뭉개질 수 있다(예: category="식비|카페",memo="" 와 category="식비",
+   memo="카페" 가 "...|식비|카페|..."로 동일) — 은행/카드사 CSV 메모 칸은 "스타벅스|강남점"처럼
+   내부적으로 '|'를 구분자로 쓰는 경우가 드물지 않아 비현실적인 가정이 아니다. 그런 충돌이
+   일어나면 실제로는 새로 들어온 거래가 '이미 있던 내역'으로 오판되어 가져오기에서 조용히
+   빠진다(app-evolve cycle370 develop). JSON.stringify는 각 문자열 원소를 따로 이스케이프해
+   원소 경계가 섞이지 않는다 — recHistFieldsChanged(위)가 splits 비교에 쓰는 것과 같은 방식. */
 function csvDedupeKey(t){
- return [t.date,t.type,t.amount,t.category||'',
+ return JSON.stringify([t.date,t.type,t.amount,t.category||'',
   t.fromAssetName!=null?('n:'+t.fromAssetName):('i:'+(t.fromAssetId||'')),
   t.toAssetName!=null?('n:'+t.toAssetName):('i:'+(t.toAssetId||'')),
-  t.memo||''].join('|');
+  t.memo||'']);
 }
 /* ================= 거래 중복 입력 탐지 (순수) ================= */
 /* 자산 등록(saveAsset의 근접중복 차단)과 CSV 가져오기(csvDedupeKey)는 이미 중복을 거르지만,

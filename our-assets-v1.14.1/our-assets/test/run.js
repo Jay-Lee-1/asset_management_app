@@ -8625,6 +8625,18 @@ test('csvDedupeKey: 연결된 자산은 id로, 스냅샷 이름은 이름으로 
   assert.notStrictEqual(sandbox.csvDedupeKey(byId), sandbox.csvDedupeKey(byName));
   assert.strictEqual(sandbox.csvDedupeKey(byId), sandbox.csvDedupeKey({ ...byId }));
 });
+/* app-evolve cycle370 develop: csvDedupeKey가 필드를 '|'로 그냥 이어붙이던 시절엔 카테고리/메모
+ * 중 하나에 '|'가 들어있으면 경계가 밀려 서로 다른 내역이 같은 키로 뭉개질 수 있었다 — 은행/카드사
+ * CSV 메모가 "스타벅스|강남점"처럼 내부적으로 '|'를 쓰는 경우가 실제로 있다. */
+test('csvDedupeKey: 카테고리/메모 중 하나에 "|"가 들어있어도 경계가 밀리지 않아, 서로 다른 내역이 같은 키로 뭉개지지 않는다', () => {
+  const a = { date: '2026-01-01', type: 'expense', amount: 1000, category: '식비|카페', fromAssetId: 'a1', toAssetId: null, memo: '' };
+  const b = { date: '2026-01-01', type: 'expense', amount: 1000, category: '식비', fromAssetId: 'a1', toAssetId: null, memo: '카페' };
+  assert.notStrictEqual(sandbox.csvDedupeKey(a), sandbox.csvDedupeKey(b), '카테고리 끝의 "|"가 다음 필드(메모)와의 경계로 오인되면 안 됨');
+});
+test('csvDedupeKey: 메모에 "|"가 포함된 실제 거래는 그 메모 그대로 가진 동일 내역과는 변함없이 같은 키를 돌려준다', () => {
+  const t = { date: '2026-01-01', type: 'expense', amount: 4500, category: '카페', fromAssetId: 'a1', toAssetId: null, memo: '스타벅스|강남점' };
+  assert.strictEqual(sandbox.csvDedupeKey(t), sandbox.csvDedupeKey({ ...t }));
+});
 /* ---------- findPossibleDuplicateTx: saveTx 수동 입력 중복 경고(app-evolve cycle284 advance) ---------- */
 test('findPossibleDuplicateTx: 날짜/금액/카테고리/자산이 모두 같은 지출이 있으면 그 내역을 돌려준다', () => {
   const existing = { id: 't1', date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
