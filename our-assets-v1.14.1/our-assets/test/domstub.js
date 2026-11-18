@@ -126,6 +126,10 @@ class DomNode {
   focus() { _activeElement = this; }
   blur() { if (_activeElement === this) _activeElement = null; }
   getBoundingClientRect() { return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
+  // closeSheet()의 `const eg=$('sheetEdgeGlobal');if(eg)eg.remove();`를 실행형으로 돌리는 데
+  // 필요해 추가했다(app-evolve cycle367 critique→advance) — 부모에서 떼어내기만 하면 되므로
+  // removeChild를 그대로 위임한다.
+  remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   _descendants() {
     const out = [];
     const walk = (n) => n.children.forEach((c) => { out.push(c); walk(c); });

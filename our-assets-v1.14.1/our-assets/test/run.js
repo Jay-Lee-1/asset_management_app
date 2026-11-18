@@ -39264,6 +39264,158 @@ test('[실행형] attachDetent: 시트 드래그 중(sh._drag)이면 스크롤 �
   assert.strictEqual(sh.classList.contains('expanded'), false, '드래그 중엔 onscroll이 즉시 return해 확장하면 안 됨(wireSheetGestures의 pull-to-close와 충돌 방지)');
 });
 
+/* ---------- closeSheet: 모든 바텀시트 해제 경로(스와이프닫기/스크림탭/Escape/뒤로가기/각 시트
+ * 버튼)가 공유하는 유일한 해제 함수 자체의 실행형 테스트 ---------- */
+// 위 openSheetCtx()(cycle366)는 openSheet() 자신만 실행형으로 돌리고 closeSheet()는 범위 밖으로
+// 명시적으로 남겼다 — closeSheet를 쓰는 기존 테스트는 전부 no-op 스파이로 스텁하거나
+// extractFunction('closeSheet')로 소스 텍스트만 regex 검사해(878/5875/23302행 등) 실제 실행이
+// 한 번도 없었다(app-evolve cycle367 critique). openSheetCtx와 같은 "좁은 ad hoc vm 컨텍스트"
+// 패턴을 그대로 따라 closeSheetCtx()를 만든다 — applyForeignSave/applyPendingCloudConflictMerge/
+// updateSelBottom은 각자 별도 단위 테스트가 있으므로(cycle353/301/305 등) 본문까지 실행하지 않고
+// 스파이로 남겨 호출 여부·순서·인자만 확인한다.
+function closeSheetCtx() {
+  const dom = domstub.createDocument();
+  const sheetEl = dom.createElement('div'); sheetEl.id = 'sheet'; dom.body.appendChild(sheetEl);
+  const scrimEl = dom.createElement('div'); scrimEl.id = 'scrim'; dom.body.appendChild(scrimEl);
+  const appEl = dom.createElement('div'); appEl.id = 'app'; dom.body.appendChild(appEl);
+  const fabEl = dom.createElement('div'); fabEl.id = 'fab'; dom.body.appendChild(fabEl);
+  const dpModalEl = dom.createElement('div'); dpModalEl.id = 'dpModal'; dom.body.appendChild(dpModalEl);
+  const dpWheelEl = dom.createElement('div'); dpWheelEl.id = 'dpWheel'; dom.body.appendChild(dpWheelEl);
+  const applyForeignSaveCalls = [];
+  const applyPendingCloudConflictMergeCalls = [];
+  const updateSelBottomCalls = [];
+  const ctx = {
+    document: dom,
+    window: {},
+    $: (id) => dom.getElementById(id),
+    history: { pushState: () => {}, back: () => {} },
+    ST: { recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() } },
+    updateSelBottom: () => { updateSelBottomCalls.push(true); },
+    // closeSheet가 TAB_SYNC_PENDING을 null화한 "뒤에" applyForeignSave를 부르는지(재진입 안전성)
+    // 확인하려면 스파이 자신이 호출 시점의 전역값을 함께 떠놔야 한다.
+    applyForeignSave: (at) => { applyForeignSaveCalls.push({ at, tabSyncPendingAtCallTime: ctx.TAB_SYNC_PENDING }); },
+    applyPendingCloudConflictMerge: () => { applyPendingCloudConflictMergeCalls.push(true); },
+    TAB_SYNC_PENDING: null,
+    CLOUD_CONFLICT_PENDING: null,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [
+      extractLet('_sheetReturnFocus'),
+      extractLet('_ovHistDepth'),
+      extractLet('_draftSnap'),
+      extractFunction('ovHistPop'),
+      extractFunction('syncOverlayInert'),
+      extractFunction('closeSheet'),
+    ].join('\n'),
+    ctx, { filename: 'close-sheet-real' }
+  );
+  return {
+    ctx, dom, sheetEl, scrimEl, appEl, fabEl, dpModalEl, dpWheelEl,
+    applyForeignSaveCalls, applyPendingCloudConflictMergeCalls, updateSelBottomCalls,
+  };
+}
+test('[실행형] closeSheet: #sheet/#scrim의 show/expanded 클래스·inline style을 실제로 지우고, #sheetEdgeGlobal이 있으면 제거하고, syncOverlayInert()로 #app/#fab의 inert도 실제로 뗀다', () => {
+  const { ctx, dom, sheetEl, scrimEl, appEl } = closeSheetCtx();
+  sheetEl.classList.add('expanded', 'show');
+  sheetEl.style.transition = 'transform .2s'; sheetEl.style.transform = 'translateY(0px)';
+  sheetEl.style.height = '400px'; sheetEl.style.maxHeight = '88dvh'; sheetEl.style.overflow = 'hidden';
+  scrimEl.classList.add('show');
+  appEl.setAttribute('inert', ''); appEl.setAttribute('aria-hidden', 'true');
+  const eg = dom.createElement('div'); eg.id = 'sheetEdgeGlobal'; dom.body.appendChild(eg);
+  assert.ok(ctx.$('sheetEdgeGlobal'), '테스트 전제: #sheetEdgeGlobal이 미리 달려 있어야 함');
+
+  ctx.closeSheet();
+
+  assert.strictEqual(sheetEl.classList.contains('expanded'), false, '#sheet의 expanded 클래스가 지워져야 함');
+  assert.strictEqual(sheetEl.classList.contains('show'), false, '#sheet의 show 클래스가 지워져야 함');
+  assert.strictEqual(sheetEl.style.transition, '', 'inline transition이 지워져야 함');
+  assert.strictEqual(sheetEl.style.transform, '', 'inline transform이 지워져야 함');
+  assert.strictEqual(sheetEl.style.height, '', 'inline height가 지워져야 함');
+  assert.strictEqual(sheetEl.style.maxHeight, '', 'inline maxHeight가 지워져야 함');
+  assert.strictEqual(sheetEl.style.overflow, '', 'inline overflow가 지워져야 함');
+  assert.strictEqual(scrimEl.classList.contains('show'), false, '#scrim의 show 클래스도 지워져야 함');
+  assert.strictEqual(ctx.$('sheetEdgeGlobal'), null, '#sheetEdgeGlobal이 있었으면 remove()로 DOM에서 제거돼야 함');
+  // syncOverlayInert()가 실제로 불렸는지 — 시트가 닫혔고 dpModal/dpWheel도 안 열려 있으니
+  // #app/#fab에 남아있던 inert가 실제로 떼어져야 한다(스텁이었다면 그대로 남아 있을 것).
+  assert.strictEqual(appEl.getAttribute('inert'), null, 'closeSheet가 syncOverlayInert()를 불러 #app의 inert를 떼야 함');
+  assert.strictEqual(appEl.getAttribute('aria-hidden'), null, '#app의 aria-hidden도 함께 떼야 함');
+});
+test('[실행형] closeSheet: #sheetEdgeGlobal이 없으면(swipe-close 등을 안 쓰는 화면) 조용히 넘어간다', () => {
+  const { ctx } = closeSheetCtx();
+  assert.doesNotThrow(() => ctx.closeSheet(), '#sheetEdgeGlobal이 없을 때 closeSheet가 던지면 안 됨(eg가 null이면 remove() 호출 자체를 건너뜀)');
+});
+test('[실행형] closeSheet: 포커스 반환 대상(_sheetReturnFocus)이 여전히 문서 안에 있으면 그쪽으로 포커스를 돌려주고, 호출 후엔 항상 null화한다', () => {
+  const { ctx, dom } = closeSheetCtx();
+  const btn = dom.createElement('button'); btn.id = 'opener'; dom.body.appendChild(btn);
+  ctx._sheetReturnFocus = btn;
+
+  ctx.closeSheet();
+
+  assert.strictEqual(dom.activeElement, btn, '_sheetReturnFocus가 document 안에 있으면 그쪽으로 focus()가 실제로 이동해야 함');
+  assert.strictEqual(ctx._sheetReturnFocus, null, '포커스 복원 여부와 무관하게 _sheetReturnFocus는 호출 후 항상 null화돼야 함(다음 open까지 묵은 참조가 안 남게)');
+});
+test('[실행형] closeSheet: 포커스 반환 대상이 이미 DOM에서 떨어져나갔으면(예: 그 사이 화면이 다시 그려짐) focus()를 부르지 않고도 null화만 한다', () => {
+  const { ctx, dom } = closeSheetCtx();
+  const detached = dom.createElement('button'); // body에 appendChild하지 않음 → document.contains()가 false
+  ctx._sheetReturnFocus = detached;
+  const before = dom.activeElement;
+
+  assert.doesNotThrow(() => ctx.closeSheet(), '떨어져나간 엘리먼트에 focus()를 부르려 하면 안 됨(실제 브라우저라면 에러가 나지는 않지만, 엉뚱한 포커스 이동을 막아야 함)');
+
+  assert.strictEqual(dom.activeElement, before, 'document에 없는 엘리먼트로는 포커스가 이동하면 안 됨');
+  assert.strictEqual(ctx._sheetReturnFocus, null, '떨어져나간 참조여도 _sheetReturnFocus는 null화돼야 함');
+});
+test('[실행형] closeSheet: ST.recSel/ST.goalSel이 활성(mode=true)이었을 때만 해제하고 updateSelBottom()을 부르며, 둘 다 꺼져 있으면 아예 안 부른다', () => {
+  // 회귀: recSel만 활성인 경우 — goalSel은 원래 꺼져 있었으니 updateSelBottom이 그쪽 때문에
+  // "또" 불려선 안 되고(중복 호출 없음), recSel 쪽 해제·clear만 일어나야 한다.
+  {
+    const { ctx, updateSelBottomCalls } = closeSheetCtx();
+    ctx.ST.recSel.mode = true; ctx.ST.recSel.ids = new Set(['r1']);
+    ctx.closeSheet();
+    assert.strictEqual(ctx.ST.recSel.mode, false, 'recSel.mode가 꺼져야 함');
+    assert.strictEqual(ctx.ST.recSel.ids.size, 0, 'recSel.ids가 비워져야 함');
+    assert.strictEqual(ctx.ST.goalSel.mode, false, 'goalSel은 원래부터 꺼져 있었으니 그대로 꺼져 있어야 함');
+    assert.strictEqual(updateSelBottomCalls.length, 1, 'recSel만 활성이었으면 updateSelBottom()이 정확히 한 번만 불려야 함');
+  }
+  // goalSel만 활성인 경우도 대칭으로 확인.
+  {
+    const { ctx, updateSelBottomCalls } = closeSheetCtx();
+    ctx.ST.goalSel.mode = true; ctx.ST.goalSel.ids = new Set(['g1']);
+    ctx.closeSheet();
+    assert.strictEqual(ctx.ST.goalSel.mode, false, 'goalSel.mode가 꺼져야 함');
+    assert.strictEqual(ctx.ST.goalSel.ids.size, 0, 'goalSel.ids가 비워져야 함');
+    assert.strictEqual(ctx.ST.recSel.mode, false, 'recSel은 원래부터 꺼져 있었으니 그대로 꺼져 있어야 함');
+    assert.strictEqual(updateSelBottomCalls.length, 1, 'goalSel만 활성이었으면 updateSelBottom()이 정확히 한 번만 불려야 함');
+  }
+  // 둘 다 꺼져 있던 가장 흔한 경로(일반 거래/자산 시트 닫기) — updateSelBottom이 불필요하게
+  // 불리면 안 된다(선택모드 바텀바가 관련 없는 화면에서 깜빡이는 회귀를 잡는 가드).
+  {
+    const { ctx, updateSelBottomCalls } = closeSheetCtx();
+    ctx.closeSheet();
+    assert.strictEqual(updateSelBottomCalls.length, 0, 'recSel/goalSel 둘 다 비활성이면 updateSelBottom()을 아예 부르면 안 됨');
+  }
+});
+test('[실행형] closeSheet: TAB_SYNC_PENDING을 applyForeignSave 호출 "전에" null화하고(재진입 안전성), CLOUD_CONFLICT_PENDING과 함께 서 있으면 한 번의 close로 둘 다 소비한다', () => {
+  const { ctx, applyForeignSaveCalls, applyPendingCloudConflictMergeCalls } = closeSheetCtx();
+  ctx.TAB_SYNC_PENDING = 1700000000000;
+  ctx.CLOUD_CONFLICT_PENDING = { id: 'conflict-row' };
+
+  ctx.closeSheet();
+
+  assert.strictEqual(applyForeignSaveCalls.length, 1, 'TAB_SYNC_PENDING이 서 있었으면 applyForeignSave()가 정확히 한 번 불려야 함');
+  assert.strictEqual(applyForeignSaveCalls[0].at, 1700000000000, '예전 TAB_SYNC_PENDING 값이 그대로 인자로 전달돼야 함');
+  assert.strictEqual(applyForeignSaveCalls[0].tabSyncPendingAtCallTime, null, 'applyForeignSave가 불리는 시점엔 TAB_SYNC_PENDING이 이미 null이어야 함(재진입 중 같은 값을 또 적용하는 것을 막음)');
+  assert.strictEqual(ctx.TAB_SYNC_PENDING, null, 'closeSheet 종료 후에도 TAB_SYNC_PENDING은 null로 남아 있어야 함');
+  assert.strictEqual(applyPendingCloudConflictMergeCalls.length, 1, 'CLOUD_CONFLICT_PENDING도 같은 close 호출 한 번으로 함께 소비돼야 함(둘 다 보류돼 있던 전형적 상황)');
+});
+test('[실행형] closeSheet: TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING 둘 다 안 서 있으면(가장 흔한 경로) 어느 쪽 스파이도 부르지 않는다', () => {
+  const { ctx, applyForeignSaveCalls, applyPendingCloudConflictMergeCalls } = closeSheetCtx();
+  ctx.closeSheet();
+  assert.strictEqual(applyForeignSaveCalls.length, 0, '보류된 탭 동기화가 없으면 applyForeignSave()를 부르면 안 됨');
+  assert.strictEqual(applyPendingCloudConflictMergeCalls.length, 0, '보류된 클라우드 충돌이 없으면 applyPendingCloudConflictMerge()를 부르면 안 됨');
+});
+
 /* ---------- hideBootSplash/#bootSplash: 부팅 중(SDK 로딩·클라우드 세션 복원 순차 대기, 최대
  * 약 22초) #app이 아무 피드백 없는 빈 화면으로 보이던 공백에 로딩 스플래시를 추가
  * (app-evolve cycle215 critique → cycle216 advance). #bootSplash는 <body> 바로 다음, #app보다

@@ -1,19 +1,8 @@
 {
- "cycle": 367,
- "phase": "advance",
- "pending_advance_plan": {
-  "title": "closeSheet()의 TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING 처리·포커스 복원·DOM 정리를 실행형 테스트로 돌리기",
-  "why": "closeSheet()(index.html:11134)는 거의 모든 UI 종료 경로(스와이프닫기/스크림탭/Escape/뒤로가기/각 시트의 '닫기'·저장 버튼)가 공유하는 유일한 바텀시트 해제 함수인데, 이를 건드리는 모든 테스트가 closeSheet를 no-op 스파이로 스텁하거나(test/run.js:878 `closeSheetCalls++`류) extractFunction('closeSheet')로 소스 텍스트만 regex 검사한다(test/run.js:5875-5879, 23302-23306) — 실제 실행은 전혀 없다. 이 함수는 (1) 다른 탭이 같은 localStorage DB를 수정한 뒤 보류된 TAB_SYNC_PENDING을 applyForeignSave로 적용하는 유일한 지점, (2) 클라우드 동기화 충돌(CLOUD_CONFLICT_PENDING)을 applyPendingCloudConflictMerge로 적용하는 유일한 지점이며, 동시에 sheet/scrim의 show/expanded 클래스·inline style 제거, sheetEdgeGlobal 제거, syncOverlayInert(), _sheetReturnFocus 복원·null화, ST.recSel/ST.goalSel 해제까지 한 함수에서 처리한다. 순서가 꼬이거나(TAB_SYNC_PENDING을 applyForeignSave 호출 전에 null하지 않는 등) 클래스/포커스 복원이 빠지면 멀티탭/멀티기기 상태가 조용히 깨지거나 스크린리더/키보드 포커스가 끊기는데, 현재 '전부 통과'인 테스트 스위트는 이 종류의 회귀를 원천적으로 못 잡는다. cycle366 advance가 openSheet/syncOverlayInert/sheetFocusables/applyHeight/attachDetent를 실행형으로 돌리면서 closeSheet 자신은 명시적으로 범위 밖에 남겨둔 바로 그 공백이다.",
-  "approach": "cycle366의 openSheetCtx() 패턴을 그대로 따라 closeSheetCtx()라는 좁은 ad hoc vm 컨텍스트를 새로 만든다(메인 공유 sandbox의 FUNCTIONS에 올리지 않음 — 수백 개 기존 테스트에 실제 DOM 부작용이 전파되는 걸 막기 위함, cycle366이 명시한 이유와 동일). 그 컨텍스트에 실제 closeSheet, ovHistPop, syncOverlayInert, $ 헬퍼, domstub DOM을 로드하고, applyForeignSave/applyPendingCloudConflictMerge/updateSelBottom은 스파이로 남긴다(이미 각자 단위 테스트가 있으므로 본문까지 실행하지 않음 — 범위 밖). 검증 항목: (a) #sheet/#scrim의 show/expanded 클래스·inline style이 실제로 제거되고 #sheetEdgeGlobal이 있으면 제거됨, (b) _sheetReturnFocus가 document.contains일 때만 포커스 복원되고 호출 후 null화됨, (c) ST.recSel/ST.goalSel이 활성 상태였을 때만 해제되고 아니면 updateSelBottom이 불필요하게 호출되지 않음, (d) TAB_SYNC_PENDING이 applyForeignSave 스파이 호출 '전에' null화됨(재진입 안전성), 두 PENDING 플래그가 동시에 서 있으면 한 번의 close 호출로 둘 다 소비됨, (e) 둘 다 없으면 두 스파이 모두 호출 안 됨(회귀 테스트). git stash로 index.html의 순서/null화를 임시로 깨서 새 테스트가 실제로 FAIL하는지 확인한 뒤 복원(이전 cycle들의 표준 검증 절차). 범위 경계: openSheet/제스처 코드(이미 커버됨)는 건드리지 않음, applyForeignSave/applyPendingCloudConflictMerge 본문은 실제 실행하지 않음(이미 격리 테스트됨), 새 테스트가 실제 버그를 드러내지 않는 한 closeSheet의 동작 자체는 바꾸지 않음."
- },
+ "cycle": 368,
+ "phase": "develop",
+ "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 362,
-   "phase": "critique",
-   "timestamp": "2026-11-15T19:10:00.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-362의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력 공휴일, 저축 만기 overdue, assetGainLossBadge)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: txRowCore()(전체내역/검색/캘린더/홈/카테고리 드릴다운이 전부 공유하는 거래 행 렌더러)가 .swipe-content에 role=\"button\" tabindex=\"0\"을 주면서 그 DOM 자손으로 실제 <button class=\"dup-btn\">(복제)/<button class=\"confirm-btn\">(반복이체 확인)을 중첩시켜, WAI-ARIA 패턴을 위반하고 VoiceOver/TalkBack이 전체를 하나의 탐색 불가 단위로 취급해 스크린리더 사용자가 그 안의 복제/확인 버튼에 포커스를 옮길 방법이 없다 — 가장 흔히 쓰이는 공유 위젯에 걸친 표준 수준 접근성 결함. pending_advance_plan에 role=\"button\"을 아바타/메모/금액만 감싸는 내부 wrapper로 좁히고 dup-btn/confirm-btn/photo를 그 형제로 빼내는 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
   {
    "cycle": 362,
    "phase": "advance",
@@ -145,6 +134,13 @@
    "phase": "critique",
    "timestamp": "2026-11-18T00:00:00.000Z",
    "summary": "general-purpose 서브에이전트에게 cycle340-367에서 이미 다룬 모든 주제(반복거래 주말·공휴일 조정, 정산 2인/N인/settleDueN/doSettleN 부분실패, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), txRowCore/asset-item/date-picker/installBar의 role=button 중첩, assetQtyLog 저장공간 정리, openSheet 실행형 테스트(cycle366))를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: closeSheet()(index.html:11134, 모든 바텀시트의 유일한 해제 함수 — 스와이프닫기/스크림탭/Escape/뒤로가기/각 시트 버튼이 전부 공유)가 실제로 실행되는 테스트가 전혀 없다 — 이를 쓰는 테스트는 전부 no-op 스파이로 스텁하거나(test/run.js:878 `closeSheetCalls++`) extractFunction('closeSheet')로 소스 텍스트 regex만 검사한다(test/run.js:5875-5879, 23302-23306). 이 함수는 TAB_SYNC_PENDING(다른 탭의 동시 수정 적용)과 CLOUD_CONFLICT_PENDING(클라우드 동기화 충돌 적용)을 소비하는 유일한 지점이자, sheet/scrim 클래스·inline style 제거, sheetEdgeGlobal 제거, syncOverlayInert(), _sheetReturnFocus 복원·null화, ST.recSel/ST.goalSel 해제까지 한 함수에서 처리한다 — cycle366 advance가 openSheet/syncOverlayInert/sheetFocusables/applyHeight/attachDetent를 실행형으로 돌리면서 명시적으로 범위 밖에 남겨둔 바로 그 공백. 순서가 꼬이거나 포커스/클래스 복원이 빠지면 멀티탭/멀티기기 상태가 조용히 깨지거나 스크린리더 포커스가 끊기는데, 현재 스위트는 이 종류의 회귀를 전혀 못 잡는다. 러너업(doExport의 대용량 메모리 리스크 — cycle364에서 이미 낮은 우선순위로 거론됨, ST.hist.preset류 도달불가 UI상태 전수조사 — cycle364에서 범위가 너무 커 보류됨)은 순위를 낮게 매김. pending_advance_plan에 closeSheetCtx() (cycle366의 openSheetCtx() 패턴을 그대로 따름) 신설 계획 저장: TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING 소비 순서·재진입 안전성, 클래스/style 정리, _sheetReturnFocus 복원·null화, ST.recSel/goalSel 조건부 해제를 실행형으로 검증. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 367,
+   "phase": "advance",
+   "timestamp": "2026-11-18T01:11:12.416Z",
+   "summary": "critique(cycle367)의 계획대로 closeSheet()(모든 바텀시트 해제가 공유하는 유일한 함수)를 실행형으로 테스트했다 — openSheetCtx()(cycle366)와 같은 \"좁은 ad hoc vm 컨텍스트\" 패턴을 그대로 따라 closeSheetCtx()를 새로 만들고, applyForeignSave/applyPendingCloudConflictMerge/updateSelBottom은 각자 이미 단위 테스트가 있어 본문까지 실행하지 않고 스파이로 남겼다. domstub.js에 DomNode.remove()(부모에서 떼어내기, closeSheet의 eg.remove() 실행에 필요)를 추가했다. 테스트 7건 추가: (1) #sheet/#scrim의 show/expanded 클래스·inline style이 실제로 지워지고 #sheetEdgeGlobal이 있으면 제거되며 syncOverlayInert() 호출로 #app의 inert/aria-hidden도 실제로 떼어지는지, (2) #sheetEdgeGlobal이 없을 때 조용히 넘어가는지(회귀), (3) _sheetReturnFocus가 document.contains일 때만 실제로 focus()되고 호출 후 항상 null화되는지, (4) 떨어져나간 참조면 focus() 없이 null화만 하는지, (5) ST.recSel/goalSel이 활성이었을 때만 해제·clear되고 updateSelBottom이 그만큼만 불리며 둘 다 꺼져 있으면 아예 안 불리는지(recSel만/goalSel만/둘 다 꺼짐 3개 서브케이스), (6) TAB_SYNC_PENDING이 applyForeignSave 호출 \"전에\" null화됨(재진입 안전성, 스파이가 호출 시점의 전역값을 함께 캡처해 검증)과 CLOUD_CONFLICT_PENDING이 같은 close 1회로 함께 소비되는지, (7) 둘 다 안 서 있으면 두 스파이 모두 안 불리는지(회귀). 검증: index.html의 TAB_SYNC_PENDING null화를 applyForeignSave 호출 \"뒤\"로 임시로 옮겨(실제 diff엔 없음, 복원함) (6)번 테스트가 실제로 FAIL하는 것을 직접 확인했다. node test/run.js 3556->3563/3563 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/domstub.js·test/run.js만 수정했고 index.html/sw.js는 건드리지 않아(cycle366과 동일한 이유) APP_VERSION/CACHE 버전은 올리지 않는다. pending_advance_plan null로 비움.",
    "commit": null
   }
  ]
