@@ -1,15 +1,8 @@
 {
   "cycle": 373,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 368,
-      "phase": "review",
-      "timestamp": "2026-11-18T03:07:25.921Z",
-      "summary": "develop(cycle368, d01daba: duplicateRec()에 duplicateAsset/duplicateGoal과 동일한 복제 후 #rMemo 포커스+select() 추가)을 검토했다. duplicateAsset(4154행)/duplicateGoal 패턴과 바이트 단위로 동일한 setTimeout(()=>{...},300) 호출임을 diff로 확인. renderRecSheet()는 자체적으로 포커스를 옮기는 코드가 없어 충돌 없음을 확인(순수 렌더 함수, openSheet가 여는 시트의 포커스는 openSheet 자신이 topBtn 등으로 처리하고 duplicateRec의 setTimeout 300ms가 그보다 늦게 실행돼 최종적으로 #rMemo에 안착). 반복 목록(openRecManage())의 식별자가 memo||category인 점도 재확인해 포커스 대상(#rMemo) 선택이 타당함을 확인. #rMemo가 없을 때(시트가 이미 닫힌 경우) focus/select를 호출하지 않는 가드도 duplicateAsset/duplicateGoal과 동일. node test/run.js 3565/3565 재실행 통과, node --check sw.js/test/run.js/test/domstub.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 368,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-18T23:20:00.000Z",
       "summary": "scanCorruptBackupKeys()/scanWipeBackupKeys()(index.html — 매 부팅마다 실제 localStorage를 Object.keys()로 훑고 오래된 __corrupt_/__pre*_ 백업 키를 removeItem()으로 지우며 CORRUPT_BACKUP_KEYS/WIPE_BACKUP_KEYS 전역을 채우는 두 스캔 함수)가 findCorruptBackupKeys/pruneOldCorruptKeys(순수 함수, 이미 검증됨)와 homeAlerts()의 corruptBackup/wipeBackup 카드(전역을 손으로 세팅해 검증)만 각각 테스트돼 있었을 뿐, 그 전역을 실제로 채우는 두 스캔 함수 자신은 load()/openSheet/acctSafety와 같은 '공유 핵심인데 실행형 커버리지 0' 공백이었음을 Explore로 확인했다(cycle340-372에서 다룬 주제는 모두 배제). loadCtx() 패턴을 따라 Object.keys/getItem/removeItem이 실제로 동작하는 plain-object localStorage 목을 주는 scanBackupKeysCtx() ad hoc vm 컨텍스트를 신설, findCorruptBackupKeys/pruneOldCorruptKeys는 이미 검증된 실제 구현을 그대로 재사용했다. 테스트 6건 추가: scanCorruptBackupKeys(정상 필터링/다른 계정·보조 키 보존, CORRUPT_BACKUP_MAX_AGE_MS 초과 키 실제 삭제, STORAGE_OK=false 시 localStorage 미접근, dataKey() throw 시 안전하게 빈 배열 유지)와 scanWipeBackupKeys(7가지 __pre*_ 접두사가 kind와 함께 ts 내림차순으로 합쳐짐, 오래된 건 kind 무관 삭제+STORAGE_OK=false 가드). 과정에서 cycle372와 동일한 vm realm 함정(findCorruptBackupKeys/pruneOldCorruptKeys가 sandbox realm에서 만든 배열이라 호스트 리터럴과 deepStrictEqual 시 '참조가 다르다'로 깨짐)을 다시 만나 JSON.parse(JSON.stringify(...)) 왕복(plain() 헬퍼)으로 해결했다. 실제 버그는 발견되지 않았다(순수 커버리지 보강). node test/run.js 3613->3619/3619 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/run.js만 수정했고 index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 올리지 않는다.",
+      "commit": null
+    },
+    {
+      "cycle": 373,
+      "phase": "review",
+      "timestamp": "2026-11-18T23:08:38.210Z",
+      "summary": "develop(cycle373, 8844b8b: scanCorruptBackupKeys()/scanWipeBackupKeys() 실행형 테스트 6건 추가)을 검토했다. 두 함수의 구현(index.html:2727-2736, 2788-2806)과 의존하는 순수 함수 findCorruptBackupKeys/pruneOldCorruptKeys(logic.js:2189-2202)를 직접 대조: CORRUPT_BACKUP_KEYS/WIPE_BACKUP_KEYS를 함수 맨 앞에서 무조건 []로 리셋한 뒤 STORAGE_OK 가드→try/catch 안에서 스캔·정리→removeItem으로 오래된 키 실제 삭제하는 순서를 테스트 6건 모두가 정확히 반영함을 확인(STORAGE_OK=false일 때도 결과가 비는 이유, dataKey() throw가 바깥 try/catch에 잡혀 조용히 빈 배열로 끝나는 경로, scanWipeBackupKeys의 7개 prefix가 개별 findCorruptBackupKeys 호출 후 합쳐 ts 내림차순 재정렬되는 순서까지 테스트 기대값과 일치). node test/run.js 3619/3619 재실행 통과, node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
