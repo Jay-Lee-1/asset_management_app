@@ -1,22 +1,12 @@
 {
  "cycle": 367,
- "phase": "critique",
- "pending_advance_plan": null,
+ "phase": "advance",
+ "pending_advance_plan": {
+  "title": "closeSheet()의 TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING 처리·포커스 복원·DOM 정리를 실행형 테스트로 돌리기",
+  "why": "closeSheet()(index.html:11134)는 거의 모든 UI 종료 경로(스와이프닫기/스크림탭/Escape/뒤로가기/각 시트의 '닫기'·저장 버튼)가 공유하는 유일한 바텀시트 해제 함수인데, 이를 건드리는 모든 테스트가 closeSheet를 no-op 스파이로 스텁하거나(test/run.js:878 `closeSheetCalls++`류) extractFunction('closeSheet')로 소스 텍스트만 regex 검사한다(test/run.js:5875-5879, 23302-23306) — 실제 실행은 전혀 없다. 이 함수는 (1) 다른 탭이 같은 localStorage DB를 수정한 뒤 보류된 TAB_SYNC_PENDING을 applyForeignSave로 적용하는 유일한 지점, (2) 클라우드 동기화 충돌(CLOUD_CONFLICT_PENDING)을 applyPendingCloudConflictMerge로 적용하는 유일한 지점이며, 동시에 sheet/scrim의 show/expanded 클래스·inline style 제거, sheetEdgeGlobal 제거, syncOverlayInert(), _sheetReturnFocus 복원·null화, ST.recSel/ST.goalSel 해제까지 한 함수에서 처리한다. 순서가 꼬이거나(TAB_SYNC_PENDING을 applyForeignSave 호출 전에 null하지 않는 등) 클래스/포커스 복원이 빠지면 멀티탭/멀티기기 상태가 조용히 깨지거나 스크린리더/키보드 포커스가 끊기는데, 현재 '전부 통과'인 테스트 스위트는 이 종류의 회귀를 원천적으로 못 잡는다. cycle366 advance가 openSheet/syncOverlayInert/sheetFocusables/applyHeight/attachDetent를 실행형으로 돌리면서 closeSheet 자신은 명시적으로 범위 밖에 남겨둔 바로 그 공백이다.",
+  "approach": "cycle366의 openSheetCtx() 패턴을 그대로 따라 closeSheetCtx()라는 좁은 ad hoc vm 컨텍스트를 새로 만든다(메인 공유 sandbox의 FUNCTIONS에 올리지 않음 — 수백 개 기존 테스트에 실제 DOM 부작용이 전파되는 걸 막기 위함, cycle366이 명시한 이유와 동일). 그 컨텍스트에 실제 closeSheet, ovHistPop, syncOverlayInert, $ 헬퍼, domstub DOM을 로드하고, applyForeignSave/applyPendingCloudConflictMerge/updateSelBottom은 스파이로 남긴다(이미 각자 단위 테스트가 있으므로 본문까지 실행하지 않음 — 범위 밖). 검증 항목: (a) #sheet/#scrim의 show/expanded 클래스·inline style이 실제로 제거되고 #sheetEdgeGlobal이 있으면 제거됨, (b) _sheetReturnFocus가 document.contains일 때만 포커스 복원되고 호출 후 null화됨, (c) ST.recSel/ST.goalSel이 활성 상태였을 때만 해제되고 아니면 updateSelBottom이 불필요하게 호출되지 않음, (d) TAB_SYNC_PENDING이 applyForeignSave 스파이 호출 '전에' null화됨(재진입 안전성), 두 PENDING 플래그가 동시에 서 있으면 한 번의 close 호출로 둘 다 소비됨, (e) 둘 다 없으면 두 스파이 모두 호출 안 됨(회귀 테스트). git stash로 index.html의 순서/null화를 임시로 깨서 새 테스트가 실제로 FAIL하는지 확인한 뒤 복원(이전 cycle들의 표준 검증 절차). 범위 경계: openSheet/제스처 코드(이미 커버됨)는 건드리지 않음, applyForeignSave/applyPendingCloudConflictMerge 본문은 실제 실행하지 않음(이미 격리 테스트됨), 새 테스트가 실제 버그를 드러내지 않는 한 closeSheet의 동작 자체는 바꾸지 않음."
+ },
  "history": [
-  {
-   "cycle": 362,
-   "phase": "develop",
-   "timestamp": "2026-11-15T17:30:00.000Z",
-   "summary": "코드를 직접 탐색해 homeAlertCard()(홈 화면 상시 알림 카드)의 저축 만기('mat'/'matMulti') 렌더가 overdue(이미 지난 만기, doMaturity() 미처리)를 전혀 구분하지 않고 항상 \"저축 만기 임박\"이라고 쓰는 공백을 발견했다 — notifyAlertInfo()(OS 푸시, cycle232)와 openMaturity()(만기 목록 시트, cycle268)는 이미 al.date<TODAY를 봐서 지난 만기를 \"지났어요\"로 따로 부르는데, 매번 보이는 홈 카드만 그 구분이 안 끝나 doMaturity()로 이체 처리를 아직 안 한 지난 만기도 계속 \"곧 만기\"처럼 안내했다. 수정: 'mat' 단일 카드는 al.date<TODAY면 제목/부제를 '저축 만기가 지났어요'/'만기가 지났어요'로 바꾼다. 'matMulti'는 homeAlerts()가 이제 함께 넘기는 overdueCount(dueCount와 동일한 방식으로 _mat에서 산출)로 전부 지났으면 제목을 '저축 만기가 지났어요 N건'으로, 일부만 지났으면 기존 제목은 유지한 채 부제에 '지난 건 포함 ·'을 덧붙인다. overdueCount가 없는(undefined) 기존 호출부/테스트는 모두 0으로 취급돼 문구가 바뀌지 않아 하위호환 유지. 테스트 2건 추가(mat 단일: 미래/오늘/과거 3케이스, matMulti: overdueCount 0/일부/전부 3케이스) — 기존 matMulti 테스트(건수만 확인)도 그대로 통과함을 확인. node test/run.js 3482->3484/3484 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.463->1.47.464, sw.js CACHE v730->v731.",
-   "commit": null
-  },
-  {
-   "cycle": 362,
-   "phase": "review",
-   "timestamp": "2026-11-15T18:05:00.000Z",
-   "summary": "develop(cycle362, 3253e48: homeAlertCard 저축 만기 mat/matMulti overdue 구분 추가)을 검토했다. al.date<TODAY 판정이 notifyAlertInfo(11979행)/openMaturity(8308행)가 이미 쓰는 동일한 overdue 정의와 일치함을 grep으로 확인. homeAlerts()의 overdueCount=_mat.filter(a=>a.maturityDate<TODAY).length가 dueCount(<=TODAY+1)와 같은 _mat 배열에서 산출돼 항상 0<=overdueCount<=count인 부분집합임을 확인. matMulti의 allOverdue=count>0&&overdueCount===count, someOverdue=overdueCount>0&&!allOverdue 두 플래그가 overdueCount가 undefined인 기존 호출부/테스트에서 모두 false로 평가돼(undefined===count는 false, undefined>0도 false) 문구가 그대로 유지되는 하위호환을 재확인. node test/run.js 3484/3484 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-   "commit": null
-  },
   {
    "cycle": 362,
    "phase": "critique",
@@ -148,6 +138,13 @@
    "phase": "review",
    "timestamp": "2026-11-17T22:30:00.000Z",
    "summary": "develop(cycle367, 9888a6f: doSettleN 부분 실패 시 settledThrough를 당기고 성공 토스트가 실패 toast를 덮어쓰던 회귀 수정)을 검토했다. diff를 읽고 로직을 직접 추적: failed 플래그가 루프 중 break 직전에만 true로 설정되고, created.length===0(아무 것도 못 만든 경우)이면 기존처럼 if(!created.length)return;에서 먼저 걸려 failed 분기 자체에 도달하지 않음을 확인 — 두 조건이 서로 겹치지 않아 분기 순서가 안전함. failed===true일 때 save/invalidateBalances/renderCurrent만 실행하고 closeSheet()/DB.settings.settledThrough 대입/undoToast를 모두 건너뛰므로, 이미 만든 거래(배우자→나)는 유지되고 다음 openSettlement() 호출이 같은 settledThrough부터 다시 시작해 미지급 참가자(아이) 몫이 더는 누락되지 않음을 확인. toast()/undoToast()가 서로 다른 DOM 요소(class 'toast' vs 'toast undo')를 만드는 별개 함수라 sandbox.lastToast/lastUndo가 독립적으로 추적됨을 grep으로 재확인 — 새 단언(lastUndo===null)이 '성공 토스트가 실패 안내를 덮지 않는다'를 실제로 검증함. 호출부 confirmSheet(5948행)가 자신의 확인 시트를 닫은 뒤 doSettleN을 실행하는 구조라, doSettleN이 실패 시 closeSheet()를 호출하지 않아도(의도적으로 settlement 시트를 열어둠) 깨지는 다른 화면이 없음을 확인. node test/run.js 3556/3556 재실행 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 367,
+   "phase": "critique",
+   "timestamp": "2026-11-18T00:00:00.000Z",
+   "summary": "general-purpose 서브에이전트에게 cycle340-367에서 이미 다룬 모든 주제(반복거래 주말·공휴일 조정, 정산 2인/N인/settleDueN/doSettleN 부분실패, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), txRowCore/asset-item/date-picker/installBar의 role=button 중첩, assetQtyLog 저장공간 정리, openSheet 실행형 테스트(cycle366))를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: closeSheet()(index.html:11134, 모든 바텀시트의 유일한 해제 함수 — 스와이프닫기/스크림탭/Escape/뒤로가기/각 시트 버튼이 전부 공유)가 실제로 실행되는 테스트가 전혀 없다 — 이를 쓰는 테스트는 전부 no-op 스파이로 스텁하거나(test/run.js:878 `closeSheetCalls++`) extractFunction('closeSheet')로 소스 텍스트 regex만 검사한다(test/run.js:5875-5879, 23302-23306). 이 함수는 TAB_SYNC_PENDING(다른 탭의 동시 수정 적용)과 CLOUD_CONFLICT_PENDING(클라우드 동기화 충돌 적용)을 소비하는 유일한 지점이자, sheet/scrim 클래스·inline style 제거, sheetEdgeGlobal 제거, syncOverlayInert(), _sheetReturnFocus 복원·null화, ST.recSel/ST.goalSel 해제까지 한 함수에서 처리한다 — cycle366 advance가 openSheet/syncOverlayInert/sheetFocusables/applyHeight/attachDetent를 실행형으로 돌리면서 명시적으로 범위 밖에 남겨둔 바로 그 공백. 순서가 꼬이거나 포커스/클래스 복원이 빠지면 멀티탭/멀티기기 상태가 조용히 깨지거나 스크린리더 포커스가 끊기는데, 현재 스위트는 이 종류의 회귀를 전혀 못 잡는다. 러너업(doExport의 대용량 메모리 리스크 — cycle364에서 이미 낮은 우선순위로 거론됨, ST.hist.preset류 도달불가 UI상태 전수조사 — cycle364에서 범위가 너무 커 보류됨)은 순위를 낮게 매김. pending_advance_plan에 closeSheetCtx() (cycle366의 openSheetCtx() 패턴을 그대로 따름) 신설 계획 저장: TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING 소비 순서·재진입 안전성, 클래스/style 정리, _sheetReturnFocus 복원·null화, ST.recSel/goalSel 조건부 해제를 실행형으로 검증. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
    "commit": null
   }
  ]
