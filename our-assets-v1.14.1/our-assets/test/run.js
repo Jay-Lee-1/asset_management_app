@@ -39716,6 +39716,151 @@ test('[실행형] onSheetKeydown: 아무 오버레이도 안 열려 있으면(fa
   assert.doesNotThrow(() => ctx.onSheetKeydown({ key: 'Escape', preventDefault: () => { throw new Error('preventDefault가 불리면 안 됨'); } }));
 });
 
+/* ---------- 온보딩 튜토리얼(TW/twScreen/twNext/twPrev/twGuard/maybeTutorial): tutorialDone이
+ * 미설정인 모든 신규 DB 부팅 시 자동으로 열리는 모든 신규 사용자의 첫 경험인데도 지금까지 실행형
+ * 테스트가 전혀 없었다(app-evolve cycle371 critique) — openSheet/closeSheet/load()가 속했던
+ * '공유 핵심인데 실행형 커버리지 0' 공백과 같은 클래스. openSheetCtx/fabPopCtx와 같은 좁은 ad hoc
+ * vm 컨텍스트 패턴을 그대로 따른다: twShow/twPaint/twRender(실제 좌표 계산·requestAnimationFrame
+ * 루프를 쓰는 DOM 페인팅 파이프라인, 이번 범위 밖)는 스파이로 남기고, twActive/twGuard/twNext/
+ * twPrev/twEnd/openTutorial/maybeTutorial와 TW 배열·twScreen()(그 사이가 그리는 실제 데모 화면)은
+ * 실제 로직을 돌린다. */
+function twCtx(opts) {
+  const dom = domstub.createDocument();
+  const toastCalls = [];
+  const closeFabPopCalls = [];
+  const closeSheetCalls = [];
+  const twShowCalls = [];
+  const saveCalls = [];
+  const setTimeoutCalls = [];
+  const ctx = Object.assign({
+    document: dom,
+    svg: () => '',
+    toast: (msg) => toastCalls.push(msg),
+    closeFabPop: () => closeFabPopCalls.push(true),
+    closeSheet: () => closeSheetCalls.push(true),
+    twShow: () => twShowCalls.push(true),
+    twClear: () => {},
+    save: () => saveCalls.push(true),
+    setTimeout: (fn, ms) => { setTimeoutCalls.push({ fn, ms }); return setTimeoutCalls.length; },
+    DB: { settings: { tutorialDone: false } },
+  }, opts);
+  vm.createContext(ctx);
+  vm.runInContext(
+    [
+      extractConst('MOWN'),
+      extractFunction('mNwPane'),
+      extractFunction('mSujiInner'),
+      extractFunction('twNav'),
+      extractFunction('twHead'),
+      extractFunction('twScreen'),
+      extractConst('TW'),
+      extractLet('TWi'),
+      extractFunction('twActive'),
+      extractFunction('twGuard'),
+      extractFunction('twEnd'),
+      extractFunction('twNext'),
+      extractFunction('twPrev'),
+      extractFunction('openTutorial'),
+      extractFunction('maybeTutorial'),
+    ].join('\n'),
+    ctx, { filename: 'tw-real' }
+  );
+  return { ctx, dom, toastCalls, closeFabPopCalls, closeSheetCalls, twShowCalls, saveCalls, setTimeoutCalls };
+}
+test('[실행형] TW/twScreen: sel이 있는 모든 step이 twScreen(step.scr) 결과 안에서 실제로 매칭되는 엘리먼트를 갖는다(TW[].sel↔twScreen() id 페어링 드리프트 회귀)', () => {
+  const { ctx, dom } = twCtx();
+  const missing = [];
+  for (const step of ctx.TW) {
+    if (!step.sel) continue;
+    const container = dom.createElement('div');
+    container.innerHTML = ctx.twScreen(step.scr);
+    if (!container.querySelector(step.sel)) missing.push(`${step.scr}:${step.sel}`);
+  }
+  assert.deepStrictEqual(missing, [], `다음 step의 sel이 twScreen() 결과에서 매칭되는 엘리먼트를 못 찾음: ${missing.join(', ')}`);
+});
+test('[실행형] TW: 어떤 step도 sel로 ".fab-pop"을 쓰지 않는다(twNext()의 c.sel===".fab-pop" 분기가 어느 step에서도 트리거되지 않는 도달 불가능한 분기라는 실증)', () => {
+  const { ctx } = twCtx();
+  // ctx.TW는 별도 vm realm에서 만들어진 배열이라 메인 realm의 []와 deepStrictEqual 비교 시
+  // Array 생성자가 달라 거짓 FAIL이 난다(cycle131/364/368과 같은 realm 문제) — length로 비교한다.
+  const fabPopSteps = ctx.TW.filter((s) => s.sel === '.fab-pop');
+  assert.strictEqual(fabPopSteps.length, 0, 'TW 배열 어떤 step도 sel로 ".fab-pop"을 쓰면 안 됨(twScreen()이 실제로 그런 엘리먼트를 그리지 않음)');
+});
+test('[실행형] twGuard: 튜토리얼이 비활성(TWi<0)이면 toast 없이 false를 돌려줘 실제 동작을 막지 않는다', () => {
+  const { ctx, toastCalls } = twCtx();
+  ctx.TWi = -1;
+  assert.strictEqual(ctx.twGuard(), false);
+  assert.strictEqual(toastCalls.length, 0);
+});
+test('[실행형] twGuard: 튜토리얼이 활성(TWi>=0)이면 안내 toast를 띄우고 true를 돌려줘 실제 변경을 막는다', () => {
+  const { ctx, toastCalls } = twCtx();
+  ctx.TWi = 2;
+  assert.strictEqual(ctx.twGuard(), true);
+  assert.deepStrictEqual(toastCalls, ['튜토리얼 중에는 실제로 저장되지 않아요']);
+});
+test('[실행형] twNext: 마지막 step에서 부르면 twShow() 없이 twEnd(true)로 끝나 TWi를 -1로 되돌리고 tutorialDone을 저장하며 tw-on 클래스를 치운다', () => {
+  const { ctx, twShowCalls, saveCalls, closeFabPopCalls, dom } = twCtx();
+  dom.body.classList.add('tw-on');
+  ctx.TWi = ctx.TW.length - 1;
+  ctx.twNext();
+  assert.strictEqual(ctx.TWi, -1, 'twEnd()가 TWi를 -1로 되돌려 튜토리얼을 비활성 상태로 만들어야 함(twActive() 기준)');
+  assert.strictEqual(twShowCalls.length, 0, '마지막에서 끝날 때는 twShow()를 다시 부르면 안 됨');
+  // 이 호출은 twEnd() 자신이 맨 앞에서 항상(무조건) closeFabPop()을 부르기 때문에 1이다 —
+  // twNext()의 "c.sel==='.fab-pop'"이면 호출하는 그 죽은 분기와는 별개임(바로 아래 테스트가 그 분기만 분리해서 검증).
+  assert.strictEqual(closeFabPopCalls.length, 1, 'twEnd()는 항상 closeFabPop()으로 열린 fab 팝업을 닫아야 함');
+  assert.strictEqual(ctx.DB.settings.tutorialDone, true, 'twEnd(true)가 tutorialDone을 저장해야 함');
+  assert.strictEqual(saveCalls.length, 1, 'tutorialDone 저장을 위해 save()가 불려야 함');
+  assert.strictEqual(dom.body.classList.contains('tw-on'), false, 'twEnd가 body의 tw-on 클래스를 제거해야 함');
+});
+test('[실행형] twNext: 마지막이 아닌 step에서는 TWi만 증가시키고 twShow()로 다음 step을 그리며 아직 끝내지(twEnd) 않는다', () => {
+  const { ctx, twShowCalls, saveCalls } = twCtx();
+  ctx.TWi = 0;
+  ctx.twNext();
+  assert.strictEqual(ctx.TWi, 1);
+  assert.strictEqual(twShowCalls.length, 1);
+  assert.strictEqual(saveCalls.length, 0, '아직 끝난 게 아니므로 save()가 불리면 안 됨');
+});
+test('[실행형] twNext: 마지막을 제외한 모든 step에서 호출해도 "c.sel===\'.fab-pop\'" 분기의 closeFabPop()은 한 번도 불리지 않는다(어느 step의 sel도 ".fab-pop"이 아니므로 죽어 있음 — 제거해도 동작이 바뀌지 않는다는 실증. 마지막 step은 twEnd() 자신의 별개의 무조건 호출이 섞이므로 범위에서 뺀다, 위 테스트가 그건 이미 확인함)', () => {
+  const len = twCtx().ctx.TW.length;
+  for (let i = 0; i < len - 1; i++) {
+    const { ctx, closeFabPopCalls } = twCtx();
+    ctx.TWi = i;
+    ctx.twNext();
+    assert.strictEqual(closeFabPopCalls.length, 0, `TWi=${i}에서 twNext() 호출 시 closeFabPop()이 불리면 안 됨(dead branch)`);
+  }
+});
+test('[실행형] twPrev: 0번째 step에서 부르면 closeFabPop()은(경계와 무관하게 무조건) 불리지만 TWi는 그대로고 twShow()는 다시 안 부른다', () => {
+  const { ctx, closeFabPopCalls, twShowCalls } = twCtx();
+  ctx.TWi = 0;
+  ctx.twPrev();
+  assert.strictEqual(closeFabPopCalls.length, 1, 'twPrev()는 경계와 무관하게 항상 closeFabPop()을 불러야 함(기존 동작)');
+  assert.strictEqual(ctx.TWi, 0, '0번째보다 더 앞으로는 가면 안 됨');
+  assert.strictEqual(twShowCalls.length, 0, '더 갈 곳이 없으면 다시 그리면 안 됨');
+});
+test('[실행형] twPrev: 중간 step에서 부르면 closeFabPop() 후 TWi를 1 줄이고 twShow()로 이전 step을 다시 그린다', () => {
+  const { ctx, closeFabPopCalls, twShowCalls } = twCtx();
+  ctx.TWi = 2;
+  ctx.twPrev();
+  assert.strictEqual(closeFabPopCalls.length, 1);
+  assert.strictEqual(ctx.TWi, 1);
+  assert.strictEqual(twShowCalls.length, 1);
+});
+test('[실행형] maybeTutorial: tutorialDone이 거짓이면 800ms 뒤 openTutorial(0)을 실행하도록 예약한다(실제 신규 사용자 부팅 흐름)', () => {
+  const { ctx, setTimeoutCalls, closeSheetCalls } = twCtx();
+  ctx.DB.settings.tutorialDone = false;
+  ctx.maybeTutorial();
+  assert.strictEqual(setTimeoutCalls.length, 1);
+  assert.strictEqual(setTimeoutCalls[0].ms, 800);
+  setTimeoutCalls[0].fn();
+  assert.strictEqual(ctx.TWi, 0, '예약된 콜백이 실제로 openTutorial(0)을 실행해 TWi를 0으로 설정해야 함');
+  assert.strictEqual(closeSheetCalls.length, 1, 'openTutorial()이 closeSheet()를 불러야 함');
+});
+test('[실행형] maybeTutorial: tutorialDone이 참이면 아무 것도 예약하지 않는다(재방문 사용자는 자동으로 안 열림)', () => {
+  const { ctx, setTimeoutCalls } = twCtx();
+  ctx.DB.settings.tutorialDone = true;
+  ctx.maybeTutorial();
+  assert.strictEqual(setTimeoutCalls.length, 0);
+});
+
 /* ---------- hideBootSplash/#bootSplash: 부팅 중(SDK 로딩·클라우드 세션 복원 순차 대기, 최대
  * 약 22초) #app이 아무 피드백 없는 빈 화면으로 보이던 공백에 로딩 스플래시를 추가
  * (app-evolve cycle215 critique → cycle216 advance). #bootSplash는 <body> 바로 다음, #app보다
