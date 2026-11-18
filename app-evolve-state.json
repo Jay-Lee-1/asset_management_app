@@ -1,15 +1,8 @@
 {
   "cycle": 371,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 366,
-      "phase": "review",
-      "timestamp": "2026-11-17T18:45:00.000Z",
-      "summary": "develop(cycle366, df51ae3: homeAlerts의 settleDueN 3인 이상 정산 알림 추가)을 검토했다. settlementSummaryN(logic.js:238)이 {byOwner,total}을 돌려주고 settleUpTransfers(byOwner)가 이를 그대로 받는 시그니처가 호출부와 일치함을 확인. settleUpTransfers가 채무자/채권자를 탐욕 매칭해 만드는 transfers 합계가 항상 total(마지막 참가자가 반올림 나머지를 떠안는 settlementSummaryN 덕에 net 합이 0)과 일치해 settleAlertBucket 문턱 판정이 2인 경로와 같은 기준으로 적용됨을 확인. notifyAlertInfo의 key가 송금 쌍(from>to) 집합+bucket으로만 잡혀 금액이 미세하게 바뀌어도 같은 버킷이면 dedupe되는 것이 2인 settleDue와 동일 원칙임을 확인. homeAlertCard의 새 카드가 기존 settleDue와 똑같이 class=\"home-alert mat\"/svg('users') 조합을 쓰고 있어 스타일 일관성도 확인(svg('users')가 1574행에 정의돼 있음을 grep으로 확인). transfers가 빈 배열(총액 0)이면 settleAlertBucket(0,...)이 null이라 알림이 안 뜨는 것도 로직상 확인. node test/run.js 3546/3546 재실행 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 366,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-18T14:17:31.295Z",
       "summary": "kakaoReady()(index.html:2702, 카카오 로그인 SDK 초기화 유일 진입점)가 isInitialized() 여부만 보고 init()을 재호출할지 결정해, 틀린/오타난 Kakao JS 키로 한 번이라도 시도하면(Kakao.init()은 키 유효성 검사를 안 해 그 자체는 성공) isInitialized()가 true로 고정돼버려 saveKakaoKey()/saveKakaoKey2()로 키를 고쳐 재시도해도 새로고침 전까진 고친 키가 SDK에 영영 반영되지 않는 버그를 Explore 서브에이전트(cycle340-370의 모든 주제를 배제 목록으로 제공)가 찾았다. 수정: 모듈 스코프 _kakaoInitKey를 추가해 \"이미 초기화됐는지\"뿐 아니라 \"그 초기화가 지금 쓰려는 키와 같은지\"도 함께 보고, 키가 바뀌었으면 Kakao.cleanup()(v2 SDK가 재초기화용으로 제공하는 리셋 메서드)으로 먼저 리셋한 뒤 init()을 다시 호출하도록 바꿨다. test/run.js에 kakaoReadyCtx()(openSheetCtx/loadCtx 등과 같은 좁은 ad hoc vm 컨텍스트 패턴)를 신설해 실행형 테스트 6건 추가(Kakao 없음/키 없음/최초 init/같은 키 재호출 시 빠른 경로/키를 고치면 cleanup 후 재init/cleanup 실패 시 조용히 멈춤). git stash로 index.html만 수정 전으로 되돌려 새 테스트 3건이 실제로 FAIL하는 것을 확인한 뒤 복원. node test/run.js 3589->3595/3595 통과, node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.477->1.47.478, sw.js CACHE v744->v745. 참고: 이번 사이클 시작 시 로컬 git이 다시 detached HEAD였다(cycle369/370에서도 반복) — git checkout -B main HEAD로 로컬 main을 HEAD로 재설정해 origin/main(d01daba, fast-forward 확인됨)과 맞춘 뒤 진행했다.",
       "commit": "84e4872"
+    },
+    {
+      "cycle": 371,
+      "phase": "review",
+      "timestamp": "2026-11-18T15:09:13.000Z",
+      "summary": "develop(cycle371, 84e4872: kakaoReady()가 틀린 키를 고쳐 재시도해도 반영되게 수정)을 검토했다. kakaoReady()(index.html:2703) 새 로직을 추적: window.Kakao&&k 가드 안에서 isInitialized()&&k!==_kakaoInitKey일 때만 cleanup()을 시도하고, 그 후 !isInitialized()일 때만 init(k)+_kakaoInitKey=k를 하는 구조라 - 최초 호출(미초기화) / 같은 키 재호출(빠른 경로, cleanup·init 둘 다 스킵) / 키 변경(cleanup 후 재init) / cleanup 실패(조용히 멈춤, 중복 init 시도 안 함) 4가지 분기가 서로 겹치지 않고 배타적임을 확인. 호출부는 index.html 전체에서 kakaoReady() 단 한 곳(13896행, kakaoLogin 진입부)뿐이라 다른 호출 경로와의 충돌 여지 없음. saveKakaoKey()(13911행)의 if(window.Kakao&&...isInitialized()){/* 이미 초기화됨 */}는 아무 동작도 안 하는 빈 블록으로(git log -S로 7bcc245에서 이미 들어와 있던 기존 코드, 이번 커밋이 추가한 게 아님) 이번 수정으로 완전히 무의미해졌다 — 버그는 아니지만(동작에 영향 없음) 다음 develop/critique에서 정리할 만한 죽은 코드로 기록. node test/run.js 3595/3595 재실행 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
     }
   ]
 }
