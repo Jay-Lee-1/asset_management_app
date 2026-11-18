@@ -1,26 +1,8 @@
 {
-  "cycle": 370,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "SW 업데이트 배너가 입력 중인 초안을 확인 없이 날려버리는 문제 수정",
-    "why": "reloadForUpdate()(index.html:1438, #swUpdateBar의 onclick)와 메뉴의 버전정보 행(7970행, a:\"location.reload()\")·메뉴 하단 '지금 새로고침' 링크(7984행)가 모두 location.reload()를 즉시 호출한다. 반면 거래/자산/목표/반복거래 시트를 닫는 다른 모든 경로(X버튼·스크림탭·스와이프·Esc·브라우저 뒤로가기)는 isDraftDirty()(11167행)로 아직 저장 안 된 초안이 있는지 확인한 뒤 closeSheetGuarded()(11177행)가 '변경사항을 버릴까요? · 입력하던 내용이 저장되지 않아요' 확인을 띄우고 '버리기'를 눌러야만 닫힌다. SW_UPDATE_AVAILABLE은 controllerchange 이벤트(14134행 근처)로 세션 중 아무 때나 비동기로 켜지고, #swUpdateBar는 z-index:199(1000행 CSS)로 #scrim(100)/.sheet(101)보다 위에 떠서 열려 있는 시트 위에서도 탭 가능하다. syncOverlayInert()(11012행)는 #swUpdateBar를 전혀 고려하지 않는다. 결과: 거래 입력 중(amount/category 입력, 아직 저장 안 함 — txDraft 등은 저장 전까지 DB에 쓰이지 않는 순수 메모리 객체) 배포가 나가 배너가 뜨면, 실수로든 의도적으로든 탭 한 번에 확인 없이 location.reload()가 실행되어 입력 중인 내용이 undo도 백업도 없이 영구 소실된다 — 이 앱의 다른 모든 파괴적 동작이 confirmSheet()/undoToast()/사전 스냅샷 중 하나를 쓰는 것과 어긋나는 유일한 예외다.",
-    "approach": "reloadForUpdate()를 수정해 isDraftDirty()가 true면(그리고 #sheet가 열려 있으면) closeSheetGuarded()와 동일한 '변경사항을 버릴까요?' 확인 시트를 띄우되, '버리기'를 누르면 closeSheet() 후 location.reload()를 실행하도록 한다(순수 닫기만 하는 closeSheetGuarded()를 직접 재사용하지 않고, 확인 후 콜백으로 reload까지 잇는 별도 작은 함수나 closeSheetGuarded에 선택적 after-close 콜백 인자를 추가하는 방식 중 더 작은 쪽을 고른다). 7970행의 메뉴 '버전 정보' 행과 7984행의 '지금 새로고침' 링크도 같은 가드를 타도록 location.reload() 직접 호출을 reloadForUpdate() 호출로 바꾼다. 초안이 없거나 시트가 안 열려 있는 보통의 경우(대다수)는 기존처럼 즉시 reload되어 동작 변화가 없어야 한다. 회귀 테스트: txDraft가 dirty하고 시트가 열려 있을 때 reloadForUpdate()가 location.reload()를 호출하지 않고 확인 UI를 띄우는지, dirty하지 않거나 시트가 안 열려 있을 때는 즉시 reload되는지, 메뉴의 두 location.reload() 직접 호출이 reloadForUpdate()를 거치도록 바뀌었는지(정규식/소스 텍스트 확인)."
-  },
+  "cycle": 371,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 365,
-      "phase": "critique",
-      "timestamp": "2026-11-17T16:11:35.658Z",
-      "summary": "앱 전체를 한 걸음 물러나 비평(Explore 서브에이전트, 이미 다룬 반복거래/부채상환/정산/goalBehind/costBasis/NAME_MAX/클라우드동기화/fx폴백/팔레트/comma -0/undoToast WCAG/App Lock/사진 페이로드/전역검색(존재 확인됨)/role=button 중첩 전체 제외). DB.assetQtyLog가 archiveTxnsBefore(저장공간 정리)에서 유일하게 누락되어, DB.nwHistory/trash*와 달리 무제한 증가하며 활성 트레이더의 용량 경고가 정리 후에도 재발하는 문제를 발견. pending_advance_plan에 구체적 구현안(baseline 접기+tombstone+undo 확장+회귀테스트) 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 365,
-      "phase": "advance",
-      "timestamp": "2026-11-17T17:12:27.297Z",
-      "summary": "critique(cycle365) 계획대로 DB.assetQtyLog가 archiveTxnsBefore(저장공간 정리)에서 누락돼 무제한 증가하던 문제를 고쳤다. logic.js에 순수 함수 archiveQtyLogGainBaselines(assetQtyLog,cutoffDate) 추가(archiveBaselines와 같은 \"지워지는 몫을 베이스라인에 접는다\" 원칙, realizedGain!=null인 cutoffDate 이전 기록만 자산별 합산 — totalRealizedGain과 동일 필터). archiveTxnsBefore(index.html)가 DB.txns와 나란히 DB.assetQtyLog도 cutoffDate 기준으로 잘라내고, 지워지는 realizedGain 합을 a.archivedRealizedGain 베이스라인으로 접어 넣은 뒤 제거된 항목을 DB.deletedIds에 톰스톤 처리(클라우드 merge가 되살리지 않게)하도록 확장. 기존 undoToast 클로저도 확장해 지워진 assetQtyLog 항목과 이전 archivedRealizedGain 값을 정확히 복원(0/미설정이 아니라 직전 값으로). openAssetQtyLog의 누적 실현손익 계산을 a.archivedRealizedGain+남은 기록 합계로 바꿔(baseline과 items 둘 다 없을 때만 null 유지) 정리를 거듭해도 합계가 끊기지 않게 했다. 테스트 15건 추가(archiveQtyLogGainBaselines 단위 4건, openAssetQtyLog 베이스라인 표시 3건, archiveTxnsBefore 통합 4건: 정리/undo/기존 베이스라인에 누적/realizedGain 없는 기록은 필드 안 생김). git stash로 index.html/logic.js를 수정 전 상태로 되돌려 새 테스트 10건이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3529->3540/3540 통과(vm 샌드박스 realm 문제로 빈 객체 비교 1건만 JSON.stringify 비교로 전환, 기존 cycle364 관례와 동일). node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.470->1.47.471, sw.js CACHE v737->v738. 범위가 커 보이는 yearRealizedGain(연도별 집계)의 과거 연도 archiving 영향은 범위 밖으로 남겨둠(budgetCarryFor의 archivedThroughDate 클램프와 같은 종류의 기존 한계, 이번 계획이 명시한 범위는 openAssetQtyLog 누적 합계뿐).",
-      "commit": null
-    },
     {
       "cycle": 366,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-18T12:17:35.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-370에서 이미 다룬 모든 주제(반복거래, 정산 2인/N인/settleDueN/doSettleN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, PIN 브루트포스/생체인증, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, csvDedupeKey '|' 경계 충돌, 음력공휴일, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 아카이빙, openSheet/closeSheet/load() 실행형 테스트, duplicateRec 포커스, acctSafety, netlify 가격조회 안정성, SVG 차트 접근성, FAB '+' 팝업 오버레이 접근성, debtPlan*/fromDate 캐시(이미 낮은 우선순위로 거론됨))를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: reloadForUpdate()(index.html:1438, SW 업데이트 배너 #swUpdateBar의 onclick이자 메뉴 '버전 정보' 행(7970행)·메뉴 하단 '지금 새로고침' 링크(7984행)가 모두 직접 호출하는 location.reload())가 이 앱의 다른 모든 시트 닫기 경로(X버튼/스크림탭/스와이프/Esc/뒤로가기 — 전부 isDraftDirty()(11167행)+closeSheetGuarded()(11177행)의 '변경사항을 버릴까요?' 확인을 거침)와 달리 아무 확인 없이 즉시 reload된다. SW_UPDATE_AVAILABLE은 controllerchange로 세션 중 비동기로 아무 때나 켜지고, #swUpdateBar는 z-index:199로 .sheet(101)/.scrim(100)보다 위라 열려 있는 시트 위에서도 탭 가능하며 syncOverlayInert()는 이를 고려하지 않는다(코드를 직접 읽어 라인/인용을 모두 확인). 거래/자산/목표/반복거래를 입력 중(저장 전, txDraft 등은 순수 메모리 객체) 배포가 나가면 실수로든 의도로든 탭 한 번에 undo·백업 없이 입력이 영구 소실되는 재현 가능한 데이터 손실 경로 — 이 앱의 다른 모든 파괴적 동작이 confirmSheet/undoToast/사전 스냅샷 중 하나를 쓰는 관례의 유일한 예외라 최우선으로 판단. 러너업 (1) doExport의 대용량 메모리 리스크(이미 낮은 우선순위로 거론됨, 새 근거 없어 재상정 안 함), (2) test/run.js FUNCTIONS 목록에 없는 ~700개 UI 와이어링 함수(wireGroupDrag/fitText/animNums 등, 대부분 구체적 실패 시나리오 없는 cosmetic이라 순위 낮춤)는 제외. pending_advance_plan에 reloadForUpdate()가 isDraftDirty()+시트 열림을 확인해 closeSheetGuarded()와 같은 확인 UI를 거친 뒤에만 reload하도록 하고, 메뉴의 두 직접 location.reload() 호출도 reloadForUpdate()를 거치게 통일하는 구체 계획(+ dirty/열림 여부별 회귀 테스트) 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 370,
+      "phase": "advance",
+      "timestamp": "2026-11-18T13:13:35.488Z",
+      "summary": "critique가 지적한 SW 업데이트 배너의 초안 소실 버그를 고쳤다. closeSheetGuarded()에 선택적 afterClose 콜백을 추가하고 reloadForUpdate()가 isDraftDirty()면 closeSheetGuarded(false,()=>location.reload())로 \"변경사항을 버릴까요?\" 확인을 먼저 띄우도록 바꿈(버리기를 눌러야 닫고 reload). 메뉴의 \"버전 정보\" 행과 하단 \"지금 새로고침\" 링크의 location.reload() 직접 호출도 reloadForUpdate()를 거치도록 통일. APP_VERSION/sw.js CACHE 버전을 올리고 회귀 테스트 2개(reloadForUpdate 동작 + 세 트리거 와이어링) 추가. 전체 3589개 테스트 통과.",
       "commit": null
     }
   ]

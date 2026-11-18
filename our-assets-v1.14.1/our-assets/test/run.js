@@ -37180,6 +37180,75 @@ test('swUpdateBar: tabindex와 키보드 핸들러(onkeydown)가 있다', () => 
   assert.ok(tag.includes('role="button"'), 'swUpdateBar div에 role="button"이 없음');
   assert.ok(tag.includes('onkeydown="rowKeydown(event,reloadForUpdate)"'), 'swUpdateBar div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
 });
+/* ---------- reloadForUpdate: SW 업데이트 배너는 세션 중 아무 때나(controllerchange) 뜨고
+ * #scrim/.sheet보다 z-index가 높아 열린 시트 위에서도 탭 가능한데, 예전엔 isDraftDirty()를
+ * 전혀 안 보고 바로 location.reload()를 불러 입력 중인(아직 저장 전) 거래/자산/목표/반복거래
+ * 초안을 확인 없이 날렸다 — 다른 모든 시트 닫기 경로(X·스크림탭·스와이프·Esc·뒤로가기)가
+ * closeSheetGuarded()로 거치는 "변경사항을 버릴까요?" 확인과 어긋나는 유일한 예외였다
+ * (app-evolve cycle370 critique → cycle371 advance). closeSheetGuarded()에 afterClose
+ * 콜백을 추가해 재사용한다. */
+test('[실행형] reloadForUpdate: 초안이 clean이면(또는 시트가 애초에 안 열려있으면) 바로 reload, dirty면 확인 시트를 띄우고 reload를 미룬다', () => {
+  const ctx = {
+    $: () => ({ innerHTML: '원래 폼' }),
+    closeSheetCalls: 0, closeSheet: () => { ctx.closeSheetCalls++; },
+    openSheetCalls: [], openSheet: (html) => { ctx.openSheetCalls.push(html); },
+    ovHistPushCalls: 0, ovHistPush: () => { ctx.ovHistPushCalls++; },
+    syncTxInputs: () => {}, syncAssetInputs: () => {}, syncGoalInputs: () => {}, syncRecInputs: () => {},
+    txDraft: { amount: 0 }, asDraft: null, goalDraft: null, recDraft: null,
+    reloadCalls: 0, location: { reload: () => { ctx.reloadCalls++; } },
+    _draftSnap: null, // snapDraft/isDraftDirty가 let으로 선언하는 모듈 변수 — 격리 추출이라 직접 초기화해둬야
+                       // snapDraft 호출 전(스냅샷 없음) isDraftDirty()를 불러도 ReferenceError가 안 남
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('snapDraft'), extractFunction('isDraftDirty'), extractFunction('closeSheetGuarded'),
+     extractFunction('_sheetGuardDiscard'), extractFunction('reloadForUpdate')].join('\n'),
+    ctx, { filename: 'reloadForUpdate-real' }
+  );
+  // 시트를 연 적이 없음(스냅샷 없음) → isDraftDirty()는 항상 false → 즉시 reload
+  ctx.reloadForUpdate();
+  assert.strictEqual(ctx.reloadCalls, 1, '초안 스냅샷이 없으면(시트 미열림) 즉시 reload해야 함');
+  assert.strictEqual(ctx.openSheetCalls.length, 0, '초안 스냅샷이 없으면 확인 시트를 띄우면 안 됨');
+
+  // 시트를 열었지만 안 건드림(clean) → closeSheetGuarded를 거칠 필요도 없이 즉시 reload
+  ctx.snapDraft('tx');
+  ctx.reloadForUpdate();
+  assert.strictEqual(ctx.reloadCalls, 2, '초안이 clean이면 확인 없이 즉시 reload해야 함');
+  assert.strictEqual(ctx.closeSheetCalls, 0, 'clean이면 reload 외엔 아무 것도(시트 닫기 포함) 안 해야 함 — 기존 동작과 동일');
+  assert.strictEqual(ctx.openSheetCalls.length, 0, 'clean이면 확인 시트를 띄우면 안 됨');
+
+  // 시트를 열고 입력 중(dirty) → reload를 바로 부르면 안 되고 확인 시트를 띄워야 함
+  ctx.snapDraft('tx');
+  ctx.txDraft.amount = 12000;
+  ctx.reloadForUpdate();
+  assert.strictEqual(ctx.reloadCalls, 2, 'dirty면 확인 전까지 reload를 부르면 안 됨(여전히 2)');
+  assert.strictEqual(ctx.openSheetCalls.length, 1, 'dirty면 "변경사항을 버릴까요?" 확인 시트를 띄워야 함');
+  assert.ok(ctx.openSheetCalls[0].includes('변경사항을 버릴까요'), '확인 시트 문구가 없음');
+  assert.strictEqual(ctx.ovHistPushCalls, 0, '배너/메뉴에서 온 호출은 popstate가 아니므로 history를 되돌리면 안 됨');
+
+  // "버리기"(=_sheetGuardDiscard) → closeSheet() 후에 reload가 실행돼야 함
+  ctx._sheetGuardDiscard();
+  assert.strictEqual(ctx.closeSheetCalls, 1, '버리기를 누르면 closeSheet()가 불려야 함');
+  assert.strictEqual(ctx.reloadCalls, 3, '버리기를 누른 뒤에야 reload가 실행돼야 함');
+});
+test('reloadForUpdate 와이어링: SW 업데이트 배너/메뉴 버전 정보 행/메뉴 하단 "지금 새로고침" 링크가 모두 가드 없는 location.reload() 대신 reloadForUpdate()를 거친다', () => {
+  assert.ok(
+    src.includes(`onclick="reloadForUpdate()" role="button" tabindex="0"`),
+    'swUpdateBar 배너 탭이 reloadForUpdate()를 거치지 않음'
+  );
+  assert.ok(
+    src.includes(`a:SW_UPDATE_AVAILABLE?"reloadForUpdate()"`),
+    '메뉴 "버전 정보" 행(업데이트 있을 때)이 reloadForUpdate()를 거치지 않음'
+  );
+  assert.ok(
+    src.includes(`href="javascript:reloadForUpdate()"`),
+    '메뉴 하단 "지금 새로고침" 링크가 reloadForUpdate()를 거치지 않음'
+  );
+  assert.ok(
+    !/javascript:location\.reload\(\)/.test(src) && !/a:SW_UPDATE_AVAILABLE\?"location\.reload\(\)"/.test(src),
+    '업데이트 트리거 경로 중 하나가 여전히 가드 없는 location.reload()를 직접 호출함'
+  );
+});
 /* sujiPeekStart/Move/End/Key, histPeek*, planPeek*, mSujiDown/Up/PeekKey는 모두 공용 팩토리
  * makePeekGesture()가 만든 인스턴스(_sujiGesture 등)로 180ms 타이머+navigator.vibrate(8)+
  * 버블링 가드(e.target)+반복 가드(e.repeat)+Escape 처리를 위임한다(app-evolve cycle302
