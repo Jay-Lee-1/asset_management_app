@@ -1,6 +1,6 @@
 {
   "cycle": 373,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-18T22:05:00.000Z",
       "summary": "critique(cycle372)의 계획대로 openTxSheet()/openRecSheet()(신규 거래/반복거래 작성 진입점)를 실행형으로 테스트했다. 계획은 renderRecSheet/snapDraft가 이미 메인 sandbox에 있다고 가정했지만 실제로는 둘 다 FUNCTIONS 목록 밖이라(renderRecSheet는 지금까지 단 한 번도 실행된 적이 없었고, snapDraft는 closeSheetGuarded류 격리 컨텍스트에서만 개별 추출돼 있었음) FUNCTIONS에 'openTxSheet','openRecSheet','snapDraft','renderRecSheet'를 새로 추가하고, renderRecSheet가 참조하는 WK(주말·공휴일 조정 어휘) 상수도 CONSTS에 추가해야 했다. 실행형 테스트 4건 추가: txDraft/recDraft 기본 shape(ST.ledger.sel/firstCash() 결과 포함)과 window._recCtx/_txFocusAmt/_txCatSuggAnnounced/_recCatSuggAnnounced 리셋·snapDraft 스냅샷·renderTxSheet/renderRecSheet 실행 확인, firstCash()가 null을 반환하는(현금성 자산 없음) 엣지 케이스에서 크래시 없이 fromAssetId=null로 남는지 확인. 과정에서 vm 컨텍스트 안의 객체 리터럴과 호스트 쪽 리터럴이 realm이 달라 deepStrictEqual이 \"참조가 다르다\"며 실패하는 함정을 만나, JSON.parse(JSON.stringify(...)) 왕복으로 정규화해 해결했다(필드가 전부 JSON-safe 값이라 손실 없음). 실제 버그는 발견되지 않았다(순수 커버리지 보강). node test/run.js 3609->3613/3613 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/run.js만 수정했고 index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 올리지 않는다. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 373,
+      "phase": "develop",
+      "timestamp": "2026-11-18T23:20:00.000Z",
+      "summary": "scanCorruptBackupKeys()/scanWipeBackupKeys()(index.html — 매 부팅마다 실제 localStorage를 Object.keys()로 훑고 오래된 __corrupt_/__pre*_ 백업 키를 removeItem()으로 지우며 CORRUPT_BACKUP_KEYS/WIPE_BACKUP_KEYS 전역을 채우는 두 스캔 함수)가 findCorruptBackupKeys/pruneOldCorruptKeys(순수 함수, 이미 검증됨)와 homeAlerts()의 corruptBackup/wipeBackup 카드(전역을 손으로 세팅해 검증)만 각각 테스트돼 있었을 뿐, 그 전역을 실제로 채우는 두 스캔 함수 자신은 load()/openSheet/acctSafety와 같은 '공유 핵심인데 실행형 커버리지 0' 공백이었음을 Explore로 확인했다(cycle340-372에서 다룬 주제는 모두 배제). loadCtx() 패턴을 따라 Object.keys/getItem/removeItem이 실제로 동작하는 plain-object localStorage 목을 주는 scanBackupKeysCtx() ad hoc vm 컨텍스트를 신설, findCorruptBackupKeys/pruneOldCorruptKeys는 이미 검증된 실제 구현을 그대로 재사용했다. 테스트 6건 추가: scanCorruptBackupKeys(정상 필터링/다른 계정·보조 키 보존, CORRUPT_BACKUP_MAX_AGE_MS 초과 키 실제 삭제, STORAGE_OK=false 시 localStorage 미접근, dataKey() throw 시 안전하게 빈 배열 유지)와 scanWipeBackupKeys(7가지 __pre*_ 접두사가 kind와 함께 ts 내림차순으로 합쳐짐, 오래된 건 kind 무관 삭제+STORAGE_OK=false 가드). 과정에서 cycle372와 동일한 vm realm 함정(findCorruptBackupKeys/pruneOldCorruptKeys가 sandbox realm에서 만든 배열이라 호스트 리터럴과 deepStrictEqual 시 '참조가 다르다'로 깨짐)을 다시 만나 JSON.parse(JSON.stringify(...)) 왕복(plain() 헬퍼)으로 해결했다. 실제 버그는 발견되지 않았다(순수 커버리지 보강). node test/run.js 3613->3619/3619 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/run.js만 수정했고 index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 올리지 않는다.",
       "commit": null
     }
   ]

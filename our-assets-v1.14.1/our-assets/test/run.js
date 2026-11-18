@@ -40404,6 +40404,133 @@ test('pruneOldCorruptKeys: 빈 배열/undefined 입력도 안 터지고 빈 배�
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.pruneOldCorruptKeys(undefined, Date.now(), 1000))), []);
 });
 
+/* ---------- scanCorruptBackupKeys()/scanWipeBackupKeys()(index.html) — findCorruptBackupKeys/
+ * pruneOldCorruptKeys 자신은 순수 함수로 이미 테스트됐지만(바로 위), 매 부팅마다 실제
+ * localStorage를 Object.keys()로 훑고 오래된 키를 removeItem()으로 지우는 이 두 스캔 함수 자체는
+ * load()가 cycle368 전까지 그랬던 것과 똑같이 FUNCTIONS 목록 밖에 있어 실행형으로 한 번도 돌아간
+ * 적이 없었다 — homeAlerts()의 corruptBackup/wipeBackup 카드 테스트는 전부 CORRUPT_BACKUP_KEYS/
+ * WIPE_BACKUP_KEYS를 손으로 세팅해 그 결과만 검증했을 뿐, 이 전역을 실제로 채우는 스캔·정리
+ * 로직 자체는 공백이었다. loadCtx()와 같은 "좁은 ad hoc vm 컨텍스트" 패턴을 따라 real
+ * localStorage(Object.keys/getItem/removeItem이 실제로 동작하는 plain-object 스토어)를 주고
+ * findCorruptBackupKeys/pruneOldCorruptKeys는 이미 검증된 실제 구현을 그대로 재사용한다. */
+function fakeLocalStorage(initial, onGetItem) {
+  const store = Object.assign({}, initial || {});
+  Object.defineProperty(store, 'getItem', { value: (k) => { if (onGetItem) onGetItem(k); return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; }, enumerable: false });
+  Object.defineProperty(store, 'setItem', { value: (k, v) => { store[k] = String(v); }, enumerable: false });
+  Object.defineProperty(store, 'removeItem', { value: (k) => { delete store[k]; }, enumerable: false });
+  return store;
+}
+// scanCorruptBackupKeys/scanWipeBackupKeys는 findCorruptBackupKeys/pruneOldCorruptKeys(sandbox
+// realm에서 만들어진 함수)가 돌려주는 배열/객체를 그대로 CORRUPT_BACKUP_KEYS/WIPE_BACKUP_KEYS에
+// 담는다 — .map() 등으로 호스트에서 다시 가공해도 Array 종(species)은 원본 realm을 따라가므로,
+// 그 결과를 호스트 쪽 리터럴과 assert.deepStrictEqual로 비교하면 내용이 완전히 같아도 "Values
+// have same structure but are not reference-equal"로 깨진다(app-evolve cycle372 advance가 이미
+// 겪은 realm 함정과 동일). JSON.parse(JSON.stringify(...)) 왕복으로 호스트 realm의 평범한
+// 값으로 정규화해서 비교한다.
+const plain = (v) => JSON.parse(JSON.stringify(v));
+function scanBackupKeysCtx(fnName, resultGlobal, opts) {
+  const ctx = Object.assign({
+    STORAGE_OK: true,
+    [resultGlobal]: [],
+    dataKey: () => 'acct-k',
+    localStorage: fakeLocalStorage({}),
+    findCorruptBackupKeys: sandbox.findCorruptBackupKeys,
+    pruneOldCorruptKeys: sandbox.pruneOldCorruptKeys,
+    CORRUPT_BACKUP_MAX_AGE_MS: 90 * 24 * 60 * 60 * 1000,
+  }, opts);
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction(fnName), ctx, { filename: fnName + '-real' });
+  return ctx;
+}
+test('[실행형] scanCorruptBackupKeys: localStorage의 dataKey()+__corrupt_ 키만 최신순으로 골라 CORRUPT_BACKUP_KEYS를 채우고, 다른 계정/보조 키는 그대로 둔다', () => {
+  const now = Date.now();
+  const ctx = scanBackupKeysCtx('scanCorruptBackupKeys', 'CORRUPT_BACKUP_KEYS', {
+    dataKey: () => 'acct-k',
+    localStorage: fakeLocalStorage({
+      ['acct-k__corrupt_' + (now - 1000)]: '{"old":1}',
+      ['acct-k__corrupt_' + now]: '{"new":1}',
+      'acct-k__savedAt': String(now),
+      ['other-acct__corrupt_' + now]: '{"other":1}',
+    }),
+  });
+  ctx.scanCorruptBackupKeys();
+  assert.deepStrictEqual(plain(ctx.CORRUPT_BACKUP_KEYS.map(k => k.key)), ['acct-k__corrupt_' + now, 'acct-k__corrupt_' + (now - 1000)], '최신순 정렬 또는 필터링이 틀림(다른 계정/보조 키가 섞이면 안 됨)');
+  assert.ok(Object.prototype.hasOwnProperty.call(ctx.localStorage, 'acct-k__savedAt'), '관계없는 보조 키를 지우면 안 됨');
+  assert.ok(Object.prototype.hasOwnProperty.call(ctx.localStorage, 'other-acct__corrupt_' + now), '다른 계정의 손상 백업을 지우면 안 됨');
+});
+test('[실행형] scanCorruptBackupKeys: CORRUPT_BACKUP_MAX_AGE_MS보다 오래된 키는 CORRUPT_BACKUP_KEYS에서 빼고 localStorage에서도 실제로 지운다(무한정 쌓임 방지)', () => {
+  const now = Date.now();
+  const staleTs = now - 91 * 24 * 60 * 60 * 1000;
+  const freshTs = now - 1 * 24 * 60 * 60 * 1000;
+  const ctx = scanBackupKeysCtx('scanCorruptBackupKeys', 'CORRUPT_BACKUP_KEYS', {
+    dataKey: () => 'acct-k',
+    localStorage: fakeLocalStorage({
+      ['acct-k__corrupt_' + staleTs]: '{"stale":1}',
+      ['acct-k__corrupt_' + freshTs]: '{"fresh":1}',
+    }),
+  });
+  ctx.scanCorruptBackupKeys();
+  assert.deepStrictEqual(plain(ctx.CORRUPT_BACKUP_KEYS.map(k => k.key)), ['acct-k__corrupt_' + freshTs], '오래된 키가 결과에 남아있으면 안 됨');
+  assert.ok(!Object.prototype.hasOwnProperty.call(ctx.localStorage, 'acct-k__corrupt_' + staleTs), '오래된 키를 localStorage에서 실제로 지우지 않음(무한정 쌓이는 버그가 재발)');
+  assert.ok(Object.prototype.hasOwnProperty.call(ctx.localStorage, 'acct-k__corrupt_' + freshTs), '보존 기간 내 키까지 지우면 안 됨');
+});
+test('[실행형] scanCorruptBackupKeys: STORAGE_OK가 false면 localStorage를 건드리지 않고 CORRUPT_BACKUP_KEYS만 비운다', () => {
+  let touched = false;
+  const ls = fakeLocalStorage({ 'acct-k__corrupt_1': '{}' }, () => { touched = true; });
+  const ctx = scanBackupKeysCtx('scanCorruptBackupKeys', 'CORRUPT_BACKUP_KEYS', { STORAGE_OK: false, localStorage: ls, CORRUPT_BACKUP_KEYS: [{ key: 'old', ts: 1 }] });
+  ctx.scanCorruptBackupKeys();
+  assert.deepStrictEqual(plain(ctx.CORRUPT_BACKUP_KEYS), [], 'STORAGE_OK가 false여도 결과는 비워야 함(이전 스캔 잔재를 남기면 안 됨)');
+  assert.strictEqual(touched, false, 'STORAGE_OK가 false인데 localStorage를 읽으려 하면 안 됨');
+  assert.ok(Object.prototype.hasOwnProperty.call(ls, 'acct-k__corrupt_1'), 'STORAGE_OK가 false면 정리(removeItem)도 하면 안 됨');
+});
+test('[실행형] scanCorruptBackupKeys: dataKey()가 던지면(비정상 SESSION 등) 조용히 CORRUPT_BACKUP_KEYS를 빈 배열로 남기고 터지지 않는다', () => {
+  const ctx = scanBackupKeysCtx('scanCorruptBackupKeys', 'CORRUPT_BACKUP_KEYS', {
+    dataKey: () => { throw new Error('boom'); },
+  });
+  assert.doesNotThrow(() => ctx.scanCorruptBackupKeys(), 'dataKey()가 던지면 scanCorruptBackupKeys 자신도 던지면 안 됨(load()처럼 복구 가능한 상태로 남아야)');
+  assert.deepStrictEqual(plain(ctx.CORRUPT_BACKUP_KEYS), [], '에러 시에도 CORRUPT_BACKUP_KEYS는 빈 배열이어야 함');
+});
+test('[실행형] scanWipeBackupKeys: 7가지 __pre*_ 접두사를 전부 합쳐 kind를 붙이고, 접두사가 다른 kind끼리도 ts 내림차순으로 함께 정렬한다', () => {
+  const now = Date.now();
+  const ctx = scanBackupKeysCtx('scanWipeBackupKeys', 'WIPE_BACKUP_KEYS', {
+    dataKey: () => 'acct-k',
+    localStorage: fakeLocalStorage({
+      ['acct-k__preReset_' + (now - 3000)]: '{}',
+      ['acct-k__preDeleteAccount_' + (now - 1000)]: '{}',
+      ['acct-k__preRestore_' + (now - 2000)]: '{}',
+      ['acct-k__preArchive_' + (now - 4000)]: '{}',
+      ['acct-k__preMergeAsset_' + (now - 5000)]: '{}',
+      ['acct-k__preMergeCat_' + (now - 6000)]: '{}',
+      ['acct-k__preMergeOwner_' + (now - 7000)]: '{}',
+      'acct-k__savedAt': String(now),
+    }),
+  });
+  ctx.scanWipeBackupKeys();
+  assert.deepStrictEqual(
+    plain(ctx.WIPE_BACKUP_KEYS.map(k => k.kind)),
+    ['preDeleteAccount', 'preRestore', 'preReset', 'preArchive', 'preMergeAsset', 'preMergeCat', 'preMergeOwner'],
+    '7가지 kind가 전부 모여 ts 내림차순으로 정렬돼야 함'
+  );
+  assert.strictEqual(ctx.WIPE_BACKUP_KEYS.length, 7, '7개 접두사 중 하나라도 빠지면 안 됨');
+});
+test('[실행형] scanWipeBackupKeys: CORRUPT_BACKUP_MAX_AGE_MS보다 오래된 건 kind와 무관하게 지워지고, STORAGE_OK=false면 아무 것도 건드리지 않는다', () => {
+  const now = Date.now();
+  const staleTs = now - 91 * 24 * 60 * 60 * 1000;
+  const ctx = scanBackupKeysCtx('scanWipeBackupKeys', 'WIPE_BACKUP_KEYS', {
+    dataKey: () => 'acct-k',
+    localStorage: fakeLocalStorage({ ['acct-k__preReset_' + staleTs]: '{}' }),
+  });
+  ctx.scanWipeBackupKeys();
+  assert.deepStrictEqual(plain(ctx.WIPE_BACKUP_KEYS), [], '보존 기간을 넘은 wipe 백업은 결과에 남으면 안 됨');
+  assert.ok(!Object.prototype.hasOwnProperty.call(ctx.localStorage, 'acct-k__preReset_' + staleTs), '오래된 wipe 백업을 localStorage에서 실제로 지우지 않음');
+
+  const ls2 = fakeLocalStorage({ 'acct-k__preReset_1': '{}' });
+  const ctx2 = scanBackupKeysCtx('scanWipeBackupKeys', 'WIPE_BACKUP_KEYS', { STORAGE_OK: false, localStorage: ls2 });
+  ctx2.scanWipeBackupKeys();
+  assert.deepStrictEqual(plain(ctx2.WIPE_BACKUP_KEYS), [], 'STORAGE_OK가 false면 결과는 비워야 함');
+  assert.ok(Object.prototype.hasOwnProperty.call(ls2, 'acct-k__preReset_1'), 'STORAGE_OK가 false면 정리(removeItem)도 하면 안 됨');
+});
+
 /* ---------- homeAlerts()의 'corruptBackup' 카드 — CORRUPT_BACKUP_KEYS(scanCorruptBackupKeys가
  * 채우는 전역)가 비어있지 않을 때만 뜨고, 개수를 count로 그대로 전달한다. ---------- */
 test('homeAlerts: CORRUPT_BACKUP_KEYS가 있으면 corruptBackup 알림을 count와 함께 띄우고, 없으면 안 뜬다', () => {
