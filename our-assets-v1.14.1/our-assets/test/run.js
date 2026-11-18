@@ -40301,6 +40301,102 @@ test('[실행형] load: raw가 없으면(최초 부팅) SESSION 여부에 따라
   }
 });
 
+/* ---------- kakaoReady: 틀린 키를 고쳐 재시도해도 반영되게(app-evolve cycle371 develop) ----------
+ * 기존 kakaoReady()는 `!window.Kakao.isInitialized()`만 보고 init()을 건너뛰었다 — 사용자가
+ * 틀린/오타난 키로 한 번이라도 kakaoLogin()을 시도하면(Kakao.init()은 키 유효성을 검사하지
+ * 않아 그 자체로는 성공해 isInitialized()가 true가 됨) 로그인(Auth.login)만 실패하는데, 키를
+ * 고쳐서 saveKakaoKey()/saveKakaoKey2()로 재시도해도 isInitialized()가 이미 true라 init()이
+ * 다시 호출되지 않아 새로고침 전까진 고친 키가 SDK에 영영 반영되지 않았다. 지금은 "같은 키로
+ * 이미 초기화됐는지"도 함께 봐서, 키가 바뀌었으면 Kakao.cleanup()으로 리셋한 뒤 init()을
+ * 다시 호출한다. */
+function kakaoReadyCtx(opts) {
+  let _init = false;
+  const initCalls = [];
+  const cleanupCalls = [];
+  const ctx = Object.assign({
+    _kakaoInitKey: null,
+    getKakaoKey: () => 'key-a',
+    window: {
+      Kakao: {
+        isInitialized: () => _init,
+        init: (k) => { initCalls.push(k); _init = true; },
+        cleanup: () => { cleanupCalls.push(true); _init = false; },
+      },
+    },
+  }, opts);
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('kakaoReady'), ctx, { filename: 'kakaoReady-real' });
+  return { ctx, initCalls, cleanupCalls };
+}
+test('[실행형] kakaoReady: window.Kakao가 없으면 아무 것도 안 하고 false를 돌려준다', () => {
+  const { ctx, initCalls } = kakaoReadyCtx({ window: {} });
+  const ok = ctx.kakaoReady();
+  assert.strictEqual(ok, false, 'window.Kakao가 없으면 false여야 함');
+  assert.strictEqual(initCalls.length, 0, 'window.Kakao가 없으면 init()을 부르면 안 됨');
+});
+test('[실행형] kakaoReady: 키가 비어 있으면(getKakaoKey가 빈 문자열) init()을 부르지 않는다', () => {
+  const { ctx, initCalls } = kakaoReadyCtx({ getKakaoKey: () => '' });
+  const ok = ctx.kakaoReady();
+  assert.strictEqual(ok, false, '초기화된 적 없으니 false여야 함');
+  assert.strictEqual(initCalls.length, 0, '키가 없으면 init()을 부르면 안 됨');
+});
+test('[실행형] kakaoReady: 최초 호출이면 init(k)을 불러 초기화하고 _kakaoInitKey를 그 키로 기록한다', () => {
+  const { ctx, initCalls, cleanupCalls } = kakaoReadyCtx({ getKakaoKey: () => 'key-a' });
+  const ok = ctx.kakaoReady();
+  assert.strictEqual(ok, true, '초기화에 성공하면 true여야 함');
+  assert.deepStrictEqual(initCalls, ['key-a'], 'init()이 정확히 그 키로 한 번 호출돼야 함');
+  assert.strictEqual(cleanupCalls.length, 0, '최초 초기화에는 cleanup()을 부르면 안 됨');
+  assert.strictEqual(ctx._kakaoInitKey, 'key-a', '초기화에 쓴 키를 _kakaoInitKey에 기록해야 함(다음 호출의 비교 기준)');
+});
+test('[실행형] kakaoReady: 같은 키로 이미 초기화돼 있으면 init()/cleanup() 둘 다 다시 부르지 않는다(기존 빠른 경로 유지)', () => {
+  const initCalls = [];
+  const cleanupCalls = [];
+  const { ctx } = kakaoReadyCtx({
+    getKakaoKey: () => 'key-a',
+    _kakaoInitKey: 'key-a',
+    window: { Kakao: { isInitialized: () => true, init: (k) => { initCalls.push(k); }, cleanup: () => { cleanupCalls.push(true); } } },
+  });
+  const ok = ctx.kakaoReady();
+  assert.strictEqual(ok, true, '이미 초기화돼 있으면 true여야 함');
+  assert.strictEqual(initCalls.length, 0, '키가 안 바뀌었으면 init()을 또 부르면 안 됨');
+  assert.strictEqual(cleanupCalls.length, 0, '키가 안 바뀌었으면 cleanup()을 부르면 안 됨');
+});
+test('[실행형] kakaoReady: 틀린 키로 이미 초기화된 뒤 키를 고쳐 다시 부르면 cleanup() 후 새 키로 init()을 다시 호출한다(틀린 키 고침이 새로고침 없이 반영돼야 하는 버그 수정 핵심)', () => {
+  // 실제로는 이전 호출(틀린 키로 Kakao.init() 자체는 성공)이 window.Kakao를 이미 초기화 상태로
+  // 만들어뒀다 — kakaoReadyCtx의 기본 mock은 _init이 매번 false로 새로 시작하므로, 여기서는
+  // "이미 초기화돼 있다"는 그 상태를 window를 직접 덮어써서 재현한다.
+  let _init = true;
+  const initCalls = [];
+  const cleanupCalls = [];
+  const { ctx } = kakaoReadyCtx({
+    getKakaoKey: () => 'key-fixed',
+    _kakaoInitKey: 'key-wrong',
+    window: {
+      Kakao: {
+        isInitialized: () => _init,
+        init: (k) => { initCalls.push(k); _init = true; },
+        cleanup: () => { cleanupCalls.push(true); _init = false; },
+      },
+    },
+  });
+  const ok = ctx.kakaoReady();
+  assert.strictEqual(ok, true, '고친 키로 재초기화에 성공하면 true여야 함');
+  assert.strictEqual(cleanupCalls.length, 1, '키가 바뀌었으면 재초기화 전에 cleanup()을 한 번 불러야 함(SDK가 init() 중복 호출을 거부하므로)');
+  assert.deepStrictEqual(initCalls, ['key-fixed'], 'cleanup() 후 고친 새 키로 init()이 다시 호출돼야 함');
+  assert.strictEqual(ctx._kakaoInitKey, 'key-fixed', '_kakaoInitKey가 새로 쓴 키로 갱신돼야 함');
+});
+test('[실행형] kakaoReady: cleanup()이 던지면(실제로는 거의 없음) init()을 재시도하지 않고 조용히 넘어간다(기존 멈춤 상태를 유지할 뿐 더 나빠지지 않음)', () => {
+  const { ctx, initCalls, cleanupCalls } = kakaoReadyCtx({
+    getKakaoKey: () => 'key-fixed',
+    _kakaoInitKey: 'key-wrong',
+    window: { Kakao: { isInitialized: () => true, init: (k) => { initCalls.push(k); }, cleanup: () => { cleanupCalls.push(true); throw new Error('cleanup 실패'); } } },
+  });
+  const ok = ctx.kakaoReady();
+  assert.strictEqual(ok, true, 'cleanup 실패 전까지도 isInitialized()는 true였으니 결과는 여전히 true여야 함');
+  assert.strictEqual(cleanupCalls.length, 1, 'cleanup() 시도는 했어야 함');
+  assert.strictEqual(initCalls.length, 0, 'cleanup()이 실패해 isInitialized()가 계속 true로 남으면 init()을 다시 부르면 안 됨(중복 init 호출로 더 깨지는 것을 막음)');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.

@@ -1,15 +1,8 @@
 {
   "cycle": 371,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 366,
-      "phase": "develop",
-      "timestamp": "2026-11-17T18:19:08.000Z",
-      "summary": "index.html의 homeAlerts() 주석(\"3인 이상 정산(N인 분담, cycle364 advance)은 ... 알림 일반화는 다음 사이클로 미룸\")이 남겨둔 공백을 메웠다 — settleDue(정산 알림)가 참가자 2명일 때만 동작하고 3명 이상이면 homeAlerts()에서 아예 계산되지 않던 문제를 고쳤다. settleConfigured().participants.length===2 분기는 그대로 두고, else 분기에서 settlementSummaryN+settleUpTransfers(둘 다 cycle364가 이미 만든 순수 함수, 새 계산식 없음)로 송금 목록을 구해 그 총액(net 합이 0이 되게 맞춘 마지막 참가자 보정 덕에 빚/받을돈 총액이 항상 일치)에 기존 settleAlertBucket 문턱/버킷 판정을 그대로 적용하는 새 kind \"settleDueN\"을 추가했다. notifyAlertInfo(OS 푸시, key는 송금 쌍 from>to 집합+bucket, group은 기존 settleDue와 동일한 'settle'이라 뮤트 토글도 그대로 공유)/homeAlertCard(송금 1건이면 2인 때와 같은 문구, 2건 이상이면 총액+건수)에도 대칭 분기를 추가했다. 테스트 6건 추가(문턱 미달/중립 참가자로 송금 1건으로 줄어드는 경우/중립 없이 2건인 경우/settledThrough 제외/notifyAlertInfo 키 버킷팅/homeAlertCard 1건·다건 렌더) — index.html을 원래 커밋으로 되돌려 4건이 실제로 실패하는 것을 확인한 뒤 복원. node test/run.js 3540->3546/3546 통과, node --check logic.js/sw.js/test/run.js 및 추출한 인라인 <script> 블록 통과. APP_VERSION 1.47.471->1.47.472, sw.js CACHE v738->v739.",
-      "commit": "df51ae3"
-    },
     {
       "cycle": 366,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-18T13:13:35.488Z",
       "summary": "critique가 지적한 SW 업데이트 배너의 초안 소실 버그를 고쳤다. closeSheetGuarded()에 선택적 afterClose 콜백을 추가하고 reloadForUpdate()가 isDraftDirty()면 closeSheetGuarded(false,()=>location.reload())로 \"변경사항을 버릴까요?\" 확인을 먼저 띄우도록 바꿈(버리기를 눌러야 닫고 reload). 메뉴의 \"버전 정보\" 행과 하단 \"지금 새로고침\" 링크의 location.reload() 직접 호출도 reloadForUpdate()를 거치도록 통일. APP_VERSION/sw.js CACHE 버전을 올리고 회귀 테스트 2개(reloadForUpdate 동작 + 세 트리거 와이어링) 추가. 전체 3589개 테스트 통과.",
       "commit": "7080ea6"
+    },
+    {
+      "cycle": 371,
+      "phase": "develop",
+      "timestamp": "2026-11-18T14:17:31.295Z",
+      "summary": "kakaoReady()(index.html:2702, 카카오 로그인 SDK 초기화 유일 진입점)가 isInitialized() 여부만 보고 init()을 재호출할지 결정해, 틀린/오타난 Kakao JS 키로 한 번이라도 시도하면(Kakao.init()은 키 유효성 검사를 안 해 그 자체는 성공) isInitialized()가 true로 고정돼버려 saveKakaoKey()/saveKakaoKey2()로 키를 고쳐 재시도해도 새로고침 전까진 고친 키가 SDK에 영영 반영되지 않는 버그를 Explore 서브에이전트(cycle340-370의 모든 주제를 배제 목록으로 제공)가 찾았다. 수정: 모듈 스코프 _kakaoInitKey를 추가해 \"이미 초기화됐는지\"뿐 아니라 \"그 초기화가 지금 쓰려는 키와 같은지\"도 함께 보고, 키가 바뀌었으면 Kakao.cleanup()(v2 SDK가 재초기화용으로 제공하는 리셋 메서드)으로 먼저 리셋한 뒤 init()을 다시 호출하도록 바꿨다. test/run.js에 kakaoReadyCtx()(openSheetCtx/loadCtx 등과 같은 좁은 ad hoc vm 컨텍스트 패턴)를 신설해 실행형 테스트 6건 추가(Kakao 없음/키 없음/최초 init/같은 키 재호출 시 빠른 경로/키를 고치면 cleanup 후 재init/cleanup 실패 시 조용히 멈춤). git stash로 index.html만 수정 전으로 되돌려 새 테스트 3건이 실제로 FAIL하는 것을 확인한 뒤 복원. node test/run.js 3589->3595/3595 통과, node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.477->1.47.478, sw.js CACHE v744->v745. 참고: 이번 사이클 시작 시 로컬 git이 다시 detached HEAD였다(cycle369/370에서도 반복) — git checkout -B main HEAD로 로컬 main을 HEAD로 재설정해 origin/main(d01daba, fast-forward 확인됨)과 맞춘 뒤 진행했다.",
+      "commit": null
     }
   ]
 }
