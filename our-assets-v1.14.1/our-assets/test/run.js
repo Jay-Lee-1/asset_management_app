@@ -31458,12 +31458,22 @@ test('homeAlerts: 시세가 모두 확인되면 goalBehind 억제가 풀려 다�
 test('notifyAlertInfo: goalBehind/goalBehindMulti는 budgetOver처럼 월 단위 dedupe 키를 쓴다', () => {
   sandbox.TODAY = '2026-06-15';
   const info1 = sandbox.notifyAlertInfo({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01', projectedDate: null });
-  assert.strictEqual(info1.key, 'goalBehind:g1:2026-06');
+  assert.strictEqual(info1.key, 'goalBehind:g1:2026-06:na', '추세가 멈춰 projectedDate가 없으면 버킷 자리에 na가 들어가야 함(app-evolve cycle372)');
   assert.ok(info1.title && info1.body, 'OS 알림 제목/본문이 있어야 함');
 
   const info2 = sandbox.notifyAlertInfo({ kind: 'goalBehindMulti', count: 2 });
   assert.strictEqual(info2.key, 'goalBehindMulti:2026-06:2', '월 단위 키에도 count가 들어가야 함(app-evolve cycle233)');
   assert.ok(info2.title && info2.body, 'OS 알림 제목/본문이 있어야 함');
+});
+test('notifyAlertInfo: goalBehind는 목표일을 넘긴 일수를 30일 단위로 버킷팅해, 같은 달 안에서도 더 늦어지면 다시 알린다(app-evolve cycle372)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const g1 = sandbox.notifyAlertInfo({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01', projectedDate: '2026-07-10' }); // 9일 늦음 -> 버킷 0
+  const g2 = sandbox.notifyAlertInfo({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01', projectedDate: '2026-07-20' }); // 19일 늦음 -> 버킷 0(같은 30일 단위)
+  assert.strictEqual(g2.key, g1.key, '늦어진 정도가 같은 30일 버킷 안이면 같은 키로 dedupe되어야 함');
+  const g3 = sandbox.notifyAlertInfo({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01', projectedDate: '2026-10-05' }); // 96일 늦음 -> 버킷 90
+  assert.notStrictEqual(g3.key, g1.key, '며칠 늦던 목표가 몇 달씩 늦어지면 버킷이 바뀌어 다시 알려야 함');
+  const gNa = sandbox.notifyAlertInfo({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01', projectedDate: null }); // 추세가 멈춰 투사 자체가 없음
+  assert.notStrictEqual(gNa.key, g1.key, 'projectedDate가 있던 상태에서 추세가 멈춰 null이 되면(상황이 바뀜) 다시 알려야 함');
 });
 test('notifyAlertInfo: goalBehindMulti도 confirmMulti/matMulti처럼 같은 달 안에서 건수가 바뀌면 다시 알리도록 키에 count가 들어간다(app-evolve cycle233)', () => {
   sandbox.TODAY = '2026-06-15';
@@ -31631,12 +31641,23 @@ test('homeAlerts: includeInTotal=false인 부채는 추세가 정체여도 debtB
 test('notifyAlertInfo: debtBehind/debtBehindMulti는 goalBehind처럼 월 단위 dedupe 키를 쓴다', () => {
   sandbox.TODAY = '2026-06-15';
   const info1 = sandbox.notifyAlertInfo({ kind: 'debtBehind', assetId: 'd1', name: '마이너스통장', amount: 550000 });
-  assert.strictEqual(info1.key, 'debtBehind:d1:2026-06');
+  assert.strictEqual(info1.key, 'debtBehind:d1:2026-06:500000', '부채 금액도 settleDue와 동일하게 10만원 단위로 버킷팅되어야 함(app-evolve cycle372)');
   assert.ok(info1.title && info1.body, 'OS 알림 제목/본문이 있어야 함');
 
   const info2 = sandbox.notifyAlertInfo({ kind: 'debtBehindMulti', count: 2 });
   assert.strictEqual(info2.key, 'debtBehindMulti:2026-06:2', '월 단위 키에도 count가 들어가야 함(app-evolve cycle233)');
   assert.ok(info2.title && info2.body, 'OS 알림 제목/본문이 있어야 함');
+});
+test('notifyAlertInfo: debtBehind는 부채 금액을 settleDue와 동일한 10만원 단위로 버킷팅해, 같은 달 안에서도 부채가 계속 불어나면 다시 알린다(app-evolve cycle372)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const d1 = sandbox.notifyAlertInfo({ kind: 'debtBehind', assetId: 'd1', name: '마이너스통장', amount: 550000 }); // 버킷 500000
+  const d2 = sandbox.notifyAlertInfo({ kind: 'debtBehind', assetId: 'd1', name: '마이너스통장', amount: 590000 }); // 같은 버킷 500000
+  assert.strictEqual(d2.key, d1.key, '버킷이 안 바뀌는 미세한 증가는 같은 키로 dedupe되어야 함');
+  const d3 = sandbox.notifyAlertInfo({ kind: 'debtBehind', assetId: 'd1', name: '마이너스통장', amount: 1200000 }); // 버킷 1200000
+  assert.notStrictEqual(d3.key, d1.key, '부채가 눈에 띄게 더 불어나면 버킷이 바뀌어 다시 알려야 함');
+  // assetEval()이 돌려주는 debt 금액은 호출부에 따라 음수(잔액식)로 들어올 수도 있어 Math.abs로 버킷팅해야 함
+  const dNeg = sandbox.notifyAlertInfo({ kind: 'debtBehind', assetId: 'd1', name: '마이너스통장', amount: -550000 });
+  assert.strictEqual(dNeg.key, d1.key, '부호만 다를 뿐 같은 크기의 부채는 양수일 때와 같은 버킷으로 묶여야 함');
 });
 test('notifyAlertInfo: debtBehindMulti도 confirmMulti/matMulti처럼 같은 달 안에서 건수가 바뀌면 다시 알리도록 키에 count가 들어간다(app-evolve cycle233)', () => {
   sandbox.TODAY = '2026-06-15';
@@ -32330,11 +32351,19 @@ test('notifyAlertInfo: confirm/budgetOver(Multi)는 즉시 알림 대상이 되�
   const confirm = sandbox.notifyAlertInfo({ kind: 'confirm', id: 't1', date: '2026-06-15', from: '통장1', to: '통장2', amount: 10000 });
   assert.ok(confirm && confirm.key === 'confirm:2026-06-15:t1:2026-06-15', '이체 확인 알림은 오늘날짜+거래 id+날짜로 키가 잡혀야 함(app-evolve cycle232: confirmMulti처럼 TODAY가 앞에 들어가 날이 바뀌면 다시 알림)');
   const budgetOver = sandbox.notifyAlertInfo({ kind: 'budgetOver', cat: '식비', spent: 150000, budget: 100000 });
-  assert.ok(budgetOver && budgetOver.key === 'budget:식비:2026-06');
+  assert.ok(budgetOver && budgetOver.key === 'budget:식비:2026-06:140', '예산 대비 지출 비율(150%)이 20%p 단위로 버킷팅되어야 함(app-evolve cycle372)');
   const budgetMulti = sandbox.notifyAlertInfo({ kind: 'budgetOverMulti', count: 2 });
   assert.ok(budgetMulti && budgetMulti.key === 'budgetMulti:2026-06:2', '월 단위 키에도 count가 들어가야 함(app-evolve cycle233)');
   assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'backup' }), null, 'OS 알림 대상이 아닌 kind는 null이어야 함');
   assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'neg', assetId: 'a1' }), null);
+});
+test('notifyAlertInfo: budgetOver는 예산 대비 지출 비율을 20%p 단위로 버킷팅해, 같은 달 안에서도 초과분이 크게 늘면 다시 알린다(app-evolve cycle372)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const b1 = sandbox.notifyAlertInfo({ kind: 'budgetOver', cat: '식비', spent: 150000, budget: 100000 }); // 150% -> 버킷 140
+  const b2 = sandbox.notifyAlertInfo({ kind: 'budgetOver', cat: '식비', spent: 158000, budget: 100000 }); // 158% -> 같은 버킷 140(140~159 구간)
+  assert.strictEqual(b2.key, b1.key, '버킷이 안 바뀌는 미세한 추가 지출은 같은 키로 dedupe되어야 함');
+  const b3 = sandbox.notifyAlertInfo({ kind: 'budgetOver', cat: '식비', spent: 320000, budget: 100000 }); // 320% -> 버킷 300
+  assert.notStrictEqual(b3.key, b1.key, '초과분이 눈에 띄게 더 커지면 버킷이 바뀌어 다시 알려야 함');
 });
 test('notifyAlertInfo: budgetOverMulti도 confirmMulti/matMulti처럼 같은 달 안에서 초과 카테고리 건수가 바뀌면 다시 알리도록 키에 count가 들어간다(app-evolve cycle233)', () => {
   /* 수정 전에는 budgetOverMulti/goalBehindMulti/debtBehindMulti 세 kind만 key에 count가 없어,

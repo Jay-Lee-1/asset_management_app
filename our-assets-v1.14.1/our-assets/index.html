@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.479';
+const APP_VERSION='1.47.480';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -12204,7 +12204,15 @@ function notifyAlertInfo(al){
   return{key:`mat:${TODAY}:${al.assetId}:${al.date}`,title:overdue?'저축 만기가 지났어요':'저축 만기가 임박했어요',body:overdue?`${al.name} · ${when} · ${comma(al.amount)}원`:`${al.name} · ${when} 만기 · ${comma(al.amount)}원`,group:'mat'};
  }
  if(al.kind==='matMulti'&&al.dueCount>0)return{key:`matMulti:${TODAY}:${al.count}`,title:'저축 만기가 임박했어요',body:`저축 만기 ${al.count}건이 있어요`,group:'mat'};
- if(al.kind==='budgetOver')return{key:`budget:${al.cat}:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.cat} · ${comma(al.spent)}원 / ${comma(al.budget)}원`,group:'budget'};
+ /* budgetOver/goalBehind/debtBehind(이 줄, 그리고 아래 두 곳)는 allocationDrift/settleDue와 똑같은
+  * 문제를 안고 있었다 — 월(또는 goalId/assetId) 단위로만 key를 묶어, 이번 달에 한 번 알린 뒤
+  * 상황이 같은 달 안에서 계속 나빠져도(예산을 1% 넘겼다가 300%까지 치솟거나, 목표가 며칠 늦다가
+  * 몇 달씩 늦어지거나, 부채가 계속 불어나도) 재알림이 전혀 안 됐다. allocationDrift가 diffPct를,
+  * settleDue가 diffAmount를 버킷팅해 "건수"가 아니라 "정도"가 바뀌어도 다시 알리게 한 것과 같은
+  * 원칙으로, budgetOver는 예산 대비 지출 비율을(20%p 단위), goalBehind는 목표일을 넘긴 일수를
+  * (30일=1개월 단위, 투사 자체가 안 나오는 경우는 별도 토큰 'na'), debtBehind는 부채 금액을
+  * (settleDue와 동일한 10만원 단위) 버킷팅해 key에 더한다(app-evolve cycle372 develop). */
+ if(al.kind==='budgetOver')return{key:`budget:${al.cat}:${TODAY.slice(0,7)}:${Math.floor(al.spent/al.budget*100/20)*20}`,title:'예산을 초과했어요',body:`${al.cat} · ${comma(al.spent)}원 / ${comma(al.budget)}원`,group:'budget'};
  /* budgetOverMulti/goalBehindMulti/debtBehindMulti(바로 아래 3개)는 반복 알림을 막기 위해 월 단위로
   * key를 묶는데(TODAY.slice(0,7)), 지금까지 그 안에 count를 넣지 않아 "이번 달에 이미 한 번 알린
   * 뒤 묶인 건수가 더 늘어도"(예: 예산 초과 카테고리 2개→3개, 목표 지연 2건→3건, 정체된 부채
@@ -12222,7 +12230,7 @@ function notifyAlertInfo(al){
   * 알려짐) 건수가 바뀌면(budgetOverMulti처럼 count를 key에 포함) 다시 알린다. */
  if(al.kind==='budgetPaceWarn')return{key:`budgetPace:${al.cat}:${TODAY.slice(0,7)}`,title:'예산 초과가 예상돼요',body:`${al.cat} · 이대로면 월말 ${comma(al.projected)}원 / ${comma(al.budget)}원`,group:'budget'};
  if(al.kind==='budgetPaceWarnMulti')return{key:`budgetPaceMulti:${TODAY.slice(0,7)}:${al.count}`,title:'예산 초과가 예상돼요',body:`${al.count}개 카테고리가 이대로면 이번 달 예산을 넘을 것 같아요`,group:'budget'};
- if(al.kind==='goalBehind')return{key:`goalBehind:${al.goalId}:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`${al.name} · 목표일 ${fmtDateFull(al.targetDate)}까지 어려울 것 같아요`,group:'goal'};
+ if(al.kind==='goalBehind')return{key:`goalBehind:${al.goalId}:${TODAY.slice(0,7)}:${al.projectedDate?Math.floor(daysBetween(al.targetDate,al.projectedDate)/30)*30:'na'}`,title:'목표가 늦어지고 있어요',body:`${al.name} · 목표일 ${fmtDateFull(al.targetDate)}까지 어려울 것 같아요`,group:'goal'};
  if(al.kind==='goalBehindMulti')return{key:`goalBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'목표가 늦어지고 있어요',body:`목표 ${al.count}건이 목표일보다 늦어지고 있어요`,group:'goal'};
  /* goalAchieved(Multi)는 goalBehindMulti 등과 달리 월 단위로 자연 해소되지 않는 '영구' 상태라(ack 전까지
   * achievedAckAt이 계속 비어 있음) key에 월(TODAY.slice(0,7))을 넣지 않는다 — 한 번 보내고 나면 ack하거나
@@ -12230,7 +12238,7 @@ function notifyAlertInfo(al){
   * pruneNotifiedIds로 정리될 때까지 매일 다시 알리지 않는다(app-evolve cycle256 advance). */
  if(al.kind==='goalAchieved')return{key:`goalAchieved:${al.goalId}`,title:'목표를 달성했어요 🎉',body:`${al.name} · ${comma(al.amount)}원`,group:'goal'};
  if(al.kind==='goalAchievedMulti')return{key:`goalAchievedMulti:${al.count}`,title:'목표를 달성했어요 🎉',body:`목표 ${al.count}건을 달성했어요`,group:'goal'};
- if(al.kind==='debtBehind')return{key:`debtBehind:${al.assetId}:${TODAY.slice(0,7)}`,title:'부채가 줄지 않고 있어요',body:`${al.name} · 최근엔 ${comma(al.amount)}원에서 줄어들고 있지 않아요`,group:'debt'};
+ if(al.kind==='debtBehind')return{key:`debtBehind:${al.assetId}:${TODAY.slice(0,7)}:${Math.floor(Math.abs(al.amount)/100000)*100000}`,title:'부채가 줄지 않고 있어요',body:`${al.name} · 최근엔 ${comma(al.amount)}원에서 줄어들고 있지 않아요`,group:'debt'};
  if(al.kind==='debtBehindMulti')return{key:`debtBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'부채가 줄지 않고 있어요',body:`부채 ${al.count}건이 최근 줄어들고 있지 않아요`,group:'debt'};
  /* debtPaidOff(Multi)는 goalAchieved(Multi)와 동일하게 월 단위로 자연 해소되지 않는 '영구' 상태라
   * key에 월을 넣지 않는다 — 한 번 보내고 나면 ack하거나(payoffAckAt 기록 → 이 kind가 더는
