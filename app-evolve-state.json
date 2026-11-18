@@ -1,11 +1,7 @@
 {
-  "cycle": 372,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "openTxSheet()/openRecSheet() 실행형 테스트 커버리지 추가",
-    "why": "거래/반복거래 신규 작성 진입점(txDraft/recDraft 초기화)이 index.html 전체에서 가장 호출 빈도 높은 쓰기 경로(FAB 빈 상태 CTA, 스와이프/탭 핸들러, PWA 숏컷/딥링크 4곳, 반복관리 UI 등 10곳 이상)인데 test/run.js FUNCTIONS 목록 밖에 있어 한 번도 실행형으로 테스트된 적이 없다. load()/openSheet/acctSafety/twScreen과 동일한 '공유 핵심인데 실행형 커버리지 0' 공백 클래스지만 영향 범위가 가장 넓다 — 새 필드 추가 시 초기화 누락, firstCash()가 현금성 자산 없음으로 null을 반환하는 엣지 케이스 등이 테스트로 잡히지 않고 런타임(앱 최초 실행 시)에서만 터질 수 있다.",
-    "approach": "test/run.js FUNCTIONS 배열에 'openTxSheet','openRecSheet' 추가(renderTxSheet/renderRecSheet/firstCash/snapDraft/openSheet(stub)는 이미 메인 sandbox에 있어 저항 적음). openTxSheet() 테스트: txDraft 기본 shape(type='expense', date=ST.ledger.sel, category=DB.categories.expense[0], fromAssetId=firstCash() 결과, amount=0, repeat=false, photo=null, shared=false), window._recCtx/_txFocusAmt/_txCatSuggAnnounced 리셋, snapDraft('tx') 호출, renderTxSheet() 실행(lastSheetHtml 채워짐) 확인. openRecSheet()도 recDraft로 동일 패턴. firstCash()가 null을 반환하는(현금성 자산 없음) 엣지 케이스에서 크래시 없음도 커버."
-  },
+  "cycle": 373,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 368,
@@ -131,6 +127,13 @@
       "phase": "critique",
       "timestamp": "2026-11-18T20:50:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-372에서 이미 다룬 모든 주제(반복거래, 정산, goalBehind/costBasis, 클라우드동기화/fx폴백, 팔레트, PIN/생체인증, 사진페이로드/가구공유, SRI/CSP/쿼터, CSV/csvDedupeKey, 전역검색, role=button 중첩, assetQtyLog, openSheet/closeSheet/load() 실행형 테스트, duplicateRec 포커스, acctSafety, netlify 가격조회, SVG 차트 접근성, FAB 팝업 오버레이 접근성, reloadForUpdate/SW배너, kakaoReady, 온보딩 튜토리얼, notifyAlertInfo dedupe 버킷팅)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: openTxSheet()/openRecSheet()(index.html:6345,6899 — 신규 거래/반복거래 작성 시 txDraft/recDraft를 초기화하는 유일한 진입점, FAB 빈상태 CTA/스와이프탭/PWA 숏컷 4곳/반복관리 UI 등 10곳 이상에서 호출되는 앱 전체에서 가장 호출 빈도 높은 쓰기 경로)가 test/run.js FUNCTIONS 목록 밖에 있어 실행형 테스트가 전혀 없다 — load()/openSheet/acctSafety/twScreen과 동일한 공백 클래스이면서 영향 범위가 이 중 가장 넓다고 판단. renderTxSheet/renderRecSheet/firstCash/snapDraft/openSheet(stub)가 이미 메인 sandbox에 있어 추가 저항이 적다는 것도 확인(renderMenu/doImportPinSubmit 계열은 DOM/암호화 I/O에 더 깊이 엉켜 있어 러너업으로 낮게 평가). pending_advance_plan에 FUNCTIONS 등록 + txDraft/recDraft 기본 shape 검증 + firstCash() null(현금성 자산 없음) 엣지케이스 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 372,
+      "phase": "advance",
+      "timestamp": "2026-11-18T22:05:00.000Z",
+      "summary": "critique(cycle372)의 계획대로 openTxSheet()/openRecSheet()(신규 거래/반복거래 작성 진입점)를 실행형으로 테스트했다. 계획은 renderRecSheet/snapDraft가 이미 메인 sandbox에 있다고 가정했지만 실제로는 둘 다 FUNCTIONS 목록 밖이라(renderRecSheet는 지금까지 단 한 번도 실행된 적이 없었고, snapDraft는 closeSheetGuarded류 격리 컨텍스트에서만 개별 추출돼 있었음) FUNCTIONS에 'openTxSheet','openRecSheet','snapDraft','renderRecSheet'를 새로 추가하고, renderRecSheet가 참조하는 WK(주말·공휴일 조정 어휘) 상수도 CONSTS에 추가해야 했다. 실행형 테스트 4건 추가: txDraft/recDraft 기본 shape(ST.ledger.sel/firstCash() 결과 포함)과 window._recCtx/_txFocusAmt/_txCatSuggAnnounced/_recCatSuggAnnounced 리셋·snapDraft 스냅샷·renderTxSheet/renderRecSheet 실행 확인, firstCash()가 null을 반환하는(현금성 자산 없음) 엣지 케이스에서 크래시 없이 fromAssetId=null로 남는지 확인. 과정에서 vm 컨텍스트 안의 객체 리터럴과 호스트 쪽 리터럴이 realm이 달라 deepStrictEqual이 \"참조가 다르다\"며 실패하는 함정을 만나, JSON.parse(JSON.stringify(...)) 왕복으로 정규화해 해결했다(필드가 전부 JSON-safe 값이라 손실 없음). 실제 버그는 발견되지 않았다(순수 커버리지 보강). node test/run.js 3609->3613/3613 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/run.js만 수정했고 index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 올리지 않는다. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

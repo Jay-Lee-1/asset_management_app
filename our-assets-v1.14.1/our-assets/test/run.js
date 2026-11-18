@@ -269,6 +269,13 @@ const FUNCTIONS = [
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'openIconPicker', 'pickCatIcon',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat', 'txToggleShared',
+  // renderRecSheet는 renderTxSheet의 반복거래 쪽 짝인데도 지금까지 한 번도 FUNCTIONS에 오르지
+  // 않아 실행형으로 돌려진 적이 없었다(app-evolve cycle372 critique/advance) — openTxSheet()/
+  // openRecSheet()(신규 거래/반복거래 작성 진입점, txDraft/recDraft 초기화)를 실행형으로
+  // 테스트하려면 그 끝에서 호출하는 renderTxSheet/renderRecSheet까지 실제로 실행돼야 한다.
+  // snapDraft는 openTxSheet/openRecSheet가 매번 호출하는 더티체크 스냅샷 함수(기존에는
+  // closeSheetGuarded류 격리 컨텍스트에서만 개별 추출해 썼다) — 같은 이유로 이 공유 sandbox에도 올린다.
+  'openTxSheet', 'openRecSheet', 'snapDraft', 'renderRecSheet',
   // txOpenEnd/recOpenEnd(종료일 피커 콜백)는 cycle338 develop이 dateBelowRangeFloor/
   // dateAboveRangeCeil 가드를 추가한 대상 — openFieldDatePicker 스텁(아래)이 캡처한 onPick을
   // 테스트가 직접 호출해 가드를 검증한다.
@@ -412,7 +419,11 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET',
+  // WK(주말·공휴일 조정 어휘)는 renderRecSheet가 d.freq==='monthly'일 때 WK[d.weekend||'none'][0]로
+  // 직접 참조한다(app-evolve cycle372 advance, openTxSheet/openRecSheet 실행형 테스트 추가 — 이
+  // 전까지 renderRecSheet() 자체가 한 번도 실행된 적이 없어 빠져 있었다).
+  'WK'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -33083,6 +33094,74 @@ function setupTxSheetDB() {
   sandbox.window._recCtx = null;
   sandbox.lastSheetHtml = null;
 }
+/* openTxSheet()/openRecSheet(): 신규 거래/반복거래 작성 진입점(txDraft/recDraft 초기화) — FAB
+ * 빈 상태 CTA, 스와이프/탭 핸들러, PWA 숏컷/딥링크, 반복관리 UI 등 index.html 전체에서 가장
+ * 호출 빈도가 높은 쓰기 경로인데도 실행형 테스트가 전혀 없던 공백(app-evolve cycle372
+ * critique/advance) — renderTxSheet는 이미 이 sandbox에 있었지만 renderRecSheet/snapDraft는
+ * 이번에 처음 올라왔다(위 FUNCTIONS 주석 참고). */
+test('[실행형] openTxSheet: txDraft를 기본값으로 초기화하고 관련 전역 상태를 리셋한 뒤 시트를 렌더링한다', () => {
+  setupTxSheetDB();
+  sandbox.ST = { ledger: { sel: '2026-03-10' } };
+  sandbox.window._recCtx = { some: 'leftover' }; // 직전에 반복거래 편집 중이던 잔여 컨텍스트
+  sandbox._txFocusAmt = false;
+  sandbox._txCatSuggAnnounced = '잔여값';
+  sandbox.txDraft = { id: 't-old', type: 'income', memo: '이전 입력' }; // 직전 시트의 잔여 draft
+  sandbox.openTxSheet();
+  // openTxSheet()이 vm 컨텍스트 안에서 새 객체 리터럴로 만든 결과라 호스트 쪽 리터럴과
+  // realm이 달라 deepStrictEqual이 "참조가 다르다"며 실패한다 — JSON 왕복으로 평범한 호스트
+  // 객체로 정규화해서 비교한다(필드는 모두 JSON-safe 값이라 손실 없음).
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.txDraft)), {
+    id: null, type: 'expense', date: '2026-03-10', category: '식비', memo: '',
+    amount: 0, fromAssetId: 'a1', toAssetId: null, repeat: false, freq: 'monthly',
+    day: null, endDate: null, count: null, photo: null, shared: false,
+  }, 'ST.ledger.sel/firstCash() 결과를 포함한 기본 shape으로 초기화돼야 함');
+  assert.strictEqual(sandbox.window._recCtx, null, '이전 반복거래 편집 컨텍스트가 남아있으면 안 됨');
+  assert.strictEqual(sandbox._txFocusAmt, true, '새 입력 시트는 금액 입력란에 자동 포커스해야 함');
+  assert.strictEqual(sandbox._txCatSuggAnnounced, null, '이전 시트의 카테고리 추천 공지 캐시가 새지 않아야 함');
+  assert.ok(sandbox._draftSnap && sandbox._draftSnap.kind === 'tx', "snapDraft('tx')가 호출돼 더티체크용 스냅샷을 남겨야 함");
+  assert.ok(sandbox.lastSheetHtml, 'renderTxSheet()가 실제로 호출돼 시트 HTML을 그려야 함');
+});
+test('[실행형] openTxSheet: 현금성 자산이 하나도 없으면(firstCash()가 null) 크래시 없이 fromAssetId가 null로 초기화된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'], income: ['급여'], saving: ['적금'] },
+    catIcon: {}, catVar: {},
+    assets: [{ id: 'a3', name: '보유 주식', type: 'stock', owner: '나' }], // cash/savings 없음
+  };
+  sandbox.window._recCtx = null;
+  sandbox.lastSheetHtml = null;
+  sandbox.ST = { ledger: { sel: '2026-03-10' } };
+  assert.doesNotThrow(() => sandbox.openTxSheet(), '현금성 자산이 없어도 openTxSheet()은 죽지 않아야 함');
+  assert.strictEqual(sandbox.txDraft.fromAssetId, null, '현금성 자산이 없으면 fromAssetId는 null로 남아야 함(saveTx 가드가 토스트로 막음)');
+  assert.ok(sandbox.lastSheetHtml, '현금성 자산이 없어도 시트는 정상적으로 렌더링돼야 함');
+});
+test('[실행형] openRecSheet: recDraft를 기본값으로 초기화하고 관련 전역 상태를 리셋한 뒤 시트를 렌더링한다', () => {
+  setupTxSheetDB();
+  sandbox.ST = { ledger: { sel: '2026-03-10' } };
+  sandbox._recCatSuggAnnounced = '잔여값';
+  sandbox.recDraft = { id: 'r-old', type: 'income' }; // 직전 시트의 잔여 draft
+  sandbox.openRecSheet();
+  // openTxSheet 테스트와 동일한 이유(vm 리터럴의 realm 불일치)로 JSON 왕복 후 비교한다.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.recDraft)), {
+    id: null, active: true, type: 'expense', category: '식비', amount: 0,
+    fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 1,
+    startDate: '2026-03-10', endDate: null, count: null, skip: [], edits: {},
+  }, 'ST.ledger.sel/firstCash() 결과를 포함한 기본 shape으로 초기화돼야 함');
+  assert.strictEqual(sandbox._recCatSuggAnnounced, null, '이전 시트의 카테고리 추천 공지 캐시가 새지 않아야 함');
+  assert.ok(sandbox._draftSnap && sandbox._draftSnap.kind === 'rec', "snapDraft('rec')가 호출돼 더티체크용 스냅샷을 남겨야 함");
+  assert.ok(sandbox.lastSheetHtml, 'renderRecSheet()가 실제로 호출돼 시트 HTML을 그려야 함');
+});
+test('[실행형] openRecSheet: 현금성 자산이 하나도 없으면(firstCash()가 null) 크래시 없이 fromAssetId가 null로 초기화된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'], income: ['급여'], saving: ['적금'] },
+    catIcon: {}, catVar: {},
+    assets: [{ id: 'a3', name: '보유 주식', type: 'stock', owner: '나' }],
+  };
+  sandbox.lastSheetHtml = null;
+  sandbox.ST = { ledger: { sel: '2026-03-10' } };
+  assert.doesNotThrow(() => sandbox.openRecSheet(), '현금성 자산이 없어도 openRecSheet()은 죽지 않아야 함');
+  assert.strictEqual(sandbox.recDraft.fromAssetId, null, '현금성 자산이 없으면 fromAssetId는 null로 남아야 함(saveRec 가드가 토스트로 막음)');
+  assert.ok(sandbox.lastSheetHtml, '현금성 자산이 없어도 시트는 정상적으로 렌더링돼야 함');
+});
 test('renderTxSheet: type별로 자산 필드가 from/to 중 올바른 조합으로 나온다', () => {
   setupTxSheetDB();
   sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', toAssetId: null, repeat: false };
