@@ -39896,6 +39896,144 @@ test('homeAlerts: CORRUPT_BACKUP_KEYS가 있으면 corruptBackup 알림을 count
   assert.ok(!alerts.some(a => a.kind === 'corruptBackup'), 'CORRUPT_BACKUP_KEYS가 비어있는데도 corruptBackup 알림이 뜸');
 });
 
+/* ---------- load(): 부팅 시 localStorage에서 DB를 읽어오는 유일한 진입점 — 정상/저장소 차단
+ * (getItem이 던짐)/데이터 손상(JSON.parse 또는 migrate()가 던짐)/최초부팅(raw 없음) 네 분기를
+ * 갖는데(app-evolve cycle368 critique), 지금까지 FUNCTIONS 목록에 없어 실행형으로 한 번도
+ * 돌아간 적이 없었다 — findCorruptBackupKeys/pruneOldCorruptKeys/sanitizeBackup 같은 하위
+ * 헬퍼만 개별 테스트돼 있었다. migrate()는 이미 FUNCTIONS에서 실제 로직으로 돌지만, save()는
+ * 위 makeSaveCtx 주석이 설명하듯 93곳의 다른 호출부가 전역 no-op 스텁에 기대고 있어 메인
+ * sandbox에서 실제 로직으로 승격시킬 수 없고, seed()/emptyDB()/toastFail()도 load() 전용으로
+ * 쓰기엔 메인 sandbox에 없는 상태라 — openSheetCtx/closeSheetCtx/makeSaveCtx와 같은 "좁은
+ * ad hoc vm 컨텍스트" 패턴을 그대로 따라 load() 자신의 네 분기 분배·에러 처리·백업 보존만
+ * 스파이로 검증한다(각 의존 함수 자신의 몸통은 이미 검증됐거나 범위 밖). ---------- */
+function loadCtx(opts) {
+  const migrateCalls = [];
+  const seedCalls = [];
+  const emptyDBCalls = [];
+  const toastFailCalls = [];
+  const saveCalls = [];
+  const lsSetCalls = [];
+  const ctx = Object.assign({
+    DB: null,
+    STORAGE_OK: true,
+    SESSION: null,
+    TAB_SAVED_AT: 0,
+    DB_JSON_LEN: 0,
+    dataKey: () => 'acct-k',
+    localStorage: {
+      getItem: () => null,
+      setItem: (k, v) => { lsSetCalls.push([k, v]); },
+    },
+    migrate: () => { migrateCalls.push(true); },
+    seed: () => { seedCalls.push(true); return { seeded: true }; },
+    emptyDB: () => { emptyDBCalls.push(true); return { empty: true }; },
+    toastFail: (msg) => { toastFailCalls.push(msg); },
+    save: () => { saveCalls.push(true); },
+  }, opts);
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('load'), ctx, { filename: 'load-real' });
+  return { ctx, migrateCalls, seedCalls, emptyDBCalls, toastFailCalls, saveCalls, lsSetCalls };
+}
+test('[실행형] load: localStorage.getItem이 던지면 STORAGE_OK=false로 내려가고, SESSION이 없으면(로컬/게스트) seed()로 폴백해 migrate()까지 호출한 뒤 저장소 차단 toast만 띄우고 끝낸다(save()는 안 부름)', () => {
+  const { ctx, migrateCalls, seedCalls, emptyDBCalls, toastFailCalls, saveCalls } = loadCtx({
+    SESSION: null,
+    localStorage: { getItem: () => { throw new Error('storage blocked'); }, setItem: () => {} },
+  });
+  ctx.load();
+  assert.strictEqual(ctx.STORAGE_OK, false, 'getItem이 던지면 STORAGE_OK가 false로 내려가야 함');
+  assert.strictEqual(seedCalls.length, 1, 'SESSION이 없으면(로컬/게스트) seed()로 폴백해야 함');
+  assert.strictEqual(emptyDBCalls.length, 0, 'SESSION이 없을 땐 emptyDB()를 부르면 안 됨');
+  assert.deepStrictEqual(ctx.DB, { seeded: true }, 'DB가 seed() 결과로 채워져야 함');
+  assert.strictEqual(migrateCalls.length, 1, '폴백 DB에도 migrate()를 호출해야 함');
+  assert.strictEqual(toastFailCalls.length, 1, '저장소 차단 안내 toast가 떠야 함');
+  assert.match(toastFailCalls[0], /저장소를 열지 못했/, 'toast 문구가 저장소 차단 안내와 달라짐(문구 회귀)');
+  assert.strictEqual(saveCalls.length, 0, '저장소 자체가 막힌 상황에서 save()를 부르면 안 됨(다시 던질 수 있음)');
+});
+test('[실행형] load: localStorage.getItem이 던지고 SESSION이 있으면(로그인 계정) seed() 대신 emptyDB()로 폴백한다', () => {
+  const { ctx, seedCalls, emptyDBCalls } = loadCtx({
+    SESSION: 'user@example.com',
+    localStorage: { getItem: () => { throw new Error('storage blocked'); }, setItem: () => {} },
+  });
+  ctx.load();
+  assert.strictEqual(emptyDBCalls.length, 1, 'SESSION이 있으면 샘플 체험 데이터(seed) 대신 emptyDB()로 폴백해야 함');
+  assert.strictEqual(seedCalls.length, 0, 'SESSION이 있는데 seed()(샘플 체험용)를 부르면 안 됨');
+});
+test('[실행형] load: raw가 JSON.parse조차 안 되게 손상됐으면 원본을 dataKey()+__corrupt_+타임스탬프 키로 best-effort 보존하고, 손상 안내 toast를 띄운 뒤 DB를 리셋·저장한다', () => {
+  const rawCorrupt = '{broken json';
+  const { ctx, lsSetCalls, toastFailCalls, seedCalls, migrateCalls, saveCalls } = loadCtx({
+    SESSION: null,
+    dataKey: () => 'acct-corrupt',
+    localStorage: { getItem: () => rawCorrupt, setItem: (k, v) => { lsSetCalls.push([k, v]); } },
+  });
+  ctx.load();
+  assert.strictEqual(lsSetCalls.length, 1, '손상된 원본을 백업 키로 저장해야 함(안 그러면 복구 시도 자체가 불가능)');
+  assert.match(lsSetCalls[0][0], /^acct-corrupt__corrupt_\d+$/, '백업 키가 dataKey()+__corrupt_+타임스탬프 모양이 아님');
+  assert.strictEqual(lsSetCalls[0][1], rawCorrupt, '백업된 값이 손상되기 전 원본 raw와 달라짐');
+  assert.strictEqual(toastFailCalls.length, 1, '데이터 손상 안내 toast가 떠야 함');
+  assert.match(toastFailCalls[0], /손상되어 열지 못했/, 'toast 문구가 데이터 손상 안내와 달라짐(문구 회귀)');
+  assert.strictEqual(seedCalls.length, 1, '리셋 시 SESSION이 없으면 seed()로 리셋해야 함');
+  assert.strictEqual(migrateCalls.length, 1, '리셋한 DB에도 migrate()를 호출해야 함');
+  assert.strictEqual(saveCalls.length, 1, '리셋한 DB를 save()로 저장해야 함(안 그러면 다음 부팅마다 손상 처리를 반복)');
+});
+test('[실행형] load: JSON.parse는 성공해도 migrate()가 던지면(데이터 자체 손상) JSON.parse 실패와 동일하게 원본을 보존하고 DB를 리셋한다', () => {
+  const rawValid = JSON.stringify({ version: 1, broken: true });
+  let migrateCallCount = 0;
+  const { ctx, lsSetCalls, toastFailCalls, seedCalls, saveCalls } = loadCtx({
+    SESSION: null,
+    dataKey: () => 'acct-mig',
+    localStorage: { getItem: () => rawValid, setItem: (k, v) => { lsSetCalls.push([k, v]); } },
+    migrate: () => { migrateCallCount++; if (migrateCallCount === 1) throw new Error('migrate 자체 실패(마이그레이션 로직 버그 등)'); },
+  });
+  ctx.load();
+  assert.strictEqual(migrateCallCount, 2, '첫 migrate() 실패 후 리셋한 DB에도 다시 migrate()를 호출해야 함');
+  assert.strictEqual(lsSetCalls.length, 1, 'migrate() 실패도 JSON.parse 실패와 동일하게 원본을 백업해야 함');
+  assert.strictEqual(lsSetCalls[0][1], rawValid, '백업된 값이 (파싱엔 성공했던) 원본 raw와 달라짐');
+  assert.strictEqual(toastFailCalls.length, 1, '데이터 손상 안내 toast가 떠야 함');
+  assert.strictEqual(seedCalls.length, 1, 'migrate() 실패 후 리셋도 SESSION 없음 분기(seed)를 그대로 따라야 함');
+  assert.strictEqual(saveCalls.length, 1, '리셋한 DB를 save()로 저장해야 함');
+});
+test('[실행형] load: raw가 정상 JSON이면 DB에 그대로 파싱해 넣고 migrate()를 호출한다(과거 "load()가 migrate() 없이 그대로 쓰던" 버그의 회귀 방지) — TAB_SAVED_AT/DB_JSON_LEN도 함께 채운다', () => {
+  const rawValid = JSON.stringify({ version: 1, txns: [{ id: 't1' }] });
+  const { ctx, migrateCalls, seedCalls, emptyDBCalls, saveCalls, toastFailCalls } = loadCtx({
+    SESSION: null,
+    dataKey: () => 'acct-ok',
+    localStorage: {
+      getItem: (k) => (k === 'acct-ok__savedAt' ? '1700000000000' : rawValid),
+      setItem: () => {},
+    },
+  });
+  ctx.load();
+  // ctx.DB는 vm 컨텍스트(별도 realm) 안에서 JSON.parse로 만들어진 객체라 Object.prototype이
+  // 이 테스트 파일의 것과 달라, assert.deepStrictEqual이 프로토타입까지 비교하며 거짓 FAIL을
+  // 낸다(app-evolve cycle364 등에서 쓴 것과 동일한 관례로 JSON.stringify 비교로 피해간다).
+  assert.strictEqual(JSON.stringify(ctx.DB), JSON.stringify({ version: 1, txns: [{ id: 't1' }] }), 'DB가 raw를 그대로 JSON.parse한 값이어야 함');
+  assert.strictEqual(migrateCalls.length, 1, '정상 경로에서도 migrate()를 반드시 호출해야 함');
+  assert.strictEqual(ctx.TAB_SAVED_AT, 1700000000000, '__savedAt 키로 저장된 마지막 저장 시각을 읽어와야 함');
+  assert.strictEqual(ctx.DB_JSON_LEN, rawValid.length, 'DB_JSON_LEN이 raw의 실제 길이여야 함');
+  assert.strictEqual(seedCalls.length, 0, '정상 경로에서 seed()를 부르면 안 됨');
+  assert.strictEqual(emptyDBCalls.length, 0, '정상 경로에서 emptyDB()를 부르면 안 됨');
+  assert.strictEqual(saveCalls.length, 0, '정상 경로는 읽어오기만 하는 것이라 save()를 또 부르면 안 됨');
+  assert.strictEqual(toastFailCalls.length, 0, '정상 경로에서 에러 toast가 뜨면 안 됨');
+});
+test('[실행형] load: raw가 없으면(최초 부팅) SESSION 여부에 따라 seed()/emptyDB()로 채우고 migrate()·save()를 호출한다', () => {
+  {
+    const { ctx, seedCalls, emptyDBCalls, migrateCalls, saveCalls, toastFailCalls } = loadCtx({ SESSION: null, localStorage: { getItem: () => null, setItem: () => {} } });
+    ctx.load();
+    assert.strictEqual(seedCalls.length, 1, '게스트/로컬 계정의 최초 부팅은 샘플 체험용 seed()를 써야 함');
+    assert.strictEqual(emptyDBCalls.length, 0, '게스트/로컬 최초 부팅에서 emptyDB()를 부르면 안 됨');
+    assert.deepStrictEqual(ctx.DB, { seeded: true }, 'DB가 seed() 결과로 채워져야 함');
+    assert.strictEqual(migrateCalls.length, 1, '최초 부팅 DB에도 migrate()를 호출해야 함');
+    assert.strictEqual(saveCalls.length, 1, '최초 부팅 DB도 바로 save()로 저장해야 다음 부팅에 또 최초부팅 분기를 타지 않음');
+    assert.strictEqual(toastFailCalls.length, 0, '최초 부팅은 정상 경로라 에러 toast가 뜨면 안 됨');
+  }
+  {
+    const r = loadCtx({ SESSION: 'user@example.com', localStorage: { getItem: () => null, setItem: () => {} } });
+    r.ctx.load();
+    assert.strictEqual(r.emptyDBCalls.length, 1, '로그인 계정의 최초 부팅은 샘플 데이터 없이 빈 DB로 시작해야 함');
+    assert.strictEqual(r.seedCalls.length, 0, '로그인 계정에 샘플 체험(seed)용 데이터를 심으면 안 됨');
+  }
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.
