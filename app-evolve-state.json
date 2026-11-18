@@ -1,15 +1,8 @@
 {
  "cycle": 369,
- "phase": "review",
+ "phase": "critique",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 364,
-   "phase": "review",
-   "timestamp": "2026-11-17T08:30:00.000Z",
-   "summary": "develop 커밋(0e06d18, installBar role=\"button\" 중첩 수정)을 검토: 변경 diff가 txRowCore/asset-item/date-picker에서 쓴 동일 패턴(role=\"button\"/tabindex/onkeydown을 .row-tap 내부 wrapper로 옮기고 실제 button은 형제로 분리)을 올바르게 따름. installBar의 onclick은 유지돼 버블링 클릭이 보존되고, ib-x는 이미 stopPropagation으로 격리됨. installBarHTML() 순수 함수 분리와 전용 테스트(Android/iOS 양쪽)도 적절. node test/run.js 3494/3494 통과, 추가 수정 불필요.",
-   "commit": null
-  },
   {
    "cycle": 364,
    "phase": "critique",
@@ -141,6 +134,13 @@
    "phase": "develop",
    "timestamp": "2026-11-18T06:11:56.029Z",
    "summary": "통장 안전 신호등 acctSafety(id)(openPlanAsset 통장 선택 목록에서 쓰임)가 FUNCTIONS 목록 밖에 있어 planNegatives()/homeAlerts()/openNegList()는 모두 실행형 테스트가 있는데도 정작 그 위에서 파생되는 acctSafety 자체는 한 번도 실제로 실행된 적이 없었음을 Explore로 확인했다(cycle340-368에서 다룬 반복거래/정산/goalBehind/costBasis/NAME_MAX/클라우드동기화/fx폴백/팔레트/comma -0/undoToast WCAG/App Lock/사진 페이로드/가구공유/RANGE_FROM/visibilitychange/SRI/CSP/localStorage 쿼터/카테고리 rename-merge/검색어 파싱/CSV 카테고리 분리/저축만기 overdue/assetGainLossBadge/전역검색(존재)/role=button 중첩/assetQtyLog 아카이빙/openSheet·closeSheet·load() 실행형 테스트/duplicateRec 포커스는 모두 배제). FUNCTIONS 목록에 acctSafety 추가 후 실행형 테스트 3건을 신설: (1) 예정된 마이너스가 없는 통장은 {lv:\"ok\",txt:\"\"}, (2) 예정 지출로 마이너스가 될 통장은 planNegatives()의 date/min을 shortDate/comma로 정확히 포맷해 {lv:\"bad\"}를 돌려주는지(날짜·금액 불일치 방지, cycle242와 같은 이유로 리터럴 값까지 확인), (3) savings처럼 플랜 대상이 아닌 통장(isPlanAcct=false)은 baseAmount가 마이너스여도 ok로 취급하는지. deepStrictEqual의 vm realm 교차 비교 실패(cycle131과 동일 원인)를 피해 필드별 strictEqual로 비교. 버그는 발견되지 않았고 순수 테스트 커버리지 보강이다. node test/run.js 3571->3574/3574 통과. index.html/sw.js 변경 없음(test/run.js만 수정)이라 APP_VERSION/CACHE 버전업 불필요.",
+   "commit": null
+  },
+  {
+   "cycle": 369,
+   "phase": "review",
+   "timestamp": "2026-11-18T06:30:00.000Z",
+   "summary": "develop 커밋(ef4c40c, acctSafety() 실행형 테스트 3건 추가)을 검토: acctSafety(id)는 planNegatives().find(n=>n.assetId===id)의 결과를 shortDate/comma로 포맷해 {lv,txt}로 돌려주는 1:1 파생 함수임을 index.html:7770-7774에서 직접 확인. 새 테스트 3건(마이너스 없는 통장은 ok/빈 문자열, 예정 지출로 마이너스 되는 통장은 date/min을 shortDate/comma로 정확히 포맷한 bad, savings처럼 isPlanAcct=false인 통장은 마이너스 baseAmount여도 ok로 취급)가 구현과 정확히 일치하고 엣지 케이스를 놓치지 않음. 테스트 전제(assert.ok(neg))도 타당함. node test/run.js 3574/3574 통과. 코드 변경 없음, 버그 없음.",
    "commit": null
   }
  ]
