@@ -141,7 +141,7 @@
       "phase": "advance",
       "timestamp": "2026-11-18T13:13:35.488Z",
       "summary": "critique가 지적한 SW 업데이트 배너의 초안 소실 버그를 고쳤다. closeSheetGuarded()에 선택적 afterClose 콜백을 추가하고 reloadForUpdate()가 isDraftDirty()면 closeSheetGuarded(false,()=>location.reload())로 \"변경사항을 버릴까요?\" 확인을 먼저 띄우도록 바꿈(버리기를 눌러야 닫고 reload). 메뉴의 \"버전 정보\" 행과 하단 \"지금 새로고침\" 링크의 location.reload() 직접 호출도 reloadForUpdate()를 거치도록 통일. APP_VERSION/sw.js CACHE 버전을 올리고 회귀 테스트 2개(reloadForUpdate 동작 + 세 트리거 와이어링) 추가. 전체 3589개 테스트 통과.",
-      "commit": null
+      "commit": "7080ea6"
     }
   ]
 }
