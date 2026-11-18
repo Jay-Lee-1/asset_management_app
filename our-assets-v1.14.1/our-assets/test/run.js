@@ -19426,6 +19426,39 @@ test('duplicateRec: 존재하지 않는 id는 recDraft를 건드리지 않고 �
   sandbox.duplicateRec('nope');
   assert.strictEqual(sandbox.recDraft, null, '존재하지 않는 반복은 draft를 세팅하지 않아야 함');
 });
+/* duplicateRec은 자신의 주석이 "duplicateTx·duplicateAsset과 같은 이유"라고 적어뒀지만, 실제로는
+ * duplicateAsset(asName)/duplicateGoal(goalName)이 공유하는 "복제 후 구분용 필드에 바로 포커스"
+ * setTimeout(...,300) 호출이 빠져 있었다(app-evolve cycle368 develop). 반복 목록의 식별자가
+ * memo||category(openRecManage())이므로 포커스 대상은 #rMemo여야 한다. */
+(() => {
+  const origSetTimeout = sandbox.setTimeout, orig$ = sandbox.$;
+  function restore() { sandbox.setTimeout = origSetTimeout; sandbox.$ = orig$; }
+  test('duplicateRec: 복제 후 300ms 뒤 #rMemo에 포커스하고 select()한다(다른 항목과 구분할 메모를 바로 입력할 수 있도록)', () => {
+    sandbox.DB = { recurrences: [{ id: 'r6', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, active: true, skip: [], edits: {} }] };
+    let capturedMs = null, timerFn = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; timerFn = fn; return 'timer'; };
+    const memoEl = { focused: false, selected: false, focus() { this.focused = true; }, select() { this.selected = true; } };
+    sandbox.$ = (id) => (id === 'rMemo' ? memoEl : null);
+    try {
+      sandbox.duplicateRec('r6');
+      assert.strictEqual(capturedMs, 300, 'duplicateAsset/duplicateGoal과 동일한 지연(300ms)이어야 함');
+      assert.strictEqual(memoEl.focused, false, '타이머가 실행되기 전에는 포커스가 이동하면 안 됨');
+      timerFn();
+      assert.strictEqual(memoEl.focused, true, '타이머 실행 후 #rMemo에 포커스가 가야 함');
+      assert.strictEqual(memoEl.selected, true, '기존 메모를 바로 덮어쓸 수 있도록 select()도 호출돼야 함');
+    } finally { restore(); }
+  });
+  test('duplicateRec: 시트가 이미 닫혀 #rMemo가 없을 때 타이머가 실행돼도 에러 없이 조용히 넘어간다', () => {
+    sandbox.DB = { recurrences: [{ id: 'r7', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, skip: [], edits: {} }] };
+    let timerFn = null;
+    sandbox.setTimeout = (fn) => { timerFn = fn; return 'timer'; };
+    sandbox.$ = () => null;
+    try {
+      sandbox.duplicateRec('r7');
+      assert.doesNotThrow(() => timerFn(), '#rMemo가 null이어도(시트가 이미 닫힌 경우) 타이머 실행이 안전해야 함');
+    } finally { restore(); }
+  });
+})();
 test('duplicateRec → saveRec: 복제본을 저장하면 원본은 그대로 남고 독립된 새 레코드가 추가된다', () => {
   sandbox.TWi = -1;
   sandbox.TODAY = '2026-05-20';

@@ -1,15 +1,8 @@
 {
  "cycle": 368,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 362,
-   "phase": "advance",
-   "timestamp": "2026-11-17T05:13:40.711Z",
-   "summary": "critique(cycle362) 계획대로 txRowCore()의 비선택 모드 행에서 .swipe-content 전체에 role=\"button\"/tabindex를 주면서 그 자손으로 실제 <button class=\"dup-btn\">(복제)/<button class=\"confirm-btn\">(반복이체 확인)을 중첩시키던 WAI-ARIA 위반을 고쳤다. role=\"button\" tabindex=\"0\" onclick=\"rowTap(this)\" onkeydown=\"rowKeydown(...)\"을 .swipe-content 자체가 아니라 아바타+메모+금액만 감싸는 새 내부 wrapper .row-tap으로 옮기고, dup-btn/confirm-btn/photo(onclick=\"openPhotoViewer\")는 .row-tap의 형제로 .swipe-content 바로 아래에 그대로 둬 DOM 중첩만 해소했다. CSS는 .row-tap{display:flex;align-items:center;gap:12px;flex:1;min-width:0}만 추가(.swipe-content .amt/.nm/.tag는 이미 자손 선택자라 그대로 적용됨, amt의 margin-left:auto는 .row-tap이 display:flex가 되면서 그 안에서 동일하게 동작) — 레이아웃은 바이트 단위로 동일하게 유지됨을 눈으로 확인. :focus-visible 아웃라인 규칙에도 .row-tap을 추가. rowTap(this)의 this가 이제 .row-tap을 가리키지만 el.closest(\".swipe\")로 조상을 찾으므로 무해함을 확인. 선택 모드(sel.mode) 분기는 원래부터 role=\"button\" 안에 버튼이 중첩돼 있지 않아 손대지 않음(검토만). 테스트: role=\"button\" 엘리먼트를 div 중첩 깊이로 직접 추적해 그 안에 <button>/<img>가 전혀 없음을 확인하는 헬퍼(divInnerHTML)를 추가하고, (1) dup-btn+photo가 있는 일반 행, (2) confirm-btn이 있는 반복이체 확인 대기 행, (3) 선택 모드(원래부터 안전함을 확인하는 회귀) 3건의 테스트를 추가. git stash로 index.html을 수정 전 상태로 되돌려 (1)(2) 테스트가 실제로 FAIL함을 직접 확인한 뒤 복원. node test/run.js 3482->3487/3487 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.464->1.47.465, sw.js CACHE v731->v732. pending_advance_plan null로 비움.",
-   "commit": null
-  },
   {
    "cycle": 363,
    "phase": "develop",
@@ -141,6 +134,13 @@
    "phase": "advance",
    "timestamp": "2026-11-18T01:11:12.416Z",
    "summary": "critique(cycle367)의 계획대로 closeSheet()(모든 바텀시트 해제가 공유하는 유일한 함수)를 실행형으로 테스트했다 — openSheetCtx()(cycle366)와 같은 \"좁은 ad hoc vm 컨텍스트\" 패턴을 그대로 따라 closeSheetCtx()를 새로 만들고, applyForeignSave/applyPendingCloudConflictMerge/updateSelBottom은 각자 이미 단위 테스트가 있어 본문까지 실행하지 않고 스파이로 남겼다. domstub.js에 DomNode.remove()(부모에서 떼어내기, closeSheet의 eg.remove() 실행에 필요)를 추가했다. 테스트 7건 추가: (1) #sheet/#scrim의 show/expanded 클래스·inline style이 실제로 지워지고 #sheetEdgeGlobal이 있으면 제거되며 syncOverlayInert() 호출로 #app의 inert/aria-hidden도 실제로 떼어지는지, (2) #sheetEdgeGlobal이 없을 때 조용히 넘어가는지(회귀), (3) _sheetReturnFocus가 document.contains일 때만 실제로 focus()되고 호출 후 항상 null화되는지, (4) 떨어져나간 참조면 focus() 없이 null화만 하는지, (5) ST.recSel/goalSel이 활성이었을 때만 해제·clear되고 updateSelBottom이 그만큼만 불리며 둘 다 꺼져 있으면 아예 안 불리는지(recSel만/goalSel만/둘 다 꺼짐 3개 서브케이스), (6) TAB_SYNC_PENDING이 applyForeignSave 호출 \"전에\" null화됨(재진입 안전성, 스파이가 호출 시점의 전역값을 함께 캡처해 검증)과 CLOUD_CONFLICT_PENDING이 같은 close 1회로 함께 소비되는지, (7) 둘 다 안 서 있으면 두 스파이 모두 안 불리는지(회귀). 검증: index.html의 TAB_SYNC_PENDING null화를 applyForeignSave 호출 \"뒤\"로 임시로 옮겨(실제 diff엔 없음, 복원함) (6)번 테스트가 실제로 FAIL하는 것을 직접 확인했다. node test/run.js 3556->3563/3563 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/domstub.js·test/run.js만 수정했고 index.html/sw.js는 건드리지 않아(cycle366과 동일한 이유) APP_VERSION/CACHE 버전은 올리지 않는다. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 368,
+   "phase": "develop",
+   "timestamp": "2026-11-18T02:10:00.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-367의 모든 주제(반복거래, 정산 2인/N인/settleDueN/doSettleN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 저장공간 정리, openSheet/closeSheet 실행형 테스트)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: duplicateRec()(index.html, 반복거래 복제)의 바로 위 주석이 \"거래의 duplicateTx·자산의 duplicateAsset과 같은 이유로\" 동작한다고 명시하는데도, 실제로는 duplicateTx(_txFocusAmt)/duplicateAsset(asName)/duplicateGoal(goalName)이 공통으로 갖고 있는 '복제 후 구분용 필드에 바로 포커스'하는 setTimeout(...,300) 호출이 빠져 있었다 — 반복 목록(openRecManage())의 식별자가 memo||category이므로, 복제로 비슷한 구독 등을 등록할 때마다 사용자가 메모를 직접 탭해 들어가야 했고 깜빡하면 메모가 같은 복제본 2건이 목록에서 구분이 안 되는 실사용 공백이었다. 수정: duplicateRec() 끝에 duplicateAsset/duplicateGoal과 동일한 setTimeout(()=>{const n=$('rMemo');if(n){n.focus();n.select()}},300)을 추가(placeholder가 '예: 넷플릭스 구독'인 바로 그 필드). 테스트 2건 추가 — (1) setTimeout이 300ms로 걸리고 타이머 실행 전엔 포커스가 안 가며 실행 후 #rMemo에 focus()+select()가 호출되는지(sandbox.setTimeout/sandbox.$를 캡처하는 기존 goalQInput 테스트와 동일한 관례), (2) 시트가 이미 닫혀 #rMemo가 null이어도 타이머 실행이 에러 없이 조용히 넘어가는지(회귀) — 수정 전 index.html로 git stash해 두 테스트가 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3563->3565/3565 통과. node --check sw.js/test/run.js/test/domstub.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.473->1.47.474, sw.js CACHE v740->v741.",
    "commit": null
   }
  ]
