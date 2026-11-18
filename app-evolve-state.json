@@ -1,15 +1,12 @@
 {
  "cycle": 369,
- "phase": "critique",
- "pending_advance_plan": null,
+ "phase": "advance",
+ "pending_advance_plan": {
+  "title": "FAB '+' 팝업 메뉴(#fabPop)를 앱의 통합 오버레이 접근성 시스템(overlayEscapeTarget/syncOverlayInert/onSheetKeydown)에 4번째 상태로 편입하고, 닫힌 뒤에도 영구 포커스 가능한 숨은 버튼 2개가 남는 실제 결함을 고친다",
+  "why": "#sheet/#dpModal/#dpWheel 세 오버레이는 overlayEscapeTarget()(index.html:10954)로 Escape 닫기, syncOverlayInert()(index.html:10994)로 배경 #app/#fab inert+aria-hidden, onSheetKeydown()(index.html:11019)으로 Tab 포커스트랩까지 갖춘 성숙한 통합 시스템인데, 앱에서 가장 많이 쓰이는 진입점인 FAB '+' 팝업(#fabPop, index.html:1381-1382, buildFabPop/fabTap/closeFabPop/fabPick: index.html:6287-6312)은 이 셋 중 어디에도 등록돼 있지 않다. 구체적 문제: (1) #fab에 aria-haspopup/aria-expanded가 없고 #fabPop에 role=menu/menuitem이 없음, (2) overlayEscapeTarget이 'wheel'|'modal'|'sheet'만 알아서 팝업이 열려 있어도 Escape가 안 먹음, (3) syncOverlayInert가 fabPop을 몰라 배경 #app이 열린 상태에서도 inert가 안 걸림, (4) DOM 순서가 #fabPop이 #fab보다 먼저라 forward-Tab으로 fab 버튼에서 팝업 안으로 못 들어가고 Shift+Tab으로만 닿음, (5) 실제 결함: buildFabPop()이 첫 탭에서만 #fabPop.innerHTML을 채우고(index.html:6298 `if(!pop.innerHTML)buildFabPop()`) closeFabPop()은 .show 클래스만 떼지 display:none/visibility:hidden 전환이 전혀 없어(CSS는 opacity:0+pointer-events:none뿐, index.html:1185-1191) 한 번이라도 팝업을 연 세션부터는 보이지 않는 <button class=\"fp-item\"> 2개가 영구적으로 탭 순서에 남아 키보드/스크린리더 사용자가 홈 화면을 탐색하다 설명 없는 숨은 버튼 2개를 거치게 된다.",
+  "approach": "openSheetCtx()/closeSheetCtx()(cycle366/367)와 같은 '기존 아키텍처를 그대로 확장' 원칙을 따른다: (1) overlayEscapeTarget()에 fabPopOpen 매개변수를 추가해 4번째 분기로 Escape 시 closeFabPop()+#fab로 포커스 복원을 타게 한다. (2) syncOverlayInert()가 #fabPop의 .show 여부도 읽어 열려 있으면 #app(및 필요시 #fab 자신은 제외)에 inert/aria-hidden을 걸게 한다. (3) #fab에 aria-haspopup=\"menu\" aria-expanded(fabTap에서 toggle과 함께 true/false 반영), #fabPop에 role=\"menu\", 각 .fp-item에 role=\"menuitem\"을 추가한다. (4) DOM에서 #fabPop을 #fab 뒤로 옮기거나(leaner) #fabPop에 닫힌 동안 tabindex=-1/inert를 둬 숨겨진 상태에서 전혀 포커스 불가능하게 하고, fabTap()이 열릴 때 첫 .fp-item으로 포커스를 이동시키며 closeFabPop()이 #fab로 포커스를 되돌린다 — 이 변경이 바로 '영구 탭 가능한 숨은 버튼' 결함의 근본 수정이다. 기존 document click 리스너(index.html:6313-6318)·twNext()의 '.fab-pop' 분기(9163행)와 충돌 없는지 확인. 테스트: syncOverlayInert/overlayEscapeTarget/onSheetKeydown은 이미 각자 단위 테스트가 있을 가능성이 높으니(cycle366 openSheetCtx 패턴 참고) 해당 테스트 컨텍스트를 확장하거나 새 fabPopCtx를 좁게 만들어 (a) Escape로 팝업이 닫히고 포커스가 #fab로 돌아오는지, (b) 열렸을 때 #app에 inert가 걸리고 닫히면 해제되는지, (c) 닫힌 뒤 .fp-item이 tabIndex/inert로 포커스 불가인지, (d) aria-expanded가 열림/닫힘에 따라 true/false로 토글되는지 실행형으로 검증한다. index.html(및 CSS)을 건드리므로 APP_VERSION/sw.js CACHE 버전을 올린다."
+ },
  "history": [
-  {
-   "cycle": 364,
-   "phase": "critique",
-   "timestamp": "2026-11-17T12:12:09.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-364의 모든 주제(반복거래 override, 클라우드 동기화, undoToast WCAG, App Lock, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력 공휴일, 저축 만기 overdue, assetGainLossBadge, 전역검색(이미 존재), txRowCore/asset-item/date-picker/installBar의 role=button 중첩 접근성 패턴)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: 정산(settlement) 기능이 구조적으로 정확히 2귀속(ownerA/ownerB)으로 하드코딩돼 있다 — DB.owners는 기본값부터 3개('나','배우자','공용', index.html:2830)이고 사용자가 자유롭게 늘릴 수 있는데(5567행, 상한 없음), DB.settings.settle은 {ownerA,ownerB,ratioA} 구조뿐이고 settleConfigured()(6229행 부근)가 정확히 두 귀속만 요구한다. '같이 냈어요' 토글도 settleConfigured()가 true일 때만(즉 2귀속 설정이 끝났을 때만) 노출되고(6250/6281/6849행), logic.js의 settlementSummary/settlementItems(222-257행)는 제3의 귀속이 지불한 공용 지출을 합계에서 조용히 제외한다 — 앱 자체의 기본 3귀속 구성에서조차 핵심 기능인 공동지출 정산이 3인 분담을 전혀 지원하지 못한다. 러너업으로 (1) filteredHist()가 매 키입력/필터칩 토글마다 allTxns 전체 재계산·재정렬을 하는 성능 이슈, (2) exportData/doExport가 동기적으로 전체 JSON/CSV를 메모리에 쌓아 대용량 데이터에서 멈춤 위험, (3) ST.hist.preset 류 '도달 불가 UI 상태 필드' 패턴의 전수 점검도 검토했으나 우선순위는 settlement 2인 제약이 가장 높다고 판단. 이미 다룬 '가구 공유 인증'(household invite 인증 문제) 및 '정산 breakdown/알림'(기존 2인 모델의 표시/알림 문제)과는 범위가 다름 — 이번 건은 2인이라는 구조적 제약 자체. pending_advance_plan에 N인 정산 지원 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
   {
    "cycle": 364,
    "phase": "advance",
@@ -141,6 +138,13 @@
    "phase": "review",
    "timestamp": "2026-11-18T06:30:00.000Z",
    "summary": "develop 커밋(ef4c40c, acctSafety() 실행형 테스트 3건 추가)을 검토: acctSafety(id)는 planNegatives().find(n=>n.assetId===id)의 결과를 shortDate/comma로 포맷해 {lv,txt}로 돌려주는 1:1 파생 함수임을 index.html:7770-7774에서 직접 확인. 새 테스트 3건(마이너스 없는 통장은 ok/빈 문자열, 예정 지출로 마이너스 되는 통장은 date/min을 shortDate/comma로 정확히 포맷한 bad, savings처럼 isPlanAcct=false인 통장은 마이너스 baseAmount여도 ok로 취급)가 구현과 정확히 일치하고 엣지 케이스를 놓치지 않음. 테스트 전제(assert.ok(neg))도 타당함. node test/run.js 3574/3574 통과. 코드 변경 없음, 버그 없음.",
+   "commit": null
+  },
+  {
+   "cycle": 369,
+   "phase": "critique",
+   "timestamp": "2026-11-18T07:00:00.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-369에서 이미 다룬 모든 주제(반복거래, 정산 2인/N인/settleDueN/doSettleN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, PIN 브루트포스/생체인증, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력공휴일, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 아카이빙, openSheet/closeSheet/load() 실행형 테스트, duplicateRec 포커스, acctSafety, netlify 가격조회 안정성, SVG 차트 접근성)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: FAB '+' 팝업(#fabPop, index.html:1381-1382 / buildFabPop·fabTap·closeFabPop·fabPick: 6287-6312)이 #sheet/#dpModal/#dpWheel 세 오버레이가 공유하는 통합 접근성 시스템(overlayEscapeTarget: 10954, syncOverlayInert: 10994, onSheetKeydown: 11019)에 전혀 등록돼 있지 않음 — role/aria-haspopup/aria-expanded 부재, Escape로 안 닫힘, 배경 #app에 inert 안 걸림, DOM 순서(#fabPop이 #fab보다 먼저)상 forward-Tab으로 못 들어감에 더해, 실제 결함으로 closeFabPop()이 .show 클래스만 떼고 display:none 전환이 없어(CSS는 opacity:0만, 1185-1191행) 팝업을 한 번이라도 연 세션부터 숨겨진 <button class=\"fp-item\"> 2개가 영구적으로 탭 순서에 남는다. 코드(buildFabPop/fabTap/closeFabPop/overlayEscapeTarget/syncOverlayInert 구현)를 직접 읽어 agent 보고의 모든 line 인용을 확인했다. 가장 많이 쓰이는 진입점(onboarding도 이 버튼을 가리킴, 9163행)인데도 openSheet/closeSheet(cycle366/367)와 같은 공백 클래스라 최우선으로 판단. 러너업 (1) debtPlan* 계열(5984-6034행)이 debtWhatIfUpdate와 달리 실행형 테스트가 없음 — 실제 버그 증거 없는 순수 테스트 커버리지 공백이라 순위 낮춤, (2) fromDate 힌트 없는 88곳의 save() 호출 — _balCache 무효화 범위만 넓어질 뿐 정답은 항상 맞아 성능 debt일 뿐 정확성 문제 아님, 이미 수년간 점진적으로 인지되어온 사안이라 순위 낮춤. pending_advance_plan에 overlayEscapeTarget/syncOverlayInert 확장 + aria 속성 추가 + DOM 순서/tabindex 수정 + 포커스 이동 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
    "commit": null
   }
  ]
