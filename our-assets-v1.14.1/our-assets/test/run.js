@@ -259,7 +259,7 @@ const FUNCTIONS = [
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount', 'openQuickList',
-  'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts', 'goPlanTo', 'openNegList',
+  'backupDue', 'planNegatives', 'acctSafety', 'homeAlerts', 'updateAlerts', 'goPlanTo', 'openNegList',
   'openStaleMvReview', 'dismissStaleMv', 'pruneDismissedStaleMvIds',
   // dismissWipeBackup(app-evolve cycle330 develop)에 confirmSheet 확인을 추가한 걸 실행형으로
   // 검증하려면 로드가 필요하다 — confirmSheet/renderCurrent/toast 기존 공유 스텁만으로 충분하고,
@@ -31103,6 +31103,66 @@ test('planNegatives: 같은 이체라도 확인 완료(confirmed:true)면 정상
   assert.strictEqual(out[0].assetId, 'a1');
   assert.strictEqual(out[0].date, sandbox.TODAY);
   assert.strictEqual(out[0].min, -100000);
+});
+/* ---------- acctSafety: 통장 안전 신호등 (openPlanAsset의 통장 선택 목록에서 쓰임) ----------
+ * planNegatives()가 찾아낸 "예정대로면 마이너스로 내려가는 통장"을 id 하나로 조회해
+ * {lv,txt} 신호등으로 바꿔주는 함수인데, planNegatives/homeAlerts/openNegList는 모두 실행형
+ * 테스트가 있었지만 acctSafety 자체는 FUNCTIONS 밖이라 한 번도 직접 실행되지 않았다
+ * (app-evolve cycle369 develop). planNegatives가 쓰는 date/min을 그대로 shortDate/comma로
+ * 포맷하는 한 줄짜리 파생 로직이라도, 포맷 문자열이 실제로 "날짜 (요일) 금액원" 모양을
+ * 내는지와 안전한 통장은 ok로 비어 있는지를 회귀로 못박아 둔다. */
+test('acctSafety: 예정된 마이너스 전환이 없는 통장은 {lv:"ok", txt:""}을 돌려준다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 500000 }],
+    txns: [],
+    recurrences: [],
+  };
+  // acctSafety가 돌려주는 객체는 vm 샌드박스 realm에서 만들어져 호스트 realm의 {}와 구조는
+  // 같아도 "same structure but not reference-equal"로 deepStrictEqual이 실패한다(cycle131에서
+  // 처음 발견한 realm 경계 문제와 동일한 이유) — 필드별로 비교한다.
+  const s0 = sandbox.acctSafety('a1');
+  assert.strictEqual(s0.lv, 'ok');
+  assert.strictEqual(s0.txt, '');
+});
+test('acctSafety: 예정 지출로 마이너스가 될 통장은 planNegatives()의 date/min을 shortDate/comma로 포맷해 {lv:"bad"}로 돌려준다(회귀 확인)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 10000 }],
+    txns: [
+      { id: 't1', date: '2026-06-20', type: 'expense', category: '식비', amount: 15000, fromAssetId: 'a1' },
+    ],
+    recurrences: [],
+  };
+  const neg = sandbox.planNegatives().find(n => n.assetId === 'a1');
+  assert.ok(neg, '테스트 전제: 이 통장은 planNegatives()에 마이너스로 잡혀야 함');
+  const s = sandbox.acctSafety('a1');
+  assert.strictEqual(s.lv, 'bad');
+  assert.strictEqual(s.txt, `${sandbox.shortDate(neg.date)} ${sandbox.comma(neg.min)}원`, 'acctSafety의 문구는 항상 planNegatives()가 찾은 date/min을 그대로 shortDate/comma로 포맷한 것이어야 함(날짜·금액 불일치 방지, cycle242와 같은 이유)');
+  assert.strictEqual(s.txt, '06.20 (토) -5,000원');
+});
+test('acctSafety: 저축처럼 플랜 대상이 아닌 통장(isPlanAcct=false)은 마이너스 baseAmount여도 ok로 취급한다(회귀 확인)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 's1', name: '적금', owner: '나', type: 'savings', baseAmount: -10000 }],
+    txns: [],
+    recurrences: [],
+  };
+  const s1 = sandbox.acctSafety('s1');
+  assert.strictEqual(s1.lv, 'ok', 'planNegatives()가 아예 조회하지 않는 통장 종류라 마이너스여도 경고하면 안 됨');
+  assert.strictEqual(s1.txt, '');
 });
 test('homeAlerts: 변동 항목(quick)이 정확히 1건이면 quick, 2건으로 늘면 quickMulti로 묶인다(app-evolve cycle43)', () => {
   // varyingRecs()가 RANGE_FROM~TODAY 전체를 스캔하므로(cycle71), 이 테스트의 목적인
