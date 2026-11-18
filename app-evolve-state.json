@@ -1,147 +1,147 @@
 {
- "cycle": 370,
- "phase": "review",
- "pending_advance_plan": null,
- "history": [
-  {
-   "cycle": 365,
-   "phase": "review",
-   "timestamp": "2026-11-17T14:40:00.000Z",
-   "summary": "develop(cycle365, c45454e: 반복이체 '주말이면' WK 문구를 '주말·공휴일이면'/결과 요일 미특정으로 수정)을 검토했다. diff가 label/시트 제목·설명/WK 두 줄 설명만 바꾸고 shiftWeekend/isKrNonBusinessDay/recDates 등 로직은 전혀 건드리지 않았음을 확인. grep으로 index.html·logic.js 전체에서 '앞당겨 금요일'/'미뤄서 월요일'/'주말이면' 등 옛 문구의 잔존 참조가 0건임을 재확인(로직 주석에 남은 '금요일/월요일' 언급은 매주 반복 레이블 설명으로 이번 건과 무관). node test/run.js 3529/3529 재실행 통과, node --check sw.js/logic.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-   "commit": null
-  },
-  {
-   "cycle": 365,
-   "phase": "critique",
-   "timestamp": "2026-11-17T16:11:35.658Z",
-   "summary": "앱 전체를 한 걸음 물러나 비평(Explore 서브에이전트, 이미 다룬 반복거래/부채상환/정산/goalBehind/costBasis/NAME_MAX/클라우드동기화/fx폴백/팔레트/comma -0/undoToast WCAG/App Lock/사진 페이로드/전역검색(존재 확인됨)/role=button 중첩 전체 제외). DB.assetQtyLog가 archiveTxnsBefore(저장공간 정리)에서 유일하게 누락되어, DB.nwHistory/trash*와 달리 무제한 증가하며 활성 트레이더의 용량 경고가 정리 후에도 재발하는 문제를 발견. pending_advance_plan에 구체적 구현안(baseline 접기+tombstone+undo 확장+회귀테스트) 저장.",
-   "commit": null
-  },
-  {
-   "cycle": 365,
-   "phase": "advance",
-   "timestamp": "2026-11-17T17:12:27.297Z",
-   "summary": "critique(cycle365) 계획대로 DB.assetQtyLog가 archiveTxnsBefore(저장공간 정리)에서 누락돼 무제한 증가하던 문제를 고쳤다. logic.js에 순수 함수 archiveQtyLogGainBaselines(assetQtyLog,cutoffDate) 추가(archiveBaselines와 같은 \"지워지는 몫을 베이스라인에 접는다\" 원칙, realizedGain!=null인 cutoffDate 이전 기록만 자산별 합산 — totalRealizedGain과 동일 필터). archiveTxnsBefore(index.html)가 DB.txns와 나란히 DB.assetQtyLog도 cutoffDate 기준으로 잘라내고, 지워지는 realizedGain 합을 a.archivedRealizedGain 베이스라인으로 접어 넣은 뒤 제거된 항목을 DB.deletedIds에 톰스톤 처리(클라우드 merge가 되살리지 않게)하도록 확장. 기존 undoToast 클로저도 확장해 지워진 assetQtyLog 항목과 이전 archivedRealizedGain 값을 정확히 복원(0/미설정이 아니라 직전 값으로). openAssetQtyLog의 누적 실현손익 계산을 a.archivedRealizedGain+남은 기록 합계로 바꿔(baseline과 items 둘 다 없을 때만 null 유지) 정리를 거듭해도 합계가 끊기지 않게 했다. 테스트 15건 추가(archiveQtyLogGainBaselines 단위 4건, openAssetQtyLog 베이스라인 표시 3건, archiveTxnsBefore 통합 4건: 정리/undo/기존 베이스라인에 누적/realizedGain 없는 기록은 필드 안 생김). git stash로 index.html/logic.js를 수정 전 상태로 되돌려 새 테스트 10건이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3529->3540/3540 통과(vm 샌드박스 realm 문제로 빈 객체 비교 1건만 JSON.stringify 비교로 전환, 기존 cycle364 관례와 동일). node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.470->1.47.471, sw.js CACHE v737->v738. 범위가 커 보이는 yearRealizedGain(연도별 집계)의 과거 연도 archiving 영향은 범위 밖으로 남겨둠(budgetCarryFor의 archivedThroughDate 클램프와 같은 종류의 기존 한계, 이번 계획이 명시한 범위는 openAssetQtyLog 누적 합계뿐).",
-   "commit": null
-  },
-  {
-   "cycle": 366,
-   "phase": "develop",
-   "timestamp": "2026-11-17T18:19:08.000Z",
-   "summary": "index.html의 homeAlerts() 주석(\"3인 이상 정산(N인 분담, cycle364 advance)은 ... 알림 일반화는 다음 사이클로 미룸\")이 남겨둔 공백을 메웠다 — settleDue(정산 알림)가 참가자 2명일 때만 동작하고 3명 이상이면 homeAlerts()에서 아예 계산되지 않던 문제를 고쳤다. settleConfigured().participants.length===2 분기는 그대로 두고, else 분기에서 settlementSummaryN+settleUpTransfers(둘 다 cycle364가 이미 만든 순수 함수, 새 계산식 없음)로 송금 목록을 구해 그 총액(net 합이 0이 되게 맞춘 마지막 참가자 보정 덕에 빚/받을돈 총액이 항상 일치)에 기존 settleAlertBucket 문턱/버킷 판정을 그대로 적용하는 새 kind \"settleDueN\"을 추가했다. notifyAlertInfo(OS 푸시, key는 송금 쌍 from>to 집합+bucket, group은 기존 settleDue와 동일한 'settle'이라 뮤트 토글도 그대로 공유)/homeAlertCard(송금 1건이면 2인 때와 같은 문구, 2건 이상이면 총액+건수)에도 대칭 분기를 추가했다. 테스트 6건 추가(문턱 미달/중립 참가자로 송금 1건으로 줄어드는 경우/중립 없이 2건인 경우/settledThrough 제외/notifyAlertInfo 키 버킷팅/homeAlertCard 1건·다건 렌더) — index.html을 원래 커밋으로 되돌려 4건이 실제로 실패하는 것을 확인한 뒤 복원. node test/run.js 3540->3546/3546 통과, node --check logic.js/sw.js/test/run.js 및 추출한 인라인 <script> 블록 통과. APP_VERSION 1.47.471->1.47.472, sw.js CACHE v738->v739.",
-   "commit": "df51ae3"
-  },
-  {
-   "cycle": 366,
-   "phase": "review",
-   "timestamp": "2026-11-17T18:45:00.000Z",
-   "summary": "develop(cycle366, df51ae3: homeAlerts의 settleDueN 3인 이상 정산 알림 추가)을 검토했다. settlementSummaryN(logic.js:238)이 {byOwner,total}을 돌려주고 settleUpTransfers(byOwner)가 이를 그대로 받는 시그니처가 호출부와 일치함을 확인. settleUpTransfers가 채무자/채권자를 탐욕 매칭해 만드는 transfers 합계가 항상 total(마지막 참가자가 반올림 나머지를 떠안는 settlementSummaryN 덕에 net 합이 0)과 일치해 settleAlertBucket 문턱 판정이 2인 경로와 같은 기준으로 적용됨을 확인. notifyAlertInfo의 key가 송금 쌍(from>to) 집합+bucket으로만 잡혀 금액이 미세하게 바뀌어도 같은 버킷이면 dedupe되는 것이 2인 settleDue와 동일 원칙임을 확인. homeAlertCard의 새 카드가 기존 settleDue와 똑같이 class=\"home-alert mat\"/svg('users') 조합을 쓰고 있어 스타일 일관성도 확인(svg('users')가 1574행에 정의돼 있음을 grep으로 확인). transfers가 빈 배열(총액 0)이면 settleAlertBucket(0,...)이 null이라 알림이 안 뜨는 것도 로직상 확인. node test/run.js 3546/3546 재실행 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-   "commit": null
-  },
-  {
-   "cycle": 366,
-   "phase": "critique",
-   "timestamp": "2026-11-17T19:05:00.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-366의 모든 주제(반복거래/음력공휴일/WK 문구, 부채상환, 정산 breakdown/알림/N인 확장/settleDueN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재 확인됨), txRowCore/asset-item/date-picker/installBar role=button 중첩, assetQtyLog 저장공간 정리 누락)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: openSheet()(index.html 약 11030-11126행, 거래/반복거래/자산/목표/설정/PIN/CSV매핑 등 거의 모든 화면이 공유하는 바텀시트 모달 핵심 구현)가 test/run.js에서 실제로 실행되는 적이 전혀 없다 — openSheet를 쓰는 거의 모든 테스트가 no-op 스텁(`openSheet: (html) => { sandbox.lastSheetHtml = html; }`, 954/9458/25523/29245/29265/29280/29643행 등 수십 곳)을 주입하고, extractFunction('openSheet')(38753/38981/38985행)은 정규식 문자열 추출만 할 뿐 실행하지 않는다. 포커스 반환(_sheetReturnFocus), aria-labelledby, inert/syncOverlayInert() 접근성 게이트, 높이 고정(applyHeight/attachDetent), pull-to-close 드래그(wireSheetGestures), 엣지 스와이프 뒤로가기(ensureEdgeGesture/makePrev, window._pkBack 연동) 등 ~100줄의 비trivial 로직이 CI 실행 커버리지 0건 — 'review' 단계가 여러 사이클 연속 '이상 없음'을 보고해온 것도 이 클래스의 버그를 원래부터 잡지 못하고 있었을 가능성을 시사한다. 러너업(openTxSheet/openRecSheet/renderMenu의 스텁 사용 — openSheet 커버리지 개선이 이들 위험도 함께 낮춰 별도 작업 불필요; filteredHist/renderHistory 성능 — 이미 _histCache+20페이지네이션으로 완화됨)은 순위를 낮게 매겼다. pending_advance_plan에 test/domstub.js 확장(getBoundingClientRect, activeElement 추적, synthetic touch 이벤트)과 openSheet/closeSheet/syncOverlayInert/wireSheetGestures/attachDetent/sheetFocusables/ensureEdgeGesture를 FUNCTIONS(실제 실행)로 옮기는 구체적 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
-  {
-   "cycle": 366,
-   "phase": "advance",
-   "timestamp": "2026-11-17T21:19:00.740Z",
-   "summary": "critique(cycle366)의 계획대로 openSheet() 바텀시트 생명주기를 실행형으로 테스트했다 — 다만 계획이 제안한 FUNCTIONS 전역 목록 등록 방식은 폐기했다(openSheet를 main shared sandbox의 FUNCTIONS에 올리면 그 sandbox를 공유하는 기존 수백 개 테스트가 전부 openSheet의 실제 DOM 부작용을 받게 돼 범위가 한 사이클을 훨씬 넘어섬) — 대신 wireSheetGestures/ensureEdgeGesture가 이미 쓰던 sheetGestureCtx와 같은 \"좁은 ad hoc vm 컨텍스트\" 패턴을 그대로 따라 openSheetCtx()를 새로 만들었다. 조사해보니 wireSheetGestures/ensureEdgeGesture 자체는 cycle209/210 때 이미 이 패턴으로 실행형 전환이 끝나 있었다(critique의 \"전혀 실행된 적 없다\"는 진술과 달리) — 남은 공백은 openSheet 자신(aria-labelledby 연결/포커스 트랩/syncOverlayInert)과 sheetFocusables/applyHeight/attachDetent였다. domstub.js를 확장해 (1) innerHTML 대입이 이제 parseHTMLInto()로 실제 자식 엘리먼트를 만들고(기존엔 문자열만 저장 — openSheet가 querySelector(\"h3,.pk-h\")로 그 결과를 되읽는 걸 실행형으로 보려면 실제 파싱이 필요했음, getter는 여전히 원본 문자열 반환), (2) contains()/focus()/blur()+document.activeElement 추적(모듈 스코프 변수, createDocument() 호출마다 리셋), (3) getBoundingClientRect() 기본값(0 사각형), (4) disabled/tabIndex getter/setter, (5) \"[attr]\" 속성 셀렉터(sheetFocusables가 쓰는 \"[href]\"/\"[tabindex]\")를 추가했다. innerHTML이 실제 파싱되면서 기존 undoToast 실행형 테스트(37505행 근처)가 \"innerHTML 대입은 children을 비울 뿐 파싱 안 함\"이라는 옛 domstub 동작에 의존해 t.children[0]을 버튼으로 가정하던 게 깨져(실제로는 span이 먼저 생김) t.querySelector(\"button\")으로 고쳤다 — 이게 오히려 실제 브라우저 동작과 더 가까워진 것이지 새 버그는 아님(다른 domstub 사용 테스트 6곳을 모두 훑어 innerHTML 뒤 위치 의존 children 인덱싱이 더 없음을 확인). openSheetCtx에서 openSheet/syncOverlayInert/sheetFocusables/applyHeight/attachDetent/wireSheetGestures/ensureEdgeGesture/ovHistPush/ovHistPop을 함께 실제 실행하는 테스트 10건 추가: (1)(2) h3 제목 있음/없음에 따른 aria-labelledby 연결·해제와 show 클래스, syncOverlayInert() 실제 호출로 #app/#fab에 inert가 걸리되 dpModal/dpWheel이 안 열려있으면 #sheet 자신엔 안 걸림, (3)(4) topBtn 기본값(sheet-x)/커스텀 둘 다 열릴 때 그쪽으로 실제 포커스 이동(document.activeElement), (5) sheetFocusables가 disabled/tabindex=-1을 실제로 제외, (6) syncOverlayInert가 dpModal 열림에 따라 #sheet에도 inert를 걸고 떼는 두 분기, (7)(8) applyHeight의 확장 전/후 cap·min-height 계산, (9)(10) attachDetent의 44px 임계값 도달 시 1회성 확장과 드래그 중 가드. closeSheet() 자체(ST.recSel/goalSel/TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING/applyForeignSave/applyPendingCloudConflictMerge 등 훨씬 넓은 전역)는 이번 범위 밖으로 명시적으로 남겨둠(다음 cycle 후보). 검증: openSheet의 aria-labelledby 대입과 syncOverlayInert의 dpOn 판정을 각각 임시로 깨서(index.html을 임시 수정 후 git checkout으로 원복, 실제 diff에는 포함 안 됨) 새 테스트 2건이 실제로 FAIL함을 직접 확인했다. 이번 사이클은 test/domstub.js·test/run.js만 수정했고 index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 올리지 않는다(사용자에게 배포되는 내용이 바뀐 게 없음). node test/run.js 3546->3556/3556 통과. node --check logic.js/sw.js/test/run.js/test/domstub.js 통과.",
-   "commit": null
-  },
-  {
-   "cycle": 367,
-   "phase": "develop",
-   "timestamp": "2026-11-17T21:50:00.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-366의 모든 주제(반복거래/주말·공휴일 조정, 정산 2인/N인/settleDueN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 저장공간 정리, openSheet 실행형 테스트)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: doSettleN()(index.html, N인 정산 완료 처리, cycle364 advance에서 추가)이 송금 여러 건 중 중간에 현금성 자산이 없는 참가자가 있어 루프가 break돼도(created.length>0이기만 하면) 뒤이어 DB.settings.settledThrough=TODAY를 그대로 실행하고 '정산 완료로 표시했어요' 성공 undoToast를 띄워 방금 띈 실패 toast를 덮어썼다 — 바로 위 함수 주석(confirmSettlementN 위, cycle364 advance 작성)이 명시한 의도('부분 실패 시... 안내만 하고 멈춘다')와 실제 동작이 어긋났고, 그 결과 미지급 참가자의 몫이 다음 openSettlement() 호출(settledThrough+1부터 시작)에서 조용히 영구 누락된다. 기존 테스트(doSettleN 부분 실패 테스트)는 DB.txns.length와 toast 문구만 확인해 이 회귀를 못 잡고 있었다. 수정: doSettleN에 failed 플래그를 추가해 루프 중 실패가 있었으면(생성된 거래가 1건 이상이어도) settledThrough를 당기지 않고 성공 undoToast도 띄우지 않은 채 save/invalidateBalances/renderCurrent만으로 멈춘다(이미 만든 거래는 그대로 유지, 주석의 원래 의도와 일치). 기존 부분 실패 테스트에 settledThrough가 null로 유지되는지, lastUndo가 null로 유지되는지(성공 토스트가 실패 토스트를 덮지 않는지) 단언 2개를 추가 — git stash로 index.html을 되돌려 새 단언이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3556/3556 통과(기존 테스트 수 그대로, 신규 test() 없이 기존 테스트에 단언만 추가). node --check sw.js/test/run.js 통과, index.html은 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.472->1.47.473, sw.js CACHE v739->v740.",
-   "commit": "9888a6f"
-  },
-  {
-   "cycle": 367,
-   "phase": "review",
-   "timestamp": "2026-11-17T22:30:00.000Z",
-   "summary": "develop(cycle367, 9888a6f: doSettleN 부분 실패 시 settledThrough를 당기고 성공 토스트가 실패 toast를 덮어쓰던 회귀 수정)을 검토했다. diff를 읽고 로직을 직접 추적: failed 플래그가 루프 중 break 직전에만 true로 설정되고, created.length===0(아무 것도 못 만든 경우)이면 기존처럼 if(!created.length)return;에서 먼저 걸려 failed 분기 자체에 도달하지 않음을 확인 — 두 조건이 서로 겹치지 않아 분기 순서가 안전함. failed===true일 때 save/invalidateBalances/renderCurrent만 실행하고 closeSheet()/DB.settings.settledThrough 대입/undoToast를 모두 건너뛰므로, 이미 만든 거래(배우자→나)는 유지되고 다음 openSettlement() 호출이 같은 settledThrough부터 다시 시작해 미지급 참가자(아이) 몫이 더는 누락되지 않음을 확인. toast()/undoToast()가 서로 다른 DOM 요소(class 'toast' vs 'toast undo')를 만드는 별개 함수라 sandbox.lastToast/lastUndo가 독립적으로 추적됨을 grep으로 재확인 — 새 단언(lastUndo===null)이 '성공 토스트가 실패 안내를 덮지 않는다'를 실제로 검증함. 호출부 confirmSheet(5948행)가 자신의 확인 시트를 닫은 뒤 doSettleN을 실행하는 구조라, doSettleN이 실패 시 closeSheet()를 호출하지 않아도(의도적으로 settlement 시트를 열어둠) 깨지는 다른 화면이 없음을 확인. node test/run.js 3556/3556 재실행 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-   "commit": null
-  },
-  {
-   "cycle": 367,
-   "phase": "critique",
-   "timestamp": "2026-11-18T00:00:00.000Z",
-   "summary": "general-purpose 서브에이전트에게 cycle340-367에서 이미 다룬 모든 주제(반복거래 주말·공휴일 조정, 정산 2인/N인/settleDueN/doSettleN 부분실패, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), txRowCore/asset-item/date-picker/installBar의 role=button 중첩, assetQtyLog 저장공간 정리, openSheet 실행형 테스트(cycle366))를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: closeSheet()(index.html:11134, 모든 바텀시트의 유일한 해제 함수 — 스와이프닫기/스크림탭/Escape/뒤로가기/각 시트 버튼이 전부 공유)가 실제로 실행되는 테스트가 전혀 없다 — 이를 쓰는 테스트는 전부 no-op 스파이로 스텁하거나(test/run.js:878 `closeSheetCalls++`) extractFunction('closeSheet')로 소스 텍스트 regex만 검사한다(test/run.js:5875-5879, 23302-23306). 이 함수는 TAB_SYNC_PENDING(다른 탭의 동시 수정 적용)과 CLOUD_CONFLICT_PENDING(클라우드 동기화 충돌 적용)을 소비하는 유일한 지점이자, sheet/scrim 클래스·inline style 제거, sheetEdgeGlobal 제거, syncOverlayInert(), _sheetReturnFocus 복원·null화, ST.recSel/ST.goalSel 해제까지 한 함수에서 처리한다 — cycle366 advance가 openSheet/syncOverlayInert/sheetFocusables/applyHeight/attachDetent를 실행형으로 돌리면서 명시적으로 범위 밖에 남겨둔 바로 그 공백. 순서가 꼬이거나 포커스/클래스 복원이 빠지면 멀티탭/멀티기기 상태가 조용히 깨지거나 스크린리더 포커스가 끊기는데, 현재 스위트는 이 종류의 회귀를 전혀 못 잡는다. 러너업(doExport의 대용량 메모리 리스크 — cycle364에서 이미 낮은 우선순위로 거론됨, ST.hist.preset류 도달불가 UI상태 전수조사 — cycle364에서 범위가 너무 커 보류됨)은 순위를 낮게 매김. pending_advance_plan에 closeSheetCtx() (cycle366의 openSheetCtx() 패턴을 그대로 따름) 신설 계획 저장: TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING 소비 순서·재진입 안전성, 클래스/style 정리, _sheetReturnFocus 복원·null화, ST.recSel/goalSel 조건부 해제를 실행형으로 검증. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
-  {
-   "cycle": 367,
-   "phase": "advance",
-   "timestamp": "2026-11-18T01:11:12.416Z",
-   "summary": "critique(cycle367)의 계획대로 closeSheet()(모든 바텀시트 해제가 공유하는 유일한 함수)를 실행형으로 테스트했다 — openSheetCtx()(cycle366)와 같은 \"좁은 ad hoc vm 컨텍스트\" 패턴을 그대로 따라 closeSheetCtx()를 새로 만들고, applyForeignSave/applyPendingCloudConflictMerge/updateSelBottom은 각자 이미 단위 테스트가 있어 본문까지 실행하지 않고 스파이로 남겼다. domstub.js에 DomNode.remove()(부모에서 떼어내기, closeSheet의 eg.remove() 실행에 필요)를 추가했다. 테스트 7건 추가: (1) #sheet/#scrim의 show/expanded 클래스·inline style이 실제로 지워지고 #sheetEdgeGlobal이 있으면 제거되며 syncOverlayInert() 호출로 #app의 inert/aria-hidden도 실제로 떼어지는지, (2) #sheetEdgeGlobal이 없을 때 조용히 넘어가는지(회귀), (3) _sheetReturnFocus가 document.contains일 때만 실제로 focus()되고 호출 후 항상 null화되는지, (4) 떨어져나간 참조면 focus() 없이 null화만 하는지, (5) ST.recSel/goalSel이 활성이었을 때만 해제·clear되고 updateSelBottom이 그만큼만 불리며 둘 다 꺼져 있으면 아예 안 불리는지(recSel만/goalSel만/둘 다 꺼짐 3개 서브케이스), (6) TAB_SYNC_PENDING이 applyForeignSave 호출 \"전에\" null화됨(재진입 안전성, 스파이가 호출 시점의 전역값을 함께 캡처해 검증)과 CLOUD_CONFLICT_PENDING이 같은 close 1회로 함께 소비되는지, (7) 둘 다 안 서 있으면 두 스파이 모두 안 불리는지(회귀). 검증: index.html의 TAB_SYNC_PENDING null화를 applyForeignSave 호출 \"뒤\"로 임시로 옮겨(실제 diff엔 없음, 복원함) (6)번 테스트가 실제로 FAIL하는 것을 직접 확인했다. node test/run.js 3556->3563/3563 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/domstub.js·test/run.js만 수정했고 index.html/sw.js는 건드리지 않아(cycle366과 동일한 이유) APP_VERSION/CACHE 버전은 올리지 않는다. pending_advance_plan null로 비움.",
-   "commit": null
-  },
-  {
-   "cycle": 368,
-   "phase": "develop",
-   "timestamp": "2026-11-18T02:10:00.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-367의 모든 주제(반복거래, 정산 2인/N인/settleDueN/doSettleN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 저장공간 정리, openSheet/closeSheet 실행형 테스트)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: duplicateRec()(index.html, 반복거래 복제)의 바로 위 주석이 \"거래의 duplicateTx·자산의 duplicateAsset과 같은 이유로\" 동작한다고 명시하는데도, 실제로는 duplicateTx(_txFocusAmt)/duplicateAsset(asName)/duplicateGoal(goalName)이 공통으로 갖고 있는 '복제 후 구분용 필드에 바로 포커스'하는 setTimeout(...,300) 호출이 빠져 있었다 — 반복 목록(openRecManage())의 식별자가 memo||category이므로, 복제로 비슷한 구독 등을 등록할 때마다 사용자가 메모를 직접 탭해 들어가야 했고 깜빡하면 메모가 같은 복제본 2건이 목록에서 구분이 안 되는 실사용 공백이었다. 수정: duplicateRec() 끝에 duplicateAsset/duplicateGoal과 동일한 setTimeout(()=>{const n=$('rMemo');if(n){n.focus();n.select()}},300)을 추가(placeholder가 '예: 넷플릭스 구독'인 바로 그 필드). 테스트 2건 추가 — (1) setTimeout이 300ms로 걸리고 타이머 실행 전엔 포커스가 안 가며 실행 후 #rMemo에 focus()+select()가 호출되는지(sandbox.setTimeout/sandbox.$를 캡처하는 기존 goalQInput 테스트와 동일한 관례), (2) 시트가 이미 닫혀 #rMemo가 null이어도 타이머 실행이 에러 없이 조용히 넘어가는지(회귀) — 수정 전 index.html로 git stash해 두 테스트가 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3563->3565/3565 통과. node --check sw.js/test/run.js/test/domstub.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.473->1.47.474, sw.js CACHE v740->v741.",
-   "commit": null
-  },
-  {
-   "cycle": 368,
-   "phase": "review",
-   "timestamp": "2026-11-18T03:07:25.921Z",
-   "summary": "develop(cycle368, d01daba: duplicateRec()에 duplicateAsset/duplicateGoal과 동일한 복제 후 #rMemo 포커스+select() 추가)을 검토했다. duplicateAsset(4154행)/duplicateGoal 패턴과 바이트 단위로 동일한 setTimeout(()=>{...},300) 호출임을 diff로 확인. renderRecSheet()는 자체적으로 포커스를 옮기는 코드가 없어 충돌 없음을 확인(순수 렌더 함수, openSheet가 여는 시트의 포커스는 openSheet 자신이 topBtn 등으로 처리하고 duplicateRec의 setTimeout 300ms가 그보다 늦게 실행돼 최종적으로 #rMemo에 안착). 반복 목록(openRecManage())의 식별자가 memo||category인 점도 재확인해 포커스 대상(#rMemo) 선택이 타당함을 확인. #rMemo가 없을 때(시트가 이미 닫힌 경우) focus/select를 호출하지 않는 가드도 duplicateAsset/duplicateGoal과 동일. node test/run.js 3565/3565 재실행 통과, node --check sw.js/test/run.js/test/domstub.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-   "commit": null
-  },
-  {
-   "cycle": 368,
-   "phase": "critique",
-   "timestamp": "2026-11-18T04:00:00.000Z",
-   "summary": "general-purpose 서브에이전트(fork)에게 cycle340-368에서 이미 다룬 모든 주제(role=button 중첩, 전역검색(존재), 정산 2인/N인/알림, 음력공휴일, 로그인/PIN 브루트포스 방어(PBKDF2 120k+지수백오프), 생체인증, SRI(의도적 보류), openSheet/closeSheet 실행형 테스트, assetQtyLog 아카이빙, 카테고리 팔레트, duplicateRec 포커스 등)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: load()(index.html, 앱 부팅 시 localStorage에서 DB를 읽는 유일한 진입점 — 정상/JSON.parse·migrate 실패(손상)/localStorage.getItem 실패(스토리지 차단)/raw 없음(최초부팅) 네 분기)가 test/run.js의 FUNCTIONS 목록에 없어(grep 확인) 실행형으로 전혀 실행되지 않는다. findCorruptBackupKeys/pruneOldCorruptKeys/sanitizeBackup 같은 하위 헬퍼만 개별 테스트돼 있고, load() 자신의 분기 분배·손상 백업 보존(dataKey()+'__corrupt_'+Date.now())·migrate 호출 누락 조합은 전혀 검증되지 않는다. index.html 4272행 주석이 과거 실제로 'load()가 migrate() 없이 곧장 save()하던' 버그를 언급하는데 이것도 코드 리뷰로만 잡혔던 전례 — openSheet/closeSheet(cycle366/367)와 같은 공백 클래스이자, 사용자 데이터 보존/복구를 결정하는 핵심이라 최우선으로 판단. 러너업으로 (1) SVG 차트(nwChartPath/allocSeriesChartPath) 접근성 — 이미 role=\"img\"+aria-label+키보드 탐색 완비로 공백 없음, (2) netlify 가격조회 함수(stock/rates/crypto) 안정성 — 이미 다단 폴백·부분성공·레이트리밋·데드라인 budgetMs로 매우 성숙, 공백 없음을 확인해 순위를 낮게 매김. pending_advance_plan에 load() FUNCTIONS 등록 및 4분기 실행형 테스트 추가 계획 저장(openSheet 사례처럼 메인 공유 sandbox 영향이 크면 좁은 ad hoc 컨텍스트로 대체 가능함을 명시). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
-  {
-   "cycle": 368,
-   "phase": "advance",
-   "timestamp": "2026-11-18T05:13:06.518Z",
-   "summary": "critique(cycle368)의 계획대로 load()(index.html, 앱 부팅 시 localStorage에서 DB를 읽는 유일한 진입점 — 정상/저장소 차단(getItem throw)/데이터 손상(JSON.parse 또는 migrate() throw)/최초부팅(raw 없음) 네 분기)를 실행형으로 테스트했다. 계획이 제안한 'FUNCTIONS 메인 목록 등록' 대신 openSheetCtx/closeSheetCtx/makeSaveCtx와 같은 '좁은 ad hoc vm 컨텍스트' 패턴을 택했다 — save()는 93곳의 다른 호출부가 전역 no-op 스텁에 기대고 있어(makeSaveCtx 주석) 메인 sandbox에서 실제 로직으로 승격시키면 무관한 테스트가 깨지고, seed()/emptyDB()/toastFail()도 load() 검증 목적상 실제 로직을 돌릴 필요가 없어 메인 sandbox를 넓힐 이유가 없었다. test/run.js에 loadCtx() 헬퍼를 추가해 extractFunction('load')만 vm에 태우고, migrate/seed/emptyDB/toastFail/save/localStorage.getItem·setItem/dataKey/STORAGE_OK/SESSION/DB/TAB_SAVED_AT/DB_JSON_LEN은 전부 스파이·플레인 프로퍼티로 좁은 컨텍스트에 직접 채웠다(메인 sandbox는 전혀 건드리지 않음). 테스트 7건 추가: (1)(2) getItem이 throw할 때 STORAGE_OK=false로 내려가고 SESSION 없음/있음에 따라 seed()/emptyDB()로 폴백해 migrate()까지 호출한 뒤 save() 없이 toastFail만 띄우고 끝나는지, (3) raw가 JSON.parse조차 안 되는 문자열일 때 원본이 dataKey()+__corrupt_+타임스탬프 키로 보존되고 toastFail+리셋(seed/migrate/save)이 일어나는지, (4) JSON.parse는 성공해도 migrate()가 던지면(데이터 자체 손상) 손상 분기와 동일하게 처리되는지(migrate가 첫 호출에서만 던지고 리셋 후 두 번째 호출에서 성공하는 스테이트풀 스파이로 검증), (5) raw가 정상 JSON일 때 DB가 그 값 그대로 채워지고 migrate()가 반드시 호출되며 TAB_SAVED_AT/DB_JSON_LEN도 채워지는지(index.html 주석이 언급하는 과거 'load()가 migrate() 없이 그대로 쓰던' 버그의 회귀 방지 — 실제로 index.html에서 정상 분기의 migrate() 호출을 임시로 지워보니 이 테스트와 (4)가 둘 다 FAIL하는 것을 직접 확인한 뒤 git checkout으로 원복했다), (6) raw가 없는 최초부팅에서 SESSION 여부에 따라 seed()/emptyDB()+migrate()+save()가 호출되는지. vm 컨텍스트(별도 realm)에서 JSON.parse로 만들어진 객체는 Object.prototype이 테스트 파일 쪽과 달라 assert.deepStrictEqual이 거짓 FAIL을 내는 realm 문제가 (5)에서 발생해(cycle364 등 기존 관례대로) JSON.stringify 비교로 전환했다. node test/run.js 3565->3571/3571 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/run.js만 수정했고 index.html/sw.js는 건드리지 않아(cycle366/367과 동일한 이유) APP_VERSION/CACHE 버전은 올리지 않는다. pending_advance_plan null로 비움.",
-   "commit": null
-  },
-  {
-   "cycle": 369,
-   "phase": "develop",
-   "timestamp": "2026-11-18T06:11:56.029Z",
-   "summary": "통장 안전 신호등 acctSafety(id)(openPlanAsset 통장 선택 목록에서 쓰임)가 FUNCTIONS 목록 밖에 있어 planNegatives()/homeAlerts()/openNegList()는 모두 실행형 테스트가 있는데도 정작 그 위에서 파생되는 acctSafety 자체는 한 번도 실제로 실행된 적이 없었음을 Explore로 확인했다(cycle340-368에서 다룬 반복거래/정산/goalBehind/costBasis/NAME_MAX/클라우드동기화/fx폴백/팔레트/comma -0/undoToast WCAG/App Lock/사진 페이로드/가구공유/RANGE_FROM/visibilitychange/SRI/CSP/localStorage 쿼터/카테고리 rename-merge/검색어 파싱/CSV 카테고리 분리/저축만기 overdue/assetGainLossBadge/전역검색(존재)/role=button 중첩/assetQtyLog 아카이빙/openSheet·closeSheet·load() 실행형 테스트/duplicateRec 포커스는 모두 배제). FUNCTIONS 목록에 acctSafety 추가 후 실행형 테스트 3건을 신설: (1) 예정된 마이너스가 없는 통장은 {lv:\"ok\",txt:\"\"}, (2) 예정 지출로 마이너스가 될 통장은 planNegatives()의 date/min을 shortDate/comma로 정확히 포맷해 {lv:\"bad\"}를 돌려주는지(날짜·금액 불일치 방지, cycle242와 같은 이유로 리터럴 값까지 확인), (3) savings처럼 플랜 대상이 아닌 통장(isPlanAcct=false)은 baseAmount가 마이너스여도 ok로 취급하는지. deepStrictEqual의 vm realm 교차 비교 실패(cycle131과 동일 원인)를 피해 필드별 strictEqual로 비교. 버그는 발견되지 않았고 순수 테스트 커버리지 보강이다. node test/run.js 3571->3574/3574 통과. index.html/sw.js 변경 없음(test/run.js만 수정)이라 APP_VERSION/CACHE 버전업 불필요.",
-   "commit": null
-  },
-  {
-   "cycle": 369,
-   "phase": "review",
-   "timestamp": "2026-11-18T06:30:00.000Z",
-   "summary": "develop 커밋(ef4c40c, acctSafety() 실행형 테스트 3건 추가)을 검토: acctSafety(id)는 planNegatives().find(n=>n.assetId===id)의 결과를 shortDate/comma로 포맷해 {lv,txt}로 돌려주는 1:1 파생 함수임을 index.html:7770-7774에서 직접 확인. 새 테스트 3건(마이너스 없는 통장은 ok/빈 문자열, 예정 지출로 마이너스 되는 통장은 date/min을 shortDate/comma로 정확히 포맷한 bad, savings처럼 isPlanAcct=false인 통장은 마이너스 baseAmount여도 ok로 취급)가 구현과 정확히 일치하고 엣지 케이스를 놓치지 않음. 테스트 전제(assert.ok(neg))도 타당함. node test/run.js 3574/3574 통과. 코드 변경 없음, 버그 없음.",
-   "commit": null
-  },
-  {
-   "cycle": 369,
-   "phase": "critique",
-   "timestamp": "2026-11-18T07:00:00.000Z",
-   "summary": "Explore 서브에이전트에게 cycle340-369에서 이미 다룬 모든 주제(반복거래, 정산 2인/N인/settleDueN/doSettleN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, PIN 브루트포스/생체인증, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력공휴일, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 아카이빙, openSheet/closeSheet/load() 실행형 테스트, duplicateRec 포커스, acctSafety, netlify 가격조회 안정성, SVG 차트 접근성)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: FAB '+' 팝업(#fabPop, index.html:1381-1382 / buildFabPop·fabTap·closeFabPop·fabPick: 6287-6312)이 #sheet/#dpModal/#dpWheel 세 오버레이가 공유하는 통합 접근성 시스템(overlayEscapeTarget: 10954, syncOverlayInert: 10994, onSheetKeydown: 11019)에 전혀 등록돼 있지 않음 — role/aria-haspopup/aria-expanded 부재, Escape로 안 닫힘, 배경 #app에 inert 안 걸림, DOM 순서(#fabPop이 #fab보다 먼저)상 forward-Tab으로 못 들어감에 더해, 실제 결함으로 closeFabPop()이 .show 클래스만 떼고 display:none 전환이 없어(CSS는 opacity:0만, 1185-1191행) 팝업을 한 번이라도 연 세션부터 숨겨진 <button class=\"fp-item\"> 2개가 영구적으로 탭 순서에 남는다. 코드(buildFabPop/fabTap/closeFabPop/overlayEscapeTarget/syncOverlayInert 구현)를 직접 읽어 agent 보고의 모든 line 인용을 확인했다. 가장 많이 쓰이는 진입점(onboarding도 이 버튼을 가리킴, 9163행)인데도 openSheet/closeSheet(cycle366/367)와 같은 공백 클래스라 최우선으로 판단. 러너업 (1) debtPlan* 계열(5984-6034행)이 debtWhatIfUpdate와 달리 실행형 테스트가 없음 — 실제 버그 증거 없는 순수 테스트 커버리지 공백이라 순위 낮춤, (2) fromDate 힌트 없는 88곳의 save() 호출 — _balCache 무효화 범위만 넓어질 뿐 정답은 항상 맞아 성능 debt일 뿐 정확성 문제 아님, 이미 수년간 점진적으로 인지되어온 사안이라 순위 낮춤. pending_advance_plan에 overlayEscapeTarget/syncOverlayInert 확장 + aria 속성 추가 + DOM 순서/tabindex 수정 + 포커스 이동 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
-  {
-   "cycle": 369,
-   "phase": "advance",
-   "timestamp": "2026-11-18T08:10:00.000Z",
-   "summary": "critique(cycle369)의 계획대로 FAB '+' 팝업(#fabPop)을 #sheet/#dpModal/#dpWheel이 공유하는 통합 오버레이 접근성 시스템(overlayEscapeTarget/syncOverlayInert/onSheetKeydown)에 4번째 상태로 편입했다. overlayEscapeTarget(dpWheelOpen,dpModalOpen,sheetOpen,fabPopOpen)에 4번째 매개변수를 추가해 wheel>modal>sheet>fab 순(실제 z-index 56<101 순서와 일치)으로 'fab'을 돌려주게 했다(기존 3-인자 호출은 undefined가 falsy라 하위호환 유지, closeTopOverlayLevel도 함께 갱신해 fab 분기에서 closeFabPop() 호출). syncOverlayInert()가 #fabPop의 show 여부도 읽어 fabPop만 열려 있을 때(시트/날짜피커 없이) #app에만 inert/aria-hidden을 걸고 #fab 자신은 제외(팝업을 연 트리거이자 닫을 때 포커스가 돌아갈 곳이라 inert에서 빼야 함) — 시트가 열려 있을 때의 기존 #app/#fab 동시 inert 동작은 그대로 유지. onSheetKeydown()에 target==='fab' 분기를 추가해 Escape 시 closeFabPop()+#fab로 포커스 복원, Tab 시 top을 $('fabPop')으로 잡아 그 안의 .fp-item 2개만 순환하는 포커스트랩이 걸리게 했다(top 삼항 체인에 fab 케이스만 추가, 기존 'else closeSheetGuarded();' 텍스트는 그대로 둬 이를 검사하는 기존 regex 테스트와 호환). #fab에 aria-haspopup=\"menu\"/aria-expanded(fabTap/closeFabPop이 true/false로 토글), #fabPop에 role=\"menu\"/aria-label, 각 .fp-item에 role=\"menuitem\"을 추가. 실제 결함 수정: #fabPop에 기본 inert 속성을 HTML에 박아두고(닫힌 초기 상태) fabTap()이 열 때 removeAttribute('inert')+syncOverlayInert()+첫 .fp-item 포커스, closeFabPop()이 닫을 때(토글/outside click/fabPick/Escape/onboarding twNext·twPrev 등 모든 경로가 공유) 다시 setAttribute('inert','')+syncOverlayInert() — DOM 순서를 바꾸는 대신(더 큰 변경) inert만으로 네이티브 포커스 순회에서 완전히 제외시켜, 팝업을 한 번이라도 연 세션부터 숨겨진 .fp-item 2개가 영구적으로 Tab 가능하던 결함을 근본적으로 고쳤다. 테스트: overlayEscapeTarget에 fabPopOpen 관련 3건(fab 단독/sheet 동시 true 시 sheet 우선/3-인자 하위호환), 좁은 ad hoc vm 컨텍스트 fabPopCtx()(openSheetCtx/closeSheetCtx와 같은 패턴)를 신설해 buildFabPop/fabTap/closeFabPop/syncOverlayInert/onSheetKeydown을 실제 실행하는 테스트 8건(열기 시 buildFabPop+show+inert해제+aria-expanded=true+첫 항목 포커스, 토글로 닫을 때 show제거+inert복귀+aria-expanded=false+vibrate 2회, fabPop 단독 열림 시 #app만 inert(#fab 제외)이고 닫으면 해제, 시트가 열려 있으면 기존처럼 #app/#fab 모두 inert(회귀 가드), #fabPop이 DOM에 없을 때 closeFabPop 가드, Escape로 닫히고 포커스가 #fab로 복귀, Tab 트랩이 .fp-item 2개만 순환(forward/shift 양방향), 아무 오버레이도 없으면 조기 반환)을 추가했다. 검증: closeFabPop()의 inert 재설정 줄을 임시로 지워보니(실제 diff엔 없음, 바로 복원) 새 테스트 2건이 실제로 FAIL하는 것을 직접 확인했다. node test/run.js 3574->3585/3585 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.474->1.47.475, sw.js CACHE v741->v742. pending_advance_plan null로 비움.",
-   "commit": null
-  },
-  {
-   "cycle": 370,
-   "phase": "develop",
-   "timestamp": "2026-11-18T10:14:21.000Z",
-   "summary": "CSV 가져오기 중복 판정 키(csvDedupeKey, logic.js)가 날짜/구분/금액/카테고리/자산/메모 필드를 '|'로 그냥 이어붙이고 있어, 카테고리나 메모 중 하나에 리터럴 '|'가 들어있으면 필드 경계가 밀려 서로 다른 두 내역이 같은 키로 뭉개질 수 있는 잠재적 충돌 버그를 발견했다(예: category='식비|카페',memo='' 와 category='식비',memo='카페' 가 똑같이 '...|식비|카페|...'로 직렬화됨). 은행/카드사 CSV 메모 칸은 '스타벅스|강남점'처럼 내부적으로 '|'를 구분자로 쓰는 경우가 실제로 있어 비현실적인 가정이 아니고, 충돌이 나면 실제로는 새로 들어온 거래가 이미 있던 내역으로 오판되어 가져오기에서 조용히 빠진다(무음 데이터 손실). 이미 FUNCTIONS 목록/테스트가 충분히 성숙한 영역(반복거래/정산/목표/부채상환/목표비중/계정안전/CSV 카테고리 분리 등 cycle340-369에서 다룬 모든 주제)인지 먼저 폭넓게 훑었고(goalProgress/allocationDrift/rebalanceAmount/debtPayoffOrder/multiDebtPlan/annualizedReturn/normName/isReservedOwnerName/findPossibleDuplicateTx 등 수십 개 함수를 검토했으나 전부 이미 경계값까지 꼼꼼히 처리·테스트돼 있었음), FUNCTIONS 목록에 있지만 테스트에서 직접 이름으로 불리지 않는 함수들도 교차검증했으나 대부분 다른 테스트를 통해 간접적으로 이미 실행되고 있었다. 수정: csvDedupeKey가 배열을 join('|') 대신 JSON.stringify로 직렬화하게 바꿔 각 원소가 독립적으로 이스케이프되어 경계가 섞이지 않게 했다(recHistFieldsChanged가 splits 비교에 쓰는 것과 같은 방식, 기존 관례와 일치). 자산 비교의 'n:'/'i:' 접두사 자체의 충돌 가능성(자산 이름이 리터럴로 'i:123' 형태인 경우)은 훨씬 더 인위적인 시나리오라 이번 범위에서 건드리지 않았다. 회귀 테스트 2건 추가(경계가 밀리는 카테고리/메모 조합이 서로 다른 키를 돌려주는지, 메모에 '|'가 있는 정상 거래는 동일 내역과 여전히 같은 키를 돌려주는지). node test/run.js 3587/3587 통과(+2, 기존 3585). node --check logic.js/test/run.js 통과. APP_VERSION 1.47.475->1.47.476, sw.js CACHE v742->v743. 참고: 이번 사이클 시작 시 로컬 git이 detached HEAD였고(HEAD가 origin/main 기준 7개 커밋 앞선 상태, cycle369의 review/critique/advance 세 단계가 모두 detached 상태에서 커밋돼 main 브랜치/origin에 전혀 반영되지 않고 있었음 — cycle365에서 한 번 고쳤던 것과 같은 문제가 재발), git checkout -B main HEAD로 로컬 main을 HEAD로 fast-forward한 뒤 push해 origin/main을 맞췄다(fast-forward 확인 후 진행, 과거 커밋 버림 없음).",
-   "commit": null
-  }
- ]
+  "cycle": 370,
+  "phase": "critique",
+  "pending_advance_plan": null,
+  "history": [
+    {
+      "cycle": 365,
+      "phase": "critique",
+      "timestamp": "2026-11-17T16:11:35.658Z",
+      "summary": "앱 전체를 한 걸음 물러나 비평(Explore 서브에이전트, 이미 다룬 반복거래/부채상환/정산/goalBehind/costBasis/NAME_MAX/클라우드동기화/fx폴백/팔레트/comma -0/undoToast WCAG/App Lock/사진 페이로드/전역검색(존재 확인됨)/role=button 중첩 전체 제외). DB.assetQtyLog가 archiveTxnsBefore(저장공간 정리)에서 유일하게 누락되어, DB.nwHistory/trash*와 달리 무제한 증가하며 활성 트레이더의 용량 경고가 정리 후에도 재발하는 문제를 발견. pending_advance_plan에 구체적 구현안(baseline 접기+tombstone+undo 확장+회귀테스트) 저장.",
+      "commit": null
+    },
+    {
+      "cycle": 365,
+      "phase": "advance",
+      "timestamp": "2026-11-17T17:12:27.297Z",
+      "summary": "critique(cycle365) 계획대로 DB.assetQtyLog가 archiveTxnsBefore(저장공간 정리)에서 누락돼 무제한 증가하던 문제를 고쳤다. logic.js에 순수 함수 archiveQtyLogGainBaselines(assetQtyLog,cutoffDate) 추가(archiveBaselines와 같은 \"지워지는 몫을 베이스라인에 접는다\" 원칙, realizedGain!=null인 cutoffDate 이전 기록만 자산별 합산 — totalRealizedGain과 동일 필터). archiveTxnsBefore(index.html)가 DB.txns와 나란히 DB.assetQtyLog도 cutoffDate 기준으로 잘라내고, 지워지는 realizedGain 합을 a.archivedRealizedGain 베이스라인으로 접어 넣은 뒤 제거된 항목을 DB.deletedIds에 톰스톤 처리(클라우드 merge가 되살리지 않게)하도록 확장. 기존 undoToast 클로저도 확장해 지워진 assetQtyLog 항목과 이전 archivedRealizedGain 값을 정확히 복원(0/미설정이 아니라 직전 값으로). openAssetQtyLog의 누적 실현손익 계산을 a.archivedRealizedGain+남은 기록 합계로 바꿔(baseline과 items 둘 다 없을 때만 null 유지) 정리를 거듭해도 합계가 끊기지 않게 했다. 테스트 15건 추가(archiveQtyLogGainBaselines 단위 4건, openAssetQtyLog 베이스라인 표시 3건, archiveTxnsBefore 통합 4건: 정리/undo/기존 베이스라인에 누적/realizedGain 없는 기록은 필드 안 생김). git stash로 index.html/logic.js를 수정 전 상태로 되돌려 새 테스트 10건이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3529->3540/3540 통과(vm 샌드박스 realm 문제로 빈 객체 비교 1건만 JSON.stringify 비교로 전환, 기존 cycle364 관례와 동일). node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.470->1.47.471, sw.js CACHE v737->v738. 범위가 커 보이는 yearRealizedGain(연도별 집계)의 과거 연도 archiving 영향은 범위 밖으로 남겨둠(budgetCarryFor의 archivedThroughDate 클램프와 같은 종류의 기존 한계, 이번 계획이 명시한 범위는 openAssetQtyLog 누적 합계뿐).",
+      "commit": null
+    },
+    {
+      "cycle": 366,
+      "phase": "develop",
+      "timestamp": "2026-11-17T18:19:08.000Z",
+      "summary": "index.html의 homeAlerts() 주석(\"3인 이상 정산(N인 분담, cycle364 advance)은 ... 알림 일반화는 다음 사이클로 미룸\")이 남겨둔 공백을 메웠다 — settleDue(정산 알림)가 참가자 2명일 때만 동작하고 3명 이상이면 homeAlerts()에서 아예 계산되지 않던 문제를 고쳤다. settleConfigured().participants.length===2 분기는 그대로 두고, else 분기에서 settlementSummaryN+settleUpTransfers(둘 다 cycle364가 이미 만든 순수 함수, 새 계산식 없음)로 송금 목록을 구해 그 총액(net 합이 0이 되게 맞춘 마지막 참가자 보정 덕에 빚/받을돈 총액이 항상 일치)에 기존 settleAlertBucket 문턱/버킷 판정을 그대로 적용하는 새 kind \"settleDueN\"을 추가했다. notifyAlertInfo(OS 푸시, key는 송금 쌍 from>to 집합+bucket, group은 기존 settleDue와 동일한 'settle'이라 뮤트 토글도 그대로 공유)/homeAlertCard(송금 1건이면 2인 때와 같은 문구, 2건 이상이면 총액+건수)에도 대칭 분기를 추가했다. 테스트 6건 추가(문턱 미달/중립 참가자로 송금 1건으로 줄어드는 경우/중립 없이 2건인 경우/settledThrough 제외/notifyAlertInfo 키 버킷팅/homeAlertCard 1건·다건 렌더) — index.html을 원래 커밋으로 되돌려 4건이 실제로 실패하는 것을 확인한 뒤 복원. node test/run.js 3540->3546/3546 통과, node --check logic.js/sw.js/test/run.js 및 추출한 인라인 <script> 블록 통과. APP_VERSION 1.47.471->1.47.472, sw.js CACHE v738->v739.",
+      "commit": "df51ae3"
+    },
+    {
+      "cycle": 366,
+      "phase": "review",
+      "timestamp": "2026-11-17T18:45:00.000Z",
+      "summary": "develop(cycle366, df51ae3: homeAlerts의 settleDueN 3인 이상 정산 알림 추가)을 검토했다. settlementSummaryN(logic.js:238)이 {byOwner,total}을 돌려주고 settleUpTransfers(byOwner)가 이를 그대로 받는 시그니처가 호출부와 일치함을 확인. settleUpTransfers가 채무자/채권자를 탐욕 매칭해 만드는 transfers 합계가 항상 total(마지막 참가자가 반올림 나머지를 떠안는 settlementSummaryN 덕에 net 합이 0)과 일치해 settleAlertBucket 문턱 판정이 2인 경로와 같은 기준으로 적용됨을 확인. notifyAlertInfo의 key가 송금 쌍(from>to) 집합+bucket으로만 잡혀 금액이 미세하게 바뀌어도 같은 버킷이면 dedupe되는 것이 2인 settleDue와 동일 원칙임을 확인. homeAlertCard의 새 카드가 기존 settleDue와 똑같이 class=\"home-alert mat\"/svg('users') 조합을 쓰고 있어 스타일 일관성도 확인(svg('users')가 1574행에 정의돼 있음을 grep으로 확인). transfers가 빈 배열(총액 0)이면 settleAlertBucket(0,...)이 null이라 알림이 안 뜨는 것도 로직상 확인. node test/run.js 3546/3546 재실행 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 366,
+      "phase": "critique",
+      "timestamp": "2026-11-17T19:05:00.000Z",
+      "summary": "Explore 서브에이전트에게 cycle340-366의 모든 주제(반복거래/음력공휴일/WK 문구, 부채상환, 정산 breakdown/알림/N인 확장/settleDueN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재 확인됨), txRowCore/asset-item/date-picker/installBar role=button 중첩, assetQtyLog 저장공간 정리 누락)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: openSheet()(index.html 약 11030-11126행, 거래/반복거래/자산/목표/설정/PIN/CSV매핑 등 거의 모든 화면이 공유하는 바텀시트 모달 핵심 구현)가 test/run.js에서 실제로 실행되는 적이 전혀 없다 — openSheet를 쓰는 거의 모든 테스트가 no-op 스텁(`openSheet: (html) => { sandbox.lastSheetHtml = html; }`, 954/9458/25523/29245/29265/29280/29643행 등 수십 곳)을 주입하고, extractFunction('openSheet')(38753/38981/38985행)은 정규식 문자열 추출만 할 뿐 실행하지 않는다. 포커스 반환(_sheetReturnFocus), aria-labelledby, inert/syncOverlayInert() 접근성 게이트, 높이 고정(applyHeight/attachDetent), pull-to-close 드래그(wireSheetGestures), 엣지 스와이프 뒤로가기(ensureEdgeGesture/makePrev, window._pkBack 연동) 등 ~100줄의 비trivial 로직이 CI 실행 커버리지 0건 — 'review' 단계가 여러 사이클 연속 '이상 없음'을 보고해온 것도 이 클래스의 버그를 원래부터 잡지 못하고 있었을 가능성을 시사한다. 러너업(openTxSheet/openRecSheet/renderMenu의 스텁 사용 — openSheet 커버리지 개선이 이들 위험도 함께 낮춰 별도 작업 불필요; filteredHist/renderHistory 성능 — 이미 _histCache+20페이지네이션으로 완화됨)은 순위를 낮게 매겼다. pending_advance_plan에 test/domstub.js 확장(getBoundingClientRect, activeElement 추적, synthetic touch 이벤트)과 openSheet/closeSheet/syncOverlayInert/wireSheetGestures/attachDetent/sheetFocusables/ensureEdgeGesture를 FUNCTIONS(실제 실행)로 옮기는 구체적 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 366,
+      "phase": "advance",
+      "timestamp": "2026-11-17T21:19:00.740Z",
+      "summary": "critique(cycle366)의 계획대로 openSheet() 바텀시트 생명주기를 실행형으로 테스트했다 — 다만 계획이 제안한 FUNCTIONS 전역 목록 등록 방식은 폐기했다(openSheet를 main shared sandbox의 FUNCTIONS에 올리면 그 sandbox를 공유하는 기존 수백 개 테스트가 전부 openSheet의 실제 DOM 부작용을 받게 돼 범위가 한 사이클을 훨씬 넘어섬) — 대신 wireSheetGestures/ensureEdgeGesture가 이미 쓰던 sheetGestureCtx와 같은 \"좁은 ad hoc vm 컨텍스트\" 패턴을 그대로 따라 openSheetCtx()를 새로 만들었다. 조사해보니 wireSheetGestures/ensureEdgeGesture 자체는 cycle209/210 때 이미 이 패턴으로 실행형 전환이 끝나 있었다(critique의 \"전혀 실행된 적 없다\"는 진술과 달리) — 남은 공백은 openSheet 자신(aria-labelledby 연결/포커스 트랩/syncOverlayInert)과 sheetFocusables/applyHeight/attachDetent였다. domstub.js를 확장해 (1) innerHTML 대입이 이제 parseHTMLInto()로 실제 자식 엘리먼트를 만들고(기존엔 문자열만 저장 — openSheet가 querySelector(\"h3,.pk-h\")로 그 결과를 되읽는 걸 실행형으로 보려면 실제 파싱이 필요했음, getter는 여전히 원본 문자열 반환), (2) contains()/focus()/blur()+document.activeElement 추적(모듈 스코프 변수, createDocument() 호출마다 리셋), (3) getBoundingClientRect() 기본값(0 사각형), (4) disabled/tabIndex getter/setter, (5) \"[attr]\" 속성 셀렉터(sheetFocusables가 쓰는 \"[href]\"/\"[tabindex]\")를 추가했다. innerHTML이 실제 파싱되면서 기존 undoToast 실행형 테스트(37505행 근처)가 \"innerHTML 대입은 children을 비울 뿐 파싱 안 함\"이라는 옛 domstub 동작에 의존해 t.children[0]을 버튼으로 가정하던 게 깨져(실제로는 span이 먼저 생김) t.querySelector(\"button\")으로 고쳤다 — 이게 오히려 실제 브라우저 동작과 더 가까워진 것이지 새 버그는 아님(다른 domstub 사용 테스트 6곳을 모두 훑어 innerHTML 뒤 위치 의존 children 인덱싱이 더 없음을 확인). openSheetCtx에서 openSheet/syncOverlayInert/sheetFocusables/applyHeight/attachDetent/wireSheetGestures/ensureEdgeGesture/ovHistPush/ovHistPop을 함께 실제 실행하는 테스트 10건 추가: (1)(2) h3 제목 있음/없음에 따른 aria-labelledby 연결·해제와 show 클래스, syncOverlayInert() 실제 호출로 #app/#fab에 inert가 걸리되 dpModal/dpWheel이 안 열려있으면 #sheet 자신엔 안 걸림, (3)(4) topBtn 기본값(sheet-x)/커스텀 둘 다 열릴 때 그쪽으로 실제 포커스 이동(document.activeElement), (5) sheetFocusables가 disabled/tabindex=-1을 실제로 제외, (6) syncOverlayInert가 dpModal 열림에 따라 #sheet에도 inert를 걸고 떼는 두 분기, (7)(8) applyHeight의 확장 전/후 cap·min-height 계산, (9)(10) attachDetent의 44px 임계값 도달 시 1회성 확장과 드래그 중 가드. closeSheet() 자체(ST.recSel/goalSel/TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING/applyForeignSave/applyPendingCloudConflictMerge 등 훨씬 넓은 전역)는 이번 범위 밖으로 명시적으로 남겨둠(다음 cycle 후보). 검증: openSheet의 aria-labelledby 대입과 syncOverlayInert의 dpOn 판정을 각각 임시로 깨서(index.html을 임시 수정 후 git checkout으로 원복, 실제 diff에는 포함 안 됨) 새 테스트 2건이 실제로 FAIL함을 직접 확인했다. 이번 사이클은 test/domstub.js·test/run.js만 수정했고 index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 올리지 않는다(사용자에게 배포되는 내용이 바뀐 게 없음). node test/run.js 3546->3556/3556 통과. node --check logic.js/sw.js/test/run.js/test/domstub.js 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 367,
+      "phase": "develop",
+      "timestamp": "2026-11-17T21:50:00.000Z",
+      "summary": "Explore 서브에이전트에게 cycle340-366의 모든 주제(반복거래/주말·공휴일 조정, 정산 2인/N인/settleDueN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 저장공간 정리, openSheet 실행형 테스트)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: doSettleN()(index.html, N인 정산 완료 처리, cycle364 advance에서 추가)이 송금 여러 건 중 중간에 현금성 자산이 없는 참가자가 있어 루프가 break돼도(created.length>0이기만 하면) 뒤이어 DB.settings.settledThrough=TODAY를 그대로 실행하고 '정산 완료로 표시했어요' 성공 undoToast를 띄워 방금 띈 실패 toast를 덮어썼다 — 바로 위 함수 주석(confirmSettlementN 위, cycle364 advance 작성)이 명시한 의도('부분 실패 시... 안내만 하고 멈춘다')와 실제 동작이 어긋났고, 그 결과 미지급 참가자의 몫이 다음 openSettlement() 호출(settledThrough+1부터 시작)에서 조용히 영구 누락된다. 기존 테스트(doSettleN 부분 실패 테스트)는 DB.txns.length와 toast 문구만 확인해 이 회귀를 못 잡고 있었다. 수정: doSettleN에 failed 플래그를 추가해 루프 중 실패가 있었으면(생성된 거래가 1건 이상이어도) settledThrough를 당기지 않고 성공 undoToast도 띄우지 않은 채 save/invalidateBalances/renderCurrent만으로 멈춘다(이미 만든 거래는 그대로 유지, 주석의 원래 의도와 일치). 기존 부분 실패 테스트에 settledThrough가 null로 유지되는지, lastUndo가 null로 유지되는지(성공 토스트가 실패 토스트를 덮지 않는지) 단언 2개를 추가 — git stash로 index.html을 되돌려 새 단언이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3556/3556 통과(기존 테스트 수 그대로, 신규 test() 없이 기존 테스트에 단언만 추가). node --check sw.js/test/run.js 통과, index.html은 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.472->1.47.473, sw.js CACHE v739->v740.",
+      "commit": "9888a6f"
+    },
+    {
+      "cycle": 367,
+      "phase": "review",
+      "timestamp": "2026-11-17T22:30:00.000Z",
+      "summary": "develop(cycle367, 9888a6f: doSettleN 부분 실패 시 settledThrough를 당기고 성공 토스트가 실패 toast를 덮어쓰던 회귀 수정)을 검토했다. diff를 읽고 로직을 직접 추적: failed 플래그가 루프 중 break 직전에만 true로 설정되고, created.length===0(아무 것도 못 만든 경우)이면 기존처럼 if(!created.length)return;에서 먼저 걸려 failed 분기 자체에 도달하지 않음을 확인 — 두 조건이 서로 겹치지 않아 분기 순서가 안전함. failed===true일 때 save/invalidateBalances/renderCurrent만 실행하고 closeSheet()/DB.settings.settledThrough 대입/undoToast를 모두 건너뛰므로, 이미 만든 거래(배우자→나)는 유지되고 다음 openSettlement() 호출이 같은 settledThrough부터 다시 시작해 미지급 참가자(아이) 몫이 더는 누락되지 않음을 확인. toast()/undoToast()가 서로 다른 DOM 요소(class 'toast' vs 'toast undo')를 만드는 별개 함수라 sandbox.lastToast/lastUndo가 독립적으로 추적됨을 grep으로 재확인 — 새 단언(lastUndo===null)이 '성공 토스트가 실패 안내를 덮지 않는다'를 실제로 검증함. 호출부 confirmSheet(5948행)가 자신의 확인 시트를 닫은 뒤 doSettleN을 실행하는 구조라, doSettleN이 실패 시 closeSheet()를 호출하지 않아도(의도적으로 settlement 시트를 열어둠) 깨지는 다른 화면이 없음을 확인. node test/run.js 3556/3556 재실행 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 367,
+      "phase": "critique",
+      "timestamp": "2026-11-18T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-367에서 이미 다룬 모든 주제(반복거래 주말·공휴일 조정, 정산 2인/N인/settleDueN/doSettleN 부분실패, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), txRowCore/asset-item/date-picker/installBar의 role=button 중첩, assetQtyLog 저장공간 정리, openSheet 실행형 테스트(cycle366))를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: closeSheet()(index.html:11134, 모든 바텀시트의 유일한 해제 함수 — 스와이프닫기/스크림탭/Escape/뒤로가기/각 시트 버튼이 전부 공유)가 실제로 실행되는 테스트가 전혀 없다 — 이를 쓰는 테스트는 전부 no-op 스파이로 스텁하거나(test/run.js:878 `closeSheetCalls++`) extractFunction('closeSheet')로 소스 텍스트 regex만 검사한다(test/run.js:5875-5879, 23302-23306). 이 함수는 TAB_SYNC_PENDING(다른 탭의 동시 수정 적용)과 CLOUD_CONFLICT_PENDING(클라우드 동기화 충돌 적용)을 소비하는 유일한 지점이자, sheet/scrim 클래스·inline style 제거, sheetEdgeGlobal 제거, syncOverlayInert(), _sheetReturnFocus 복원·null화, ST.recSel/ST.goalSel 해제까지 한 함수에서 처리한다 — cycle366 advance가 openSheet/syncOverlayInert/sheetFocusables/applyHeight/attachDetent를 실행형으로 돌리면서 명시적으로 범위 밖에 남겨둔 바로 그 공백. 순서가 꼬이거나 포커스/클래스 복원이 빠지면 멀티탭/멀티기기 상태가 조용히 깨지거나 스크린리더 포커스가 끊기는데, 현재 스위트는 이 종류의 회귀를 전혀 못 잡는다. 러너업(doExport의 대용량 메모리 리스크 — cycle364에서 이미 낮은 우선순위로 거론됨, ST.hist.preset류 도달불가 UI상태 전수조사 — cycle364에서 범위가 너무 커 보류됨)은 순위를 낮게 매김. pending_advance_plan에 closeSheetCtx() (cycle366의 openSheetCtx() 패턴을 그대로 따름) 신설 계획 저장: TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING 소비 순서·재진입 안전성, 클래스/style 정리, _sheetReturnFocus 복원·null화, ST.recSel/goalSel 조건부 해제를 실행형으로 검증. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 367,
+      "phase": "advance",
+      "timestamp": "2026-11-18T01:11:12.416Z",
+      "summary": "critique(cycle367)의 계획대로 closeSheet()(모든 바텀시트 해제가 공유하는 유일한 함수)를 실행형으로 테스트했다 — openSheetCtx()(cycle366)와 같은 \"좁은 ad hoc vm 컨텍스트\" 패턴을 그대로 따라 closeSheetCtx()를 새로 만들고, applyForeignSave/applyPendingCloudConflictMerge/updateSelBottom은 각자 이미 단위 테스트가 있어 본문까지 실행하지 않고 스파이로 남겼다. domstub.js에 DomNode.remove()(부모에서 떼어내기, closeSheet의 eg.remove() 실행에 필요)를 추가했다. 테스트 7건 추가: (1) #sheet/#scrim의 show/expanded 클래스·inline style이 실제로 지워지고 #sheetEdgeGlobal이 있으면 제거되며 syncOverlayInert() 호출로 #app의 inert/aria-hidden도 실제로 떼어지는지, (2) #sheetEdgeGlobal이 없을 때 조용히 넘어가는지(회귀), (3) _sheetReturnFocus가 document.contains일 때만 실제로 focus()되고 호출 후 항상 null화되는지, (4) 떨어져나간 참조면 focus() 없이 null화만 하는지, (5) ST.recSel/goalSel이 활성이었을 때만 해제·clear되고 updateSelBottom이 그만큼만 불리며 둘 다 꺼져 있으면 아예 안 불리는지(recSel만/goalSel만/둘 다 꺼짐 3개 서브케이스), (6) TAB_SYNC_PENDING이 applyForeignSave 호출 \"전에\" null화됨(재진입 안전성, 스파이가 호출 시점의 전역값을 함께 캡처해 검증)과 CLOUD_CONFLICT_PENDING이 같은 close 1회로 함께 소비되는지, (7) 둘 다 안 서 있으면 두 스파이 모두 안 불리는지(회귀). 검증: index.html의 TAB_SYNC_PENDING null화를 applyForeignSave 호출 \"뒤\"로 임시로 옮겨(실제 diff엔 없음, 복원함) (6)번 테스트가 실제로 FAIL하는 것을 직접 확인했다. node test/run.js 3556->3563/3563 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/domstub.js·test/run.js만 수정했고 index.html/sw.js는 건드리지 않아(cycle366과 동일한 이유) APP_VERSION/CACHE 버전은 올리지 않는다. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 368,
+      "phase": "develop",
+      "timestamp": "2026-11-18T02:10:00.000Z",
+      "summary": "Explore 서브에이전트에게 cycle340-367의 모든 주제(반복거래, 정산 2인/N인/settleDueN/doSettleN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 저장공간 정리, openSheet/closeSheet 실행형 테스트)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: duplicateRec()(index.html, 반복거래 복제)의 바로 위 주석이 \"거래의 duplicateTx·자산의 duplicateAsset과 같은 이유로\" 동작한다고 명시하는데도, 실제로는 duplicateTx(_txFocusAmt)/duplicateAsset(asName)/duplicateGoal(goalName)이 공통으로 갖고 있는 '복제 후 구분용 필드에 바로 포커스'하는 setTimeout(...,300) 호출이 빠져 있었다 — 반복 목록(openRecManage())의 식별자가 memo||category이므로, 복제로 비슷한 구독 등을 등록할 때마다 사용자가 메모를 직접 탭해 들어가야 했고 깜빡하면 메모가 같은 복제본 2건이 목록에서 구분이 안 되는 실사용 공백이었다. 수정: duplicateRec() 끝에 duplicateAsset/duplicateGoal과 동일한 setTimeout(()=>{const n=$('rMemo');if(n){n.focus();n.select()}},300)을 추가(placeholder가 '예: 넷플릭스 구독'인 바로 그 필드). 테스트 2건 추가 — (1) setTimeout이 300ms로 걸리고 타이머 실행 전엔 포커스가 안 가며 실행 후 #rMemo에 focus()+select()가 호출되는지(sandbox.setTimeout/sandbox.$를 캡처하는 기존 goalQInput 테스트와 동일한 관례), (2) 시트가 이미 닫혀 #rMemo가 null이어도 타이머 실행이 에러 없이 조용히 넘어가는지(회귀) — 수정 전 index.html로 git stash해 두 테스트가 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3563->3565/3565 통과. node --check sw.js/test/run.js/test/domstub.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.473->1.47.474, sw.js CACHE v740->v741.",
+      "commit": null
+    },
+    {
+      "cycle": 368,
+      "phase": "review",
+      "timestamp": "2026-11-18T03:07:25.921Z",
+      "summary": "develop(cycle368, d01daba: duplicateRec()에 duplicateAsset/duplicateGoal과 동일한 복제 후 #rMemo 포커스+select() 추가)을 검토했다. duplicateAsset(4154행)/duplicateGoal 패턴과 바이트 단위로 동일한 setTimeout(()=>{...},300) 호출임을 diff로 확인. renderRecSheet()는 자체적으로 포커스를 옮기는 코드가 없어 충돌 없음을 확인(순수 렌더 함수, openSheet가 여는 시트의 포커스는 openSheet 자신이 topBtn 등으로 처리하고 duplicateRec의 setTimeout 300ms가 그보다 늦게 실행돼 최종적으로 #rMemo에 안착). 반복 목록(openRecManage())의 식별자가 memo||category인 점도 재확인해 포커스 대상(#rMemo) 선택이 타당함을 확인. #rMemo가 없을 때(시트가 이미 닫힌 경우) focus/select를 호출하지 않는 가드도 duplicateAsset/duplicateGoal과 동일. node test/run.js 3565/3565 재실행 통과, node --check sw.js/test/run.js/test/domstub.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 368,
+      "phase": "critique",
+      "timestamp": "2026-11-18T04:00:00.000Z",
+      "summary": "general-purpose 서브에이전트(fork)에게 cycle340-368에서 이미 다룬 모든 주제(role=button 중첩, 전역검색(존재), 정산 2인/N인/알림, 음력공휴일, 로그인/PIN 브루트포스 방어(PBKDF2 120k+지수백오프), 생체인증, SRI(의도적 보류), openSheet/closeSheet 실행형 테스트, assetQtyLog 아카이빙, 카테고리 팔레트, duplicateRec 포커스 등)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: load()(index.html, 앱 부팅 시 localStorage에서 DB를 읽는 유일한 진입점 — 정상/JSON.parse·migrate 실패(손상)/localStorage.getItem 실패(스토리지 차단)/raw 없음(최초부팅) 네 분기)가 test/run.js의 FUNCTIONS 목록에 없어(grep 확인) 실행형으로 전혀 실행되지 않는다. findCorruptBackupKeys/pruneOldCorruptKeys/sanitizeBackup 같은 하위 헬퍼만 개별 테스트돼 있고, load() 자신의 분기 분배·손상 백업 보존(dataKey()+'__corrupt_'+Date.now())·migrate 호출 누락 조합은 전혀 검증되지 않는다. index.html 4272행 주석이 과거 실제로 'load()가 migrate() 없이 곧장 save()하던' 버그를 언급하는데 이것도 코드 리뷰로만 잡혔던 전례 — openSheet/closeSheet(cycle366/367)와 같은 공백 클래스이자, 사용자 데이터 보존/복구를 결정하는 핵심이라 최우선으로 판단. 러너업으로 (1) SVG 차트(nwChartPath/allocSeriesChartPath) 접근성 — 이미 role=\"img\"+aria-label+키보드 탐색 완비로 공백 없음, (2) netlify 가격조회 함수(stock/rates/crypto) 안정성 — 이미 다단 폴백·부분성공·레이트리밋·데드라인 budgetMs로 매우 성숙, 공백 없음을 확인해 순위를 낮게 매김. pending_advance_plan에 load() FUNCTIONS 등록 및 4분기 실행형 테스트 추가 계획 저장(openSheet 사례처럼 메인 공유 sandbox 영향이 크면 좁은 ad hoc 컨텍스트로 대체 가능함을 명시). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 368,
+      "phase": "advance",
+      "timestamp": "2026-11-18T05:13:06.518Z",
+      "summary": "critique(cycle368)의 계획대로 load()(index.html, 앱 부팅 시 localStorage에서 DB를 읽는 유일한 진입점 — 정상/저장소 차단(getItem throw)/데이터 손상(JSON.parse 또는 migrate() throw)/최초부팅(raw 없음) 네 분기)를 실행형으로 테스트했다. 계획이 제안한 'FUNCTIONS 메인 목록 등록' 대신 openSheetCtx/closeSheetCtx/makeSaveCtx와 같은 '좁은 ad hoc vm 컨텍스트' 패턴을 택했다 — save()는 93곳의 다른 호출부가 전역 no-op 스텁에 기대고 있어(makeSaveCtx 주석) 메인 sandbox에서 실제 로직으로 승격시키면 무관한 테스트가 깨지고, seed()/emptyDB()/toastFail()도 load() 검증 목적상 실제 로직을 돌릴 필요가 없어 메인 sandbox를 넓힐 이유가 없었다. test/run.js에 loadCtx() 헬퍼를 추가해 extractFunction('load')만 vm에 태우고, migrate/seed/emptyDB/toastFail/save/localStorage.getItem·setItem/dataKey/STORAGE_OK/SESSION/DB/TAB_SAVED_AT/DB_JSON_LEN은 전부 스파이·플레인 프로퍼티로 좁은 컨텍스트에 직접 채웠다(메인 sandbox는 전혀 건드리지 않음). 테스트 7건 추가: (1)(2) getItem이 throw할 때 STORAGE_OK=false로 내려가고 SESSION 없음/있음에 따라 seed()/emptyDB()로 폴백해 migrate()까지 호출한 뒤 save() 없이 toastFail만 띄우고 끝나는지, (3) raw가 JSON.parse조차 안 되는 문자열일 때 원본이 dataKey()+__corrupt_+타임스탬프 키로 보존되고 toastFail+리셋(seed/migrate/save)이 일어나는지, (4) JSON.parse는 성공해도 migrate()가 던지면(데이터 자체 손상) 손상 분기와 동일하게 처리되는지(migrate가 첫 호출에서만 던지고 리셋 후 두 번째 호출에서 성공하는 스테이트풀 스파이로 검증), (5) raw가 정상 JSON일 때 DB가 그 값 그대로 채워지고 migrate()가 반드시 호출되며 TAB_SAVED_AT/DB_JSON_LEN도 채워지는지(index.html 주석이 언급하는 과거 'load()가 migrate() 없이 그대로 쓰던' 버그의 회귀 방지 — 실제로 index.html에서 정상 분기의 migrate() 호출을 임시로 지워보니 이 테스트와 (4)가 둘 다 FAIL하는 것을 직접 확인한 뒤 git checkout으로 원복했다), (6) raw가 없는 최초부팅에서 SESSION 여부에 따라 seed()/emptyDB()+migrate()+save()가 호출되는지. vm 컨텍스트(별도 realm)에서 JSON.parse로 만들어진 객체는 Object.prototype이 테스트 파일 쪽과 달라 assert.deepStrictEqual이 거짓 FAIL을 내는 realm 문제가 (5)에서 발생해(cycle364 등 기존 관례대로) JSON.stringify 비교로 전환했다. node test/run.js 3565->3571/3571 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/run.js만 수정했고 index.html/sw.js는 건드리지 않아(cycle366/367과 동일한 이유) APP_VERSION/CACHE 버전은 올리지 않는다. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 369,
+      "phase": "develop",
+      "timestamp": "2026-11-18T06:11:56.029Z",
+      "summary": "통장 안전 신호등 acctSafety(id)(openPlanAsset 통장 선택 목록에서 쓰임)가 FUNCTIONS 목록 밖에 있어 planNegatives()/homeAlerts()/openNegList()는 모두 실행형 테스트가 있는데도 정작 그 위에서 파생되는 acctSafety 자체는 한 번도 실제로 실행된 적이 없었음을 Explore로 확인했다(cycle340-368에서 다룬 반복거래/정산/goalBehind/costBasis/NAME_MAX/클라우드동기화/fx폴백/팔레트/comma -0/undoToast WCAG/App Lock/사진 페이로드/가구공유/RANGE_FROM/visibilitychange/SRI/CSP/localStorage 쿼터/카테고리 rename-merge/검색어 파싱/CSV 카테고리 분리/저축만기 overdue/assetGainLossBadge/전역검색(존재)/role=button 중첩/assetQtyLog 아카이빙/openSheet·closeSheet·load() 실행형 테스트/duplicateRec 포커스는 모두 배제). FUNCTIONS 목록에 acctSafety 추가 후 실행형 테스트 3건을 신설: (1) 예정된 마이너스가 없는 통장은 {lv:\"ok\",txt:\"\"}, (2) 예정 지출로 마이너스가 될 통장은 planNegatives()의 date/min을 shortDate/comma로 정확히 포맷해 {lv:\"bad\"}를 돌려주는지(날짜·금액 불일치 방지, cycle242와 같은 이유로 리터럴 값까지 확인), (3) savings처럼 플랜 대상이 아닌 통장(isPlanAcct=false)은 baseAmount가 마이너스여도 ok로 취급하는지. deepStrictEqual의 vm realm 교차 비교 실패(cycle131과 동일 원인)를 피해 필드별 strictEqual로 비교. 버그는 발견되지 않았고 순수 테스트 커버리지 보강이다. node test/run.js 3571->3574/3574 통과. index.html/sw.js 변경 없음(test/run.js만 수정)이라 APP_VERSION/CACHE 버전업 불필요.",
+      "commit": null
+    },
+    {
+      "cycle": 369,
+      "phase": "review",
+      "timestamp": "2026-11-18T06:30:00.000Z",
+      "summary": "develop 커밋(ef4c40c, acctSafety() 실행형 테스트 3건 추가)을 검토: acctSafety(id)는 planNegatives().find(n=>n.assetId===id)의 결과를 shortDate/comma로 포맷해 {lv,txt}로 돌려주는 1:1 파생 함수임을 index.html:7770-7774에서 직접 확인. 새 테스트 3건(마이너스 없는 통장은 ok/빈 문자열, 예정 지출로 마이너스 되는 통장은 date/min을 shortDate/comma로 정확히 포맷한 bad, savings처럼 isPlanAcct=false인 통장은 마이너스 baseAmount여도 ok로 취급)가 구현과 정확히 일치하고 엣지 케이스를 놓치지 않음. 테스트 전제(assert.ok(neg))도 타당함. node test/run.js 3574/3574 통과. 코드 변경 없음, 버그 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 369,
+      "phase": "critique",
+      "timestamp": "2026-11-18T07:00:00.000Z",
+      "summary": "Explore 서브에이전트에게 cycle340-369에서 이미 다룬 모든 주제(반복거래, 정산 2인/N인/settleDueN/doSettleN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, PIN 브루트포스/생체인증, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 음력공휴일, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 아카이빙, openSheet/closeSheet/load() 실행형 테스트, duplicateRec 포커스, acctSafety, netlify 가격조회 안정성, SVG 차트 접근성)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: FAB '+' 팝업(#fabPop, index.html:1381-1382 / buildFabPop·fabTap·closeFabPop·fabPick: 6287-6312)이 #sheet/#dpModal/#dpWheel 세 오버레이가 공유하는 통합 접근성 시스템(overlayEscapeTarget: 10954, syncOverlayInert: 10994, onSheetKeydown: 11019)에 전혀 등록돼 있지 않음 — role/aria-haspopup/aria-expanded 부재, Escape로 안 닫힘, 배경 #app에 inert 안 걸림, DOM 순서(#fabPop이 #fab보다 먼저)상 forward-Tab으로 못 들어감에 더해, 실제 결함으로 closeFabPop()이 .show 클래스만 떼고 display:none 전환이 없어(CSS는 opacity:0만, 1185-1191행) 팝업을 한 번이라도 연 세션부터 숨겨진 <button class=\"fp-item\"> 2개가 영구적으로 탭 순서에 남는다. 코드(buildFabPop/fabTap/closeFabPop/overlayEscapeTarget/syncOverlayInert 구현)를 직접 읽어 agent 보고의 모든 line 인용을 확인했다. 가장 많이 쓰이는 진입점(onboarding도 이 버튼을 가리킴, 9163행)인데도 openSheet/closeSheet(cycle366/367)와 같은 공백 클래스라 최우선으로 판단. 러너업 (1) debtPlan* 계열(5984-6034행)이 debtWhatIfUpdate와 달리 실행형 테스트가 없음 — 실제 버그 증거 없는 순수 테스트 커버리지 공백이라 순위 낮춤, (2) fromDate 힌트 없는 88곳의 save() 호출 — _balCache 무효화 범위만 넓어질 뿐 정답은 항상 맞아 성능 debt일 뿐 정확성 문제 아님, 이미 수년간 점진적으로 인지되어온 사안이라 순위 낮춤. pending_advance_plan에 overlayEscapeTarget/syncOverlayInert 확장 + aria 속성 추가 + DOM 순서/tabindex 수정 + 포커스 이동 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 369,
+      "phase": "advance",
+      "timestamp": "2026-11-18T08:10:00.000Z",
+      "summary": "critique(cycle369)의 계획대로 FAB '+' 팝업(#fabPop)을 #sheet/#dpModal/#dpWheel이 공유하는 통합 오버레이 접근성 시스템(overlayEscapeTarget/syncOverlayInert/onSheetKeydown)에 4번째 상태로 편입했다. overlayEscapeTarget(dpWheelOpen,dpModalOpen,sheetOpen,fabPopOpen)에 4번째 매개변수를 추가해 wheel>modal>sheet>fab 순(실제 z-index 56<101 순서와 일치)으로 'fab'을 돌려주게 했다(기존 3-인자 호출은 undefined가 falsy라 하위호환 유지, closeTopOverlayLevel도 함께 갱신해 fab 분기에서 closeFabPop() 호출). syncOverlayInert()가 #fabPop의 show 여부도 읽어 fabPop만 열려 있을 때(시트/날짜피커 없이) #app에만 inert/aria-hidden을 걸고 #fab 자신은 제외(팝업을 연 트리거이자 닫을 때 포커스가 돌아갈 곳이라 inert에서 빼야 함) — 시트가 열려 있을 때의 기존 #app/#fab 동시 inert 동작은 그대로 유지. onSheetKeydown()에 target==='fab' 분기를 추가해 Escape 시 closeFabPop()+#fab로 포커스 복원, Tab 시 top을 $('fabPop')으로 잡아 그 안의 .fp-item 2개만 순환하는 포커스트랩이 걸리게 했다(top 삼항 체인에 fab 케이스만 추가, 기존 'else closeSheetGuarded();' 텍스트는 그대로 둬 이를 검사하는 기존 regex 테스트와 호환). #fab에 aria-haspopup=\"menu\"/aria-expanded(fabTap/closeFabPop이 true/false로 토글), #fabPop에 role=\"menu\"/aria-label, 각 .fp-item에 role=\"menuitem\"을 추가. 실제 결함 수정: #fabPop에 기본 inert 속성을 HTML에 박아두고(닫힌 초기 상태) fabTap()이 열 때 removeAttribute('inert')+syncOverlayInert()+첫 .fp-item 포커스, closeFabPop()이 닫을 때(토글/outside click/fabPick/Escape/onboarding twNext·twPrev 등 모든 경로가 공유) 다시 setAttribute('inert','')+syncOverlayInert() — DOM 순서를 바꾸는 대신(더 큰 변경) inert만으로 네이티브 포커스 순회에서 완전히 제외시켜, 팝업을 한 번이라도 연 세션부터 숨겨진 .fp-item 2개가 영구적으로 Tab 가능하던 결함을 근본적으로 고쳤다. 테스트: overlayEscapeTarget에 fabPopOpen 관련 3건(fab 단독/sheet 동시 true 시 sheet 우선/3-인자 하위호환), 좁은 ad hoc vm 컨텍스트 fabPopCtx()(openSheetCtx/closeSheetCtx와 같은 패턴)를 신설해 buildFabPop/fabTap/closeFabPop/syncOverlayInert/onSheetKeydown을 실제 실행하는 테스트 8건(열기 시 buildFabPop+show+inert해제+aria-expanded=true+첫 항목 포커스, 토글로 닫을 때 show제거+inert복귀+aria-expanded=false+vibrate 2회, fabPop 단독 열림 시 #app만 inert(#fab 제외)이고 닫으면 해제, 시트가 열려 있으면 기존처럼 #app/#fab 모두 inert(회귀 가드), #fabPop이 DOM에 없을 때 closeFabPop 가드, Escape로 닫히고 포커스가 #fab로 복귀, Tab 트랩이 .fp-item 2개만 순환(forward/shift 양방향), 아무 오버레이도 없으면 조기 반환)을 추가했다. 검증: closeFabPop()의 inert 재설정 줄을 임시로 지워보니(실제 diff엔 없음, 바로 복원) 새 테스트 2건이 실제로 FAIL하는 것을 직접 확인했다. node test/run.js 3574->3585/3585 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.474->1.47.475, sw.js CACHE v741->v742. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 370,
+      "phase": "develop",
+      "timestamp": "2026-11-18T10:14:21.000Z",
+      "summary": "CSV 가져오기 중복 판정 키(csvDedupeKey, logic.js)가 날짜/구분/금액/카테고리/자산/메모 필드를 '|'로 그냥 이어붙이고 있어, 카테고리나 메모 중 하나에 리터럴 '|'가 들어있으면 필드 경계가 밀려 서로 다른 두 내역이 같은 키로 뭉개질 수 있는 잠재적 충돌 버그를 발견했다(예: category='식비|카페',memo='' 와 category='식비',memo='카페' 가 똑같이 '...|식비|카페|...'로 직렬화됨). 은행/카드사 CSV 메모 칸은 '스타벅스|강남점'처럼 내부적으로 '|'를 구분자로 쓰는 경우가 실제로 있어 비현실적인 가정이 아니고, 충돌이 나면 실제로는 새로 들어온 거래가 이미 있던 내역으로 오판되어 가져오기에서 조용히 빠진다(무음 데이터 손실). 이미 FUNCTIONS 목록/테스트가 충분히 성숙한 영역(반복거래/정산/목표/부채상환/목표비중/계정안전/CSV 카테고리 분리 등 cycle340-369에서 다룬 모든 주제)인지 먼저 폭넓게 훑었고(goalProgress/allocationDrift/rebalanceAmount/debtPayoffOrder/multiDebtPlan/annualizedReturn/normName/isReservedOwnerName/findPossibleDuplicateTx 등 수십 개 함수를 검토했으나 전부 이미 경계값까지 꼼꼼히 처리·테스트돼 있었음), FUNCTIONS 목록에 있지만 테스트에서 직접 이름으로 불리지 않는 함수들도 교차검증했으나 대부분 다른 테스트를 통해 간접적으로 이미 실행되고 있었다. 수정: csvDedupeKey가 배열을 join('|') 대신 JSON.stringify로 직렬화하게 바꿔 각 원소가 독립적으로 이스케이프되어 경계가 섞이지 않게 했다(recHistFieldsChanged가 splits 비교에 쓰는 것과 같은 방식, 기존 관례와 일치). 자산 비교의 'n:'/'i:' 접두사 자체의 충돌 가능성(자산 이름이 리터럴로 'i:123' 형태인 경우)은 훨씬 더 인위적인 시나리오라 이번 범위에서 건드리지 않았다. 회귀 테스트 2건 추가(경계가 밀리는 카테고리/메모 조합이 서로 다른 키를 돌려주는지, 메모에 '|'가 있는 정상 거래는 동일 내역과 여전히 같은 키를 돌려주는지). node test/run.js 3587/3587 통과(+2, 기존 3585). node --check logic.js/test/run.js 통과. APP_VERSION 1.47.475->1.47.476, sw.js CACHE v742->v743. 참고: 이번 사이클 시작 시 로컬 git이 detached HEAD였고(HEAD가 origin/main 기준 7개 커밋 앞선 상태, cycle369의 review/critique/advance 세 단계가 모두 detached 상태에서 커밋돼 main 브랜치/origin에 전혀 반영되지 않고 있었음 — cycle365에서 한 번 고쳤던 것과 같은 문제가 재발), git checkout -B main HEAD로 로컬 main을 HEAD로 fast-forward한 뒤 push해 origin/main을 맞췄다(fast-forward 확인 후 진행, 과거 커밋 버림 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 370,
+      "phase": "review",
+      "timestamp": "2026-11-18T11:08:20.347Z",
+      "summary": "develop(cycle370, 3ae25b7: csvDedupeKey를 join('|')에서 JSON.stringify로 바꿔 category/memo에 리터럴 '|'가 있을 때 필드 경계가 밀리는 문제 수정)을 검토했다. diff가 csvDedupeKey 본문과 회귀 테스트 2건(경계 충돌 재현 케이스, 메모에 '|' 포함된 정상 거래가 여전히 동일 키를 돌려주는 케이스) 추가에 그치고 다른 로직은 건드리지 않음을 확인. node test/run.js 3587/3587 통과(기존 3585+2). node --check logic.js/test/run.js 통과. 코드 변경 없음(이상 없음). 참고: 이번 사이클 시작 시 로컬 git이 다시 detached HEAD였다(HEAD가 origin/main보다 앞선 상태였으나 로컬 main 브랜치 ref는 뒤처짐) - git checkout -B main HEAD로 로컬 main을 HEAD로 재설정해 origin/main과 일치시켰다(origin/main 자체는 이미 3ae25b7까지 올라가 있었음, fast-forward 확인 후 진행).",
+      "commit": null
+    }
+  ]
 }
