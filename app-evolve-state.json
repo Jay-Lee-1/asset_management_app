@@ -1,15 +1,8 @@
 {
  "cycle": 368,
- "phase": "review",
+ "phase": "critique",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 363,
-   "phase": "develop",
-   "timestamp": "2026-11-17T06:20:53.898Z",
-   "summary": "코드를 직접 탐색해 assetBodyHTML()(자산 관리 목록)의 일반 모드 자산 행이 txRowCore(cycle362)와 똑같은 WAI-ARIA 위반을 갖고 있음을 발견했다 — asset-item 전체에 role=\"button\" tabindex를 주면서 그 자손으로 실제 <button class=\"act-btn\">(복제/내역 보기)을 중첩시켜, VoiceOver/TalkBack이 전체를 하나의 탐색 불가 단위로 묶어 스크린리더 사용자가 안쪽 버튼에 포커스를 옮길 수 없었다. 수정: role=\"button\"/tabindex/onkeydown을 아바타+이름만 감싸는 내부 wrapper .row-tap으로 옮기고, row-acts는 그 밖(asset-item의 형제)에 그대로 둔다. asset-item 자체의 onclick은 유지해 row-acts를 제외한 나머지 영역(아바타/이름/금액) 클릭이 여전히 버블링으로 openAssetSheet를 열도록 보존했다(val의 기존 클릭 동작 보존, txRowCore처럼 amt를 row-tap 안으로 옮기는 대신 DOM 순서/레이아웃을 그대로 유지하는 쪽을 택함). 공유 .row-tap 클래스의 기본 gap(12px, txRowCore 기준)이 asset-item의 gap(13px)과 달라 .asset-item .row-tap{gap:13px}로 덮어써 레이아웃을 바이트 단위로 유지했다. 일괄선택 모드(ST.aSel.mode)는 원래부터 문제가 없어 손대지 않음. 테스트 3건 추가(row-acts가 role=\"button\" 밖에 있는지, asset-item 자체에 role=\"button\"/tabindex가 더는 없는지(onclick은 남아있는지), 선택 모드 회귀 없음) — git stash로 되돌려 새 테스트 2건이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3487->3490/3490 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.465->1.47.466, sw.js CACHE v732->v733. 커밋 전 이 세션의 로컬 main ref가 origin과 다른 과거 커밋(f676877)을 가리키고 있던 걸 발견했으나, git fetch로 재확인한 결과 실제 origin/main은 98f9f05(이 develop가 기반한 바로 그 커밋)이었음을 확인 — 단순히 fetch 전 캐시된 stale ref였고 실제 분기(diverge)는 없었다.",
-   "commit": "4993ba3"
-  },
   {
    "cycle": 363,
    "phase": "review",
@@ -141,6 +134,13 @@
    "phase": "develop",
    "timestamp": "2026-11-18T02:10:00.000Z",
    "summary": "Explore 서브에이전트에게 cycle340-367의 모든 주제(반복거래, 정산 2인/N인/settleDueN/doSettleN, goalBehind, costBasis, NAME_MAX, 클라우드동기화, fx폴백, 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구공유, RANGE_FROM, visibilitychange, SRI/CSP, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 카테고리 분리, 저축만기 overdue, assetGainLossBadge, 전역검색(존재), role=button 중첩, assetQtyLog 저장공간 정리, openSheet/closeSheet 실행형 테스트)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: duplicateRec()(index.html, 반복거래 복제)의 바로 위 주석이 \"거래의 duplicateTx·자산의 duplicateAsset과 같은 이유로\" 동작한다고 명시하는데도, 실제로는 duplicateTx(_txFocusAmt)/duplicateAsset(asName)/duplicateGoal(goalName)이 공통으로 갖고 있는 '복제 후 구분용 필드에 바로 포커스'하는 setTimeout(...,300) 호출이 빠져 있었다 — 반복 목록(openRecManage())의 식별자가 memo||category이므로, 복제로 비슷한 구독 등을 등록할 때마다 사용자가 메모를 직접 탭해 들어가야 했고 깜빡하면 메모가 같은 복제본 2건이 목록에서 구분이 안 되는 실사용 공백이었다. 수정: duplicateRec() 끝에 duplicateAsset/duplicateGoal과 동일한 setTimeout(()=>{const n=$('rMemo');if(n){n.focus();n.select()}},300)을 추가(placeholder가 '예: 넷플릭스 구독'인 바로 그 필드). 테스트 2건 추가 — (1) setTimeout이 300ms로 걸리고 타이머 실행 전엔 포커스가 안 가며 실행 후 #rMemo에 focus()+select()가 호출되는지(sandbox.setTimeout/sandbox.$를 캡처하는 기존 goalQInput 테스트와 동일한 관례), (2) 시트가 이미 닫혀 #rMemo가 null이어도 타이머 실행이 에러 없이 조용히 넘어가는지(회귀) — 수정 전 index.html로 git stash해 두 테스트가 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3563->3565/3565 통과. node --check sw.js/test/run.js/test/domstub.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.473->1.47.474, sw.js CACHE v740->v741.",
+   "commit": null
+  },
+  {
+   "cycle": 368,
+   "phase": "review",
+   "timestamp": "2026-11-18T03:07:25.921Z",
+   "summary": "develop(cycle368, d01daba: duplicateRec()에 duplicateAsset/duplicateGoal과 동일한 복제 후 #rMemo 포커스+select() 추가)을 검토했다. duplicateAsset(4154행)/duplicateGoal 패턴과 바이트 단위로 동일한 setTimeout(()=>{...},300) 호출임을 diff로 확인. renderRecSheet()는 자체적으로 포커스를 옮기는 코드가 없어 충돌 없음을 확인(순수 렌더 함수, openSheet가 여는 시트의 포커스는 openSheet 자신이 topBtn 등으로 처리하고 duplicateRec의 setTimeout 300ms가 그보다 늦게 실행돼 최종적으로 #rMemo에 안착). 반복 목록(openRecManage())의 식별자가 memo||category인 점도 재확인해 포커스 대상(#rMemo) 선택이 타당함을 확인. #rMemo가 없을 때(시트가 이미 닫힌 경우) focus/select를 호출하지 않는 가드도 duplicateAsset/duplicateGoal과 동일. node test/run.js 3565/3565 재실행 통과, node --check sw.js/test/run.js/test/domstub.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
    "commit": null
   }
  ]
