@@ -35519,6 +35519,18 @@ test('overlayEscapeTarget: dpWheel·dpModal 모두 닫혀 있고 시트만 열�
 test('overlayEscapeTarget: 아무 오버레이도 열려 있지 않으면 null(onSheetKeydown이 조기 반환)', () => {
   assert.strictEqual(sandbox.overlayEscapeTarget(false, false, false), null);
 });
+// fabPopOpen(4번째 매개변수): FAB '+' 팝업을 wheel/modal/sheet와 같은 통합 시스템에 4번째 상태로
+// 편입(app-evolve cycle369 critique→advance) — z-index가 가장 낮아(fab-pop:56 < sheet:101)
+// wheel/modal/sheet보다 항상 우선순위가 낮다.
+test('overlayEscapeTarget: fabPop만 열려 있으면 fab', () => {
+  assert.strictEqual(sandbox.overlayEscapeTarget(false, false, false, true), 'fab');
+});
+test('overlayEscapeTarget: 시트와 fabPop이 동시에 true여도(실제로는 동시에 열리지 않지만) sheet가 우선', () => {
+  assert.strictEqual(sandbox.overlayEscapeTarget(false, false, true, true), 'sheet');
+});
+test('overlayEscapeTarget: 기존 3-인자 호출(fabPopOpen 생략)은 undefined가 falsy라 기존 동작과 동일하게 null을 돌려줘야 함(하위호환)', () => {
+  assert.strictEqual(sandbox.overlayEscapeTarget(false, false, false), null);
+});
 
 /* ---------- tabNavAction: go(tab) 하단 탭 전환의 백버튼 history entry 판정 (app-evolve cycle138 advance, logic.js) ----------
  * 안드로이드 백버튼은 history 스택이 비면 standalone PWA를 바로 종료시킨다. _ovHistDepth/
@@ -39507,6 +39519,120 @@ test('[실행형] closeSheet: TAB_SYNC_PENDING/CLOUD_CONFLICT_PENDING 둘 다 �
   ctx.closeSheet();
   assert.strictEqual(applyForeignSaveCalls.length, 0, '보류된 탭 동기화가 없으면 applyForeignSave()를 부르면 안 됨');
   assert.strictEqual(applyPendingCloudConflictMergeCalls.length, 0, '보류된 클라우드 충돌이 없으면 applyPendingCloudConflictMerge()를 부르면 안 됨');
+});
+
+/* ---------- FAB '+' 팝업(#fabPop)을 #sheet/#dpModal/#dpWheel이 공유하는 통합 오버레이 접근성
+ * 시스템(overlayEscapeTarget/syncOverlayInert/onSheetKeydown)에 4번째 상태로 편입 (app-evolve
+ * cycle369 critique → advance). 실제 결함: closeFabPop()이 .show 클래스만 떼고 display 전환이
+ * 없어(CSS는 opacity만 전환) 팝업을 한 번이라도 연 세션부터 숨겨진 .fp-item 버튼 2개가 영구적으로
+ * Tab 순서에 남았다 — #fabPop에 inert를 걸고(닫힌 기본값) 열릴 때만 떼는 방식으로 고친다.
+ * openSheetCtx/closeSheetCtx와 같은 "좁은 ad hoc vm 컨텍스트" 패턴을 그대로 따른다. ---------- */
+function fabPopCtx() {
+  const dom = domstub.createDocument();
+  const fabPopEl = dom.createElement('div'); fabPopEl.id = 'fabPop'; dom.body.appendChild(fabPopEl);
+  const fabEl = dom.createElement('button'); fabEl.id = 'fab'; dom.body.appendChild(fabEl);
+  const appEl = dom.createElement('div'); appEl.id = 'app'; dom.body.appendChild(appEl);
+  const sheetEl = dom.createElement('div'); sheetEl.id = 'sheet'; dom.body.appendChild(sheetEl);
+  const dpModalEl = dom.createElement('div'); dpModalEl.id = 'dpModal'; dom.body.appendChild(dpModalEl);
+  const dpWheelEl = dom.createElement('div'); dpWheelEl.id = 'dpWheel'; dom.body.appendChild(dpWheelEl);
+  const vibrateCalls = [];
+  const ctx = {
+    document: dom,
+    window: {},
+    $: (id) => dom.getElementById(id),
+    svg: () => '',
+    navigator: { vibrate: (ms) => vibrateCalls.push(ms) },
+    // target이 'fab'인 경로만 실행하는 이번 테스트 범위에선 안 불리지만, onSheetKeydown이
+    // 참조하는 다른 분기의 식별자가 없어 ReferenceError가 나지 않도록 openSheetCtx와 같이 스텁한다.
+    closeSheetGuarded: () => {}, closeDatePicker: () => {}, closeDpWheelLayer: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [
+      extractFunction('sheetFocusables'),
+      extractFunction('overlayEscapeTarget'),
+      extractFunction('buildFabPop'),
+      extractFunction('fabTap'),
+      extractFunction('closeFabPop'),
+      extractFunction('syncOverlayInert'),
+      extractFunction('onSheetKeydown'),
+    ].join('\n'),
+    ctx, { filename: 'fab-pop-real' }
+  );
+  return { ctx, dom, fabPopEl, fabEl, appEl, sheetEl, dpModalEl, dpWheelEl, vibrateCalls };
+}
+test('[실행형] fabTap: 처음 열 때 buildFabPop()으로 채우고 show를 붙이며 inert를 떼고, #fab엔 open+aria-expanded=true, 첫 메뉴 항목으로 포커스가 이동한다', () => {
+  const { ctx, dom, fabPopEl, fabEl } = fabPopCtx();
+  fabPopEl.setAttribute('inert', ''); // 닫힌 기본 상태(HTML의 inert 속성)를 흉내
+  ctx.fabTap();
+  assert.ok(fabPopEl.innerHTML.includes('fp-item'), 'buildFabPop()이 실제로 메뉴를 채워야 함');
+  assert.ok(fabPopEl.classList.contains('show'), '#fabPop에 show 클래스가 붙어야 함');
+  assert.strictEqual(fabPopEl.getAttribute('inert'), null, '열리면 inert를 떼야 함(네이티브 포커스 순회에 다시 들어옴)');
+  assert.ok(fabEl.classList.contains('open'), '#fab에 open 클래스가 붙어야 함');
+  assert.strictEqual(fabEl.getAttribute('aria-expanded'), 'true');
+  const first = fabPopEl.querySelectorAll('.fp-item')[0];
+  assert.strictEqual(dom.activeElement, first, '열릴 때 첫 메뉴 항목(.fp-item)으로 포커스가 이동해야 함');
+});
+test('[실행형] fabTap: 열려 있는 상태에서 다시 누르면(토글) closeFabPop() 경로를 타 show를 떼고 inert를 되돌리며 #fab의 open/aria-expanded도 되돌린다', () => {
+  const { ctx, fabPopEl, fabEl, vibrateCalls } = fabPopCtx();
+  ctx.fabTap(); // 열기
+  ctx.fabTap(); // 같은 버튼으로 닫기
+  assert.strictEqual(fabPopEl.classList.contains('show'), false);
+  assert.strictEqual(fabPopEl.getAttribute('inert'), '', '닫히면 숨겨진 메뉴 항목이 다시 포커스 가능해지지 않도록 inert를 되돌려야 함(이게 바로 고친 실제 결함)');
+  assert.strictEqual(fabEl.classList.contains('open'), false);
+  assert.strictEqual(fabEl.getAttribute('aria-expanded'), 'false');
+  assert.strictEqual(vibrateCalls.length, 2, '열 때·닫을 때 모두 navigator.vibrate(6)이 불려야 함(기존 동작 유지)');
+});
+test('[실행형] fabTap/syncOverlayInert: fabPop만 열려 있으면 #app엔 inert가 걸리지만 #fab 자신은 제외되고(닫을 때 포커스가 돌아갈 트리거), 닫히면 #app의 inert도 떼어진다', () => {
+  const { ctx, appEl, fabEl } = fabPopCtx();
+  ctx.fabTap();
+  assert.strictEqual(appEl.getAttribute('inert'), '', 'fabPop이 열리면 syncOverlayInert()가 실제로 불려 #app에 inert가 걸려야 함');
+  assert.strictEqual(fabEl.getAttribute('inert'), null, '#fab 자신에는 inert가 걸리면 안 됨');
+  ctx.fabTap();
+  assert.strictEqual(appEl.getAttribute('inert'), null, '닫히면 #app의 inert도 실제로 떼어져야 함');
+});
+test('[실행형] syncOverlayInert: 시트가 열려 있으면(fabPop 상태와 무관) 기존처럼 #app/#fab 모두에 inert가 걸린다(fabPop 전용 분기 추가로 인한 회귀 방지)', () => {
+  const { ctx, sheetEl, appEl, fabEl } = fabPopCtx();
+  sheetEl.classList.add('show');
+  ctx.syncOverlayInert();
+  assert.strictEqual(appEl.getAttribute('inert'), '');
+  assert.strictEqual(fabEl.getAttribute('inert'), '', '시트가 열려 있으면 기존처럼 #fab도 inert여야 함');
+});
+test('[실행형] closeFabPop: #fabPop이 DOM에 없으면 에러 없이 조용히 넘어간다', () => {
+  const { ctx, fabPopEl } = fabPopCtx();
+  fabPopEl.remove();
+  assert.doesNotThrow(() => ctx.closeFabPop());
+});
+test('[실행형] onSheetKeydown: fabPop이 열려 있을 때 Escape를 누르면 closeFabPop()으로 닫히고 포커스가 #fab로 돌아온다', () => {
+  const { ctx, dom, fabPopEl, fabEl } = fabPopCtx();
+  ctx.fabTap();
+  let prevented = false;
+  ctx.onSheetKeydown({ key: 'Escape', preventDefault: () => { prevented = true; } });
+  assert.ok(prevented, 'Escape의 기본 동작(예: 다이얼로그 전체 닫기 등)을 막아야 함');
+  assert.strictEqual(fabPopEl.classList.contains('show'), false, 'Escape로 fabPop이 닫혀야 함');
+  assert.strictEqual(fabPopEl.getAttribute('inert'), '', '닫혔으니 inert도 되돌아와야 함');
+  assert.strictEqual(dom.activeElement, fabEl, 'Escape로 닫으면 포커스가 #fab로 돌아와야 함(sheet/modal/wheel의 기존 Escape 패턴과 동일)');
+});
+test('[실행형] onSheetKeydown: fabPop이 열려 있을 때 Tab 트랩이 fabPop 내부 메뉴 항목만 순환시킨다(마지막 항목에서 Tab→첫 항목, 첫 항목에서 Shift+Tab→마지막 항목)', () => {
+  const { ctx, dom, fabPopEl } = fabPopCtx();
+  ctx.fabTap();
+  const items = fabPopEl.querySelectorAll('.fp-item');
+  assert.strictEqual(items.length, 2, '테스트 전제: 메뉴 항목이 2개여야 함');
+  items[1].focus();
+  let prevented = false;
+  ctx.onSheetKeydown({ key: 'Tab', shiftKey: false, preventDefault: () => { prevented = true; } });
+  assert.ok(prevented);
+  assert.strictEqual(dom.activeElement, items[0], '마지막 항목에서 forward-Tab을 누르면 첫 항목으로 돌아와야 함');
+
+  items[0].focus();
+  prevented = false;
+  ctx.onSheetKeydown({ key: 'Tab', shiftKey: true, preventDefault: () => { prevented = true; } });
+  assert.ok(prevented);
+  assert.strictEqual(dom.activeElement, items[1], '첫 항목에서 Shift+Tab을 누르면 마지막 항목으로 돌아와야 함');
+});
+test('[실행형] onSheetKeydown: 아무 오버레이도 안 열려 있으면(fabPop도 닫혀 있음) target이 null이라 조기 반환해 아무 것도 하지 않는다(회귀)', () => {
+  const { ctx } = fabPopCtx();
+  assert.doesNotThrow(() => ctx.onSheetKeydown({ key: 'Escape', preventDefault: () => { throw new Error('preventDefault가 불리면 안 됨'); } }));
 });
 
 /* ---------- hideBootSplash/#bootSplash: 부팅 중(SDK 로딩·클라우드 세션 복원 순차 대기, 최대

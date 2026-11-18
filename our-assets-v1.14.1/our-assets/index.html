@@ -1378,8 +1378,8 @@ body.selmode .fab{display:none}
 <div class="dp-scrim" id="dpScrim"></div>
 <div class="dp-modal" id="dpModal" role="dialog" aria-modal="true" aria-label="날짜 선택"></div>
 <div class="dp-wheel" id="dpWheel" role="dialog" aria-modal="true"></div>
-<div class="fab-pop" id="fabPop"></div>
-<button class="fab" id="fab" onclick="fabTap()" aria-label="추가"></button>
+<div class="fab-pop" id="fabPop" role="menu" aria-label="추가 메뉴" inert></div>
+<button class="fab" id="fab" onclick="fabTap()" aria-label="추가" aria-haspopup="menu" aria-expanded="false"></button>
 <div class="selbar-bottom" id="selBarBottom"></div>
 <div class="sw-update-bar" id="swUpdateBar" onclick="reloadForUpdate()" role="button" tabindex="0" onkeydown="rowKeydown(event,reloadForUpdate)"></div>
 <div class="install-bar" id="installBar" onclick="onInstallBarClick()"></div>
@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.474';
+const APP_VERSION='1.47.475';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -6286,21 +6286,37 @@ const _savedDrafts=new WeakSet();
 function openFormSheet(html){openSheet(html);const s=$('sheetScroll');if(s)s.scrollTop=_formScroll}
 function buildFabPop(){
  $('fabPop').innerHTML=`
-  <button class="fp-item" onclick="fabPick('tx')">
+  <button class="fp-item" role="menuitem" onclick="fabPick('tx')">
     <span class="fp-ic a-food">${svg('plus')}</span>
     <span class="fp-b"><span class="fp-t">내역</span><span class="fp-s">지출 · 수입 · 저축 · 이체</span></span></button>
-  <button class="fp-item" onclick="fabPick('asset')">
+  <button class="fp-item" role="menuitem" onclick="fabPick('asset')">
     <span class="fp-ic a-bank">${svg('wallet')}</span>
     <span class="fp-b"><span class="fp-t">자산</span><span class="fp-s">통장 · 저축 · 부동산</span></span></button>`;
 }
+/* #sheet/#dpModal/#dpWheel와 같은 통합 오버레이 접근성 시스템(overlayEscapeTarget/syncOverlayInert/
+ * onSheetKeydown)에 FAB '+' 팝업도 4번째 상태로 편입한다(app-evolve cycle369 critique→advance) —
+ * 그전까지 closeFabPop()이 .show 클래스만 떼고 display 전환이 전혀 없어(CSS는 opacity만 전환) 팝업을
+ * 한 번이라도 연 세션부터 숨겨진 .fp-item 버튼 2개가 영구적으로 Tab 순서에 남는 실제 결함이 있었다 —
+ * 닫혀 있을 때 #fabPop에 inert를 걸어(열릴 때만 떼고 닫힐 때 다시 건다) 네이티브 포커스 순회 자체에서
+ * 제외시켜 근본적으로 고친다. */
 function fabTap(){
  const pop=$('fabPop'),fab=$('fab');
  if(!pop.innerHTML)buildFabPop();
- const on=pop.classList.toggle('show');
- fab.classList.toggle('open',on);
+ if(pop.classList.contains('show'))closeFabPop();
+ else{
+  pop.classList.add('show');pop.removeAttribute('inert');
+  fab.classList.add('open');fab.setAttribute('aria-expanded','true');
+  syncOverlayInert();
+  const f=sheetFocusables(pop);if(f.length)f[0].focus();
+ }
  if(navigator.vibrate)navigator.vibrate(6);
 }
-function closeFabPop(){const pop=$('fabPop');if(pop){pop.classList.remove('show');$('fab').classList.remove('open')}}
+function closeFabPop(){
+ const pop=$('fabPop');if(!pop)return;
+ pop.classList.remove('show');pop.setAttribute('inert','');
+ const fab=$('fab');if(fab){fab.classList.remove('open');fab.setAttribute('aria-expanded','false')}
+ syncOverlayInert();
+}
 function fabPick(kind){
  if(twGuard())return;
  closeFabPop();
@@ -10951,10 +10967,11 @@ let _sheetReturnFocus=null;
 function sheetFocusables(sh){return [...sh.querySelectorAll('button,[href],input,select,textarea,[tabindex]')].filter(el=>!el.disabled&&el.tabIndex!==-1&&el.offsetParent!==null)}
 /* #dpModal/#dpWheel(날짜·연월 선택 오버레이)는 시트보다 위(z-index)에 뜨지만 별도의 포커스 트랩·Escape 처리가 없었음 —
    topOverlay 개념으로 통합해 항상 '현재 최상단' 오버레이만 Tab 트랩·Escape 대상이 되게 한다. */
-function overlayEscapeTarget(dpWheelOpen,dpModalOpen,sheetOpen){
+function overlayEscapeTarget(dpWheelOpen,dpModalOpen,sheetOpen,fabPopOpen){
  if(dpWheelOpen)return 'wheel';
  if(dpModalOpen)return 'modal';
  if(sheetOpen)return 'sheet';
+ if(fabPopOpen)return 'fab'; /* FAB '+' 팝업 — z-index가 가장 낮아(56) 항상 마지막 우선순위(app-evolve cycle369 advance) */
  return null;
 }
 /* 안드로이드 백버튼/뒤로가기 제스처가 시트·날짜피커를 닫는 대신 standalone PWA 자체를
@@ -10976,10 +10993,11 @@ function ovHistPop(){ /* 오버레이를 직접(버튼/스크림/스와이프/Es
 }
 function closeTopOverlayLevel(){
  const sh=$('sheet');
- const target=overlayEscapeTarget($('dpWheel').classList.contains('show'),$('dpModal').classList.contains('show'),!!(sh&&sh.classList.contains('show')));
+ const target=overlayEscapeTarget($('dpWheel').classList.contains('show'),$('dpModal').classList.contains('show'),!!(sh&&sh.classList.contains('show')),$('fabPop').classList.contains('show'));
  if(target==='wheel')closeDpWheelLayer();
  else if(target==='modal')closeDatePicker();
  else if(target==='sheet')closeSheetGuarded(true);
+ else if(target==='fab')closeFabPop();
 }
 window.addEventListener('popstate',()=>{
  if(_ovHistSuppress){_ovHistSuppress=false;return}
@@ -10991,12 +11009,17 @@ window.addEventListener('popstate',()=>{
  }
  if(_tabNavPushed){_tabNavPushed=false;go('home');} /* 비홈 탭에서 진짜 백버튼 — 홈으로 복귀 */
 });
-function syncOverlayInert(){ /* dpModal/dpWheel가 떠 있는 동안 그 아래(app/fab/sheet)로 Tab이 새지 않게 */
+function syncOverlayInert(){ /* dpModal/dpWheel가 떠 있는 동안 그 아래(app/fab/sheet)로, fabPop이 떠 있는 동안 app으로 Tab이 새지 않게 */
  const dpOn=$('dpModal').classList.contains('show')||$('dpWheel').classList.contains('show');
  const sh=$('sheet');const shOn=!!(sh&&sh.classList.contains('show'));
+ const fabPopEl=$('fabPop');const fabPopOn=!!(fabPopEl&&fabPopEl.classList.contains('show'));
  ['app','fab'].forEach(id=>{const el=$(id);if(!el)return;
    if(dpOn||shOn){el.setAttribute('inert','');el.setAttribute('aria-hidden','true')}
    else{el.removeAttribute('inert');el.removeAttribute('aria-hidden')}});
+ /* fabPop만 열려 있을 땐(시트/날짜피커 없이) #fab 자신은 그대로 조작 가능해야 하므로(팝업을 연
+    트리거이자 닫을 때 포커스가 돌아갈 곳) 위 루프에선 빼고 #app에만 따로 건다. */
+ const appEl=$('app');
+ if(appEl&&!dpOn&&!shOn&&fabPopOn){appEl.setAttribute('inert','');appEl.setAttribute('aria-hidden','true')}
  if(sh){if(dpOn){sh.setAttribute('inert','');sh.setAttribute('aria-hidden','true')}else{sh.removeAttribute('inert');sh.removeAttribute('aria-hidden')}}
 }
 let _ovFocusStack=[];
@@ -11018,12 +11041,13 @@ function closeDpWheelLayer(){ /* dpWheel 닫기 — 단독 사용(월/연월 휠
 }
 function onSheetKeydown(e){
  const sh=$('sheet');
- const target=overlayEscapeTarget($('dpWheel').classList.contains('show'),$('dpModal').classList.contains('show'),!!(sh&&sh.classList.contains('show')));
+ const target=overlayEscapeTarget($('dpWheel').classList.contains('show'),$('dpModal').classList.contains('show'),!!(sh&&sh.classList.contains('show')),$('fabPop').classList.contains('show'));
  if(!target)return;
- const top=target==='wheel'?$('dpWheel'):target==='modal'?$('dpModal'):sh;
+ const top=target==='wheel'?$('dpWheel'):target==='modal'?$('dpModal'):target==='fab'?$('fabPop'):sh;
  if(e.key==='Escape'){e.preventDefault();
    if(target==='wheel')closeDpWheelLayer();
    else if(target==='modal')closeDatePicker();
+   else if(target==='fab'){closeFabPop();const fb=$('fab');if(fb)fb.focus();}
    else closeSheetGuarded();
    return;
  }
