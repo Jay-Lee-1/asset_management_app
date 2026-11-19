@@ -1,15 +1,8 @@
 {
   "cycle": 378,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 373,
-      "phase": "review",
-      "timestamp": "2026-11-18T23:08:38.210Z",
-      "summary": "develop(cycle373, 8844b8b: scanCorruptBackupKeys()/scanWipeBackupKeys() 실행형 테스트 6건 추가)을 검토했다. 구현과 테스트 기대값이 정확히 일치함을 확인. node test/run.js 3619/3619 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 373,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-19T18:05:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-377에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: saveBudget()(index.html:8486)이 delBudget/doRenameCat/doRenameOwner 등 44곳에서 쓰는 undoToast 관례를 어기고 유일하게 되돌릴 수 없는 예산 편집이었다 — 예산 입력 시 자릿수를 잘못 눌러 덮어쓰면(예: 32만원을 320만원으로) 이전 값이 그 자리에서 영구히 사라짐. delBudget과 동일한 패턴(existing/prevAmount를 setBudgetFrom 전에 캡처)으로 undoToast를 추가해 덮어쓰기 전 금액(또는 그 달에 처음 설정한 경우 항목 자체 제거)으로 되돌릴 수 있게 했다. 테스트 2건 추가(기존 금액 덮어쓰기 후 되돌리기, 처음 설정 후 되돌리면 항목 제거+다른 달 영향 없음 확인). node test/run.js 3668->3670/3670 통과. index.html을 수정했으므로 APP_VERSION 1.47.487->1.47.488, sw.js CACHE v754->v755.",
+      "commit": "d14425d"
+    },
+    {
+      "cycle": 378,
+      "phase": "review",
+      "timestamp": "2026-11-19T19:00:00.000Z",
+      "summary": "develop(cycle378, d14425d: saveBudget()에 undoToast 추가)을 검토했다. delBudget()의 existing/prevAmount 캡처-복원 패턴과 1:1로 대조해 동일함을 확인(budgetKey(y,m)로 정확히 일치하는 이력 항목만 찾아 되돌리고, 처음 설정이면 추가된 항목을 splice로 제거). undoToast 호출 시그니처·6초 타이머·hover/focus pause도 다른 44곳과 동일. 새 테스트 2건이 구현과 정확히 일치. node test/run.js 3670/3670 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
