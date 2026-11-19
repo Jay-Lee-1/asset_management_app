@@ -1,15 +1,12 @@
 {
   "cycle": 377,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "가계부 달력 날짜 칸의 aria-label(dayLabel)에 저축 금액과 예정/이체 인디케이터가 빠짐 (calCellsFor, index.html:6075)",
+    "why": "calCellsFor()(index.html:6059-6078)는 달력 셀마다 수입/지출/저축 세 금액과 예정거래 점(dotp)·내부이체 점(dott) 두 인디케이터를 시각적으로 보여주는데(6077-6078행), 스크린리더용 dayLabel(6075행)은 수입/지출/선택됨/오늘만 조립하고 저축 금액(sv)과 예정(hasSch)/이체(hasTr) 여부는 전혀 포함하지 않는다. 저축 위주로 쓰는 날이나 예정된 반복결제·내부이체가 있는 날을 보이스오버/톡백 사용자가 전혀 구분할 수 없다. 앱이 다른 곳(순자산 차트 aria-label 등)에서는 시각 정보와 라벨을 맞춰온 패턴과 대조되는 누락.",
+    "approach": "index.html:6075 dayLabel 템플릿 리터럴에 기존 `${inn?...}${ex?...}` 패턴과 동일한 방식으로 `${sv?` 저축 ${abbr(sv)}`:''}`를 ex 뒤에 추가하고, 그 뒤에 `${hasSch?' 예정 거래 있음':''}${hasTr?' 내부이체 있음':''}`를 덧붙여 시각 순서(수입→지출→저축→점표시)와 맞춘다. calCellsFor는 renderLedger 한 곳에서만 호출되므로 변경 범위가 좁다. calCellsFor를 FUNCTIONS에 등록(아직 안 돼 있으면)해 실행형 테스트를 추가: 수입만 있는 날/저축만 있는 날/지출+예정+이체가 모두 겹친 날 각각 dayLabel 문자열에 해당 조각이 정확히 포함되는지 확인. node test/run.js로 기존 테스트가 깨지지 않는지 확인하고, index.html을 수정하므로 APP_VERSION과 sw.js CACHE를 올린다."
+  },
   "history": [
-    {
-      "cycle": 372,
-      "phase": "critique",
-      "timestamp": "2026-11-18T20:50:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 발견: openTxSheet()/openRecSheet()(신규 거래/반복거래 작성 유일 진입점, 앱 전체 최다 호출 쓰기 경로)가 FUNCTIONS 목록 밖에 있어 실행형 테스트가 전혀 없다. pending_advance_plan에 FUNCTIONS 등록 + txDraft/recDraft 기본 shape 검증 + firstCash() null 엣지케이스 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 372,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-19T15:00:00.000Z",
       "summary": "develop(cycle377, dd94ec1: goLedgerTo() list 모드 분기에 History 필터 리셋 추가)을 검토했다. sumTap/openAssetHistory/openCatHistory의 리셋 패턴과 1:1로 대조해 동일함을 확인, histEnsureRange()가 range를 건드리지 않고 필요할 때만 확장하는 것도 함수 목적(특정 날짜로 드릴다운)에 맞게 의도적임을 확인. 유일한 호출부(monthOutflowCard의 '이번 달 나갈 돈' 목록, 필터 없는 카드)가 버그 시나리오와 정확히 일치. 새 테스트 3건이 구현과 일치. node test/run.js 3664/3664 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 377,
+      "phase": "critique",
+      "timestamp": "2026-11-19T16:10:00.000Z",
+      "summary": "최근 15~20사이클 동안 critique가 매번 '실행형 테스트 공백 찾기'로 수렴해 효용이 떨어지고 있어, 이번엔 general-purpose 서브에이전트에게 테스트 커버리지가 아니라 실제 UX/접근성/제품 관점에서 index.html의 화면·로직 코드(테스트 코드 제외)를 읽고 critique하도록 명시적으로 지시했다. 발견: calCellsFor()(index.html:6059-6078, 가계부 달력 셀 렌더)가 시각적으로는 수입/지출/저축 금액과 예정거래 점(dotp)·내부이체 점(dott)을 보여주지만, 스크린리더용 dayLabel(6075행)은 수입/지출/선택됨/오늘만 조립하고 저축 금액과 예정/이체 여부는 빠뜨려, 보이스오버/톡백 사용자가 저축 위주 날이나 예정·이체가 있는 날을 구분할 수 없는 접근성 누락. pending_advance_plan에 dayLabel에 저축 금액(sv)과 예정/이체 문구를 추가 + calCellsFor 실행형 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
