@@ -1,19 +1,8 @@
 {
-  "cycle": 373,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "debtPlanDebts/debtPlanBodyHTML/openDebtPlan/debtPlanStrategySel/debtPlanUpdate 실행형 테스트 추가",
-    "why": "\"부채 상환 계획\" 메뉴(cycle355 advance)는 전체 부채 동시 상환 계획을 보여주는 사용자 대면 기능이지만, 그 위의 순수 계산(multiDebtPlan/debtPayoffOrder, logic.js:1214/1230)만 테스트되고 실제 화면을 조립하는 5개 함수(debtPlanDebts, debtPlanBodyHTML, openDebtPlan, debtPlanStrategySel, debtPlanUpdate — index.html:5994-6044)는 한 번도 실행된 적이 없다. headline 3분기(전체완납일/이미완납🎉/가늠불가), debt 목록 balance/pts 매핑, strategy 토글 가드(동일 strategy 재클릭 시 no-op) 중 어디에 회귀가 생겨도 테스트가 못 잡는 공백이다.",
-    "approach": "test/run.js의 FUNCTIONS 배열에 5개 함수를 추가하고, 기존 openSheet/moveSegBlobs/announceLive 공유 스텁을 재사용해 (1) DB.assets에 debt 자산 0/1/N개일 때 debtPlanDebts()의 id/balance/interestRate/pts 매핑, (2) debtPlanBodyHTML의 empty-state와 3가지 headline 분기 각각, (3) openDebtPlan이 hasDebts 여부에 따라 segHTML/입력란을 조건부로 넣는지, (4) debtPlanStrategySel이 동일 strategy 재클릭 시 조용히 no-op하고 다른 strategy면 ST.hist.debtPlanStrategy를 갱신 후 다시 렌더하는지, (5) debtPlanUpdate가 num() 입력을 ST.hist.debtPlanExtra에 반영하고 220ms 디바운스로 announceLive를 부르는지를 실행형으로 검증한다. 과거 vm realm 함정(deepStrictEqual 참조 불일치)이 재발하면 plain()/JSON 왕복 패턴으로 대응한다."
-  },
+  "cycle": 374,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 368,
-      "phase": "advance",
-      "timestamp": "2026-11-18T05:13:06.518Z",
-      "summary": "critique(cycle368)의 계획대로 load()(index.html, 앱 부팅 시 localStorage에서 DB를 읽는 유일한 진입점 — 정상/저장소 차단(getItem throw)/데이터 손상(JSON.parse 또는 migrate() throw)/최초부팅(raw 없음) 네 분기)를 실행형으로 테스트했다. 계획이 제안한 'FUNCTIONS 메인 목록 등록' 대신 openSheetCtx/closeSheetCtx/makeSaveCtx와 같은 '좁은 ad hoc vm 컨텍스트' 패턴을 택했다 — save()는 93곳의 다른 호출부가 전역 no-op 스텁에 기대고 있어(makeSaveCtx 주석) 메인 sandbox에서 실제 로직으로 승격시키면 무관한 테스트가 깨지고, seed()/emptyDB()/toastFail()도 load() 검증 목적상 실제 로직을 돌릴 필요가 없어 메인 sandbox를 넓힐 이유가 없었다. test/run.js에 loadCtx() 헬퍼를 추가해 extractFunction('load')만 vm에 태우고, migrate/seed/emptyDB/toastFail/save/localStorage.getItem·setItem/dataKey/STORAGE_OK/SESSION/DB/TAB_SAVED_AT/DB_JSON_LEN은 전부 스파이·플레인 프로퍼티로 좁은 컨텍스트에 직접 채웠다(메인 sandbox는 전혀 건드리지 않음). 테스트 7건 추가. node test/run.js 3565->3571/3571 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/run.js만 수정했고 index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 올리지 않는다. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 369,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-19T00:00:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-373에서 이미 다룬 모든 주제(반복거래, 정산, goalBehind/costBasis, 클라우드동기화/fx폴백, 팔레트, PIN/생체인증, 사진페이로드/가구공유, SRI/CSP/쿼터, CSV/csvDedupeKey, 전역검색, role=button 중첩, assetQtyLog, openSheet/closeSheet/load() 실행형 테스트, duplicateRec 포커스, acctSafety, netlify 가격조회, SVG 차트 접근성, FAB 팝업 오버레이 접근성, reloadForUpdate/SW배너, kakaoReady, 온보딩 튜토리얼, notifyAlertInfo dedupe 버킷팅, openTxSheet/openRecSheet/snapDraft/renderRecSheet 실행형 테스트, scanCorruptBackupKeys/scanWipeBackupKeys 실행형 테스트)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: \"부채 상환 계획\"(multi-debt payoff planner, avalanche/snowball) UI/조립 레이어 — debtPlanDebts/debtPlanBodyHTML/openDebtPlan/debtPlanStrategySel/debtPlanUpdate(index.html:5994-6044) — 가 test/run.js 어디에도 등장하지 않아 실행형 테스트가 전혀 없다. 이 기능이 의존하는 순수 계산(multiDebtPlan/debtPayoffOrder, logic.js:1214/1230)은 이미 ~15개 케이스로 잘 테스트돼 있는데, 정작 화면을 조립하는 glue 레이어는 load()/openSheet/acctSafety/openTxSheet와 같은 '공유 핵심인데 실행형 커버리지 0' 공백 클래스임을 확인. 러너업: (1) openSortSheet/openOwnerSheet/날짜휠 피커(dpExtend/dpOnScroll/whScrollTo/whKeydown) 등 ~100+ 미테스트 함수 군 — 대부분 DOM/requestAnimationFrame에 깊이 엉켜있거나 분기 로직이 얕아 순위를 낮춤, (2) saveKakaoKey()의 빈 if 블록(cycle371 리뷰에서 발견된 비활성 죽은 코드) — 기능적 공백이 아니라 낮게 평가. pending_advance_plan에 5개 함수 FUNCTIONS 등록 + headline 3분기/strategy 토글 가드/디바운스 실행형 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 373,
+      "phase": "advance",
+      "timestamp": "2026-11-19T01:15:57.193Z",
+      "summary": "critique(cycle373)의 계획대로 부채 상환 계획 UI 조립 레이어(debtPlanDebts/debtPlanBodyHTML/openDebtPlan/debtPlanStrategySel/debtPlanUpdate, index.html:5994-6044)를 실행형으로 테스트했다. FUNCTIONS 배열에 5개 함수와 LETS에 _debtPlanAnnT를 추가하고, 기존 $ 스텁 체인에 debtPlanExtra/debtPlanBody 항목을 추가했다(debtPlanBody는 innerHTML→textContent 파생이 필요해 debtWhatIfResultEl류의 단순 텍스트 객체 대신 domstub.createElement('div')를 재사용). debtPlanBodyHTML의 headline 분기를 독립적으로 통제하려 debtPlanDebts()를 임시로 바꿔치기하는 패턴(openGoalsList류와 동일)을 썼다. 테스트 15건 추가: debtPlanDebts의 includeInTotal/type 필터링과 id/name/balance/interestRate/pts 매핑(0/1/N), debtPlanBodyHTML의 empty-state·3가지 headline 분기, openDebtPlan의 hasDebts 조건부 세그먼트/입력란과 이전 입력값 복원, debtPlanStrategySel의 동일 전략 재클릭 no-op·다른 전략 재렌더·시트 닫힘 가드, debtPlanUpdate의 num()→ST.hist.debtPlanExtra 반영·220ms 디바운스 announceLive·연속입력 디바운스 재설정·시트 닫힘 가드. 과정에서 실제 버그를 발견해 고쳤다: multiDebtPlan(logic.js)의 결과 매핑이 {id,balance,interestRate,achieved,projectedDate}만 돌려주고 입력받은 debt의 name을 빠뜨려, \"부채 상환 계획\" 시트의 모든 행에서 부채 이름이 항상 빈 문자열로 보이던 실제 버그였다(debtPlanBodyHTML이 esc(r.name)으로 직접 읽음) — multiDebtPlan에 name:d.name을 추가하고 회귀 테스트 1건도 별도로 추가했다. 수정 전 코드로 git stash해 두 테스트(이름 회귀 + debtPlanBodyHTML의 이름 표시 assert)가 FAIL함을 직접 확인한 뒤 복원. 과정에서 cycle372/373과 동일한 vm realm 함정(debtPayoffPtsFor를 독립적으로 두 번 호출한 결과를 deepStrictEqual로 비교하면 \"참조가 다르다\"로 깨짐)을 다시 만나 JSON.parse(JSON.stringify(...)) 왕복으로 해결했다. node test/run.js 3619->3634/3634 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. logic.js(실제 배포되는 순수 로직 모듈)를 수정했으므로 APP_VERSION 1.47.480->1.47.481, sw.js CACHE v747->v748. pending_advance_plan null로 비움. 참고: 이번 사이클 시작 시 로컬 git이 detached HEAD였고 로컬 main이 origin/main보다 25 커밋 앞서 있었다(여러 과거 사이클의 push가 실제로 반영되지 않았던 것으로 보임) — git checkout -B main HEAD로 재설정 후 git fetch로 재확인하니 origin/main이 실제로는 이미 그 커밋까지 올라가 있었다(최초 조회가 stale cache였음). git push로 진행.",
       "commit": null
     }
   ]

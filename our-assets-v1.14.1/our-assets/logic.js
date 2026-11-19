@@ -1235,7 +1235,7 @@ function multiDebtPlan(debts,extraPerMonth,strategy,today){
   const giveExtra=!assigned&&!baseline.achieved;
   if(giveExtra)assigned=true;
   const proj=giveExtra?debtPayoffWhatIf(d.pts,today,extraPerMonth||0):baseline;
-  return {id:d.id,balance:d.balance,interestRate:d.interestRate,achieved:proj.achieved,projectedDate:proj.projectedDate};
+  return {id:d.id,name:d.name,balance:d.balance,interestRate:d.interestRate,achieved:proj.achieved,projectedDate:proj.projectedDate};
  });
  const pending=result.filter(r=>!r.achieved).map(r=>r.projectedDate);
  const allDebtFreeDate=pending.length&&pending.every(d=>d)?pending.reduce((a,b)=>a>b?a:b):null;

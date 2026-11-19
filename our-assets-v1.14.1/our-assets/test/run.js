@@ -246,6 +246,12 @@ const FUNCTIONS = [
   // app-evolve cycle273 advance) — assetBalCard/debtWhatIfUpdate 둘 다 debtWhatIfText 바로 뒤에
   // 이어붙여 호출하므로 같은 이유로 함께 올라가야 한다.
   'debtPayoffPtsFor', 'debtWhatIfText', 'debtAmortSuffix', 'debtWhatIfUpdate',
+  // debtPlanDebts/debtPlanBodyHTML/openDebtPlan/debtPlanStrategySel/debtPlanUpdate는 여러 부채
+  // 동시 상환 계획 UI(app-evolve cycle355 critique/advance)의 화면 조립 레이어 — multiDebtPlan/
+  // debtPayoffOrder(logic.js)만 순수 계산으로 이미 검증돼 있었고 이 조립부 자체는 실행형 테스트가
+  // 전혀 없던 공백이었다(app-evolve cycle373 critique/advance). debtPayoffPtsFor를 그대로
+  // 재사용하므로 바로 위 줄과 같은 sandbox에 올려야 한다.
+  'debtPlanDebts', 'debtPlanBodyHTML', 'openDebtPlan', 'debtPlanStrategySel', 'debtPlanUpdate',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'dbEncryptKey', 'encryptDbBlob', 'decryptDbBlob', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   // proceedWithBackupObj/openImportPinSheet는 PIN으로 암호화된 JSON 백업 복원(app-evolve
@@ -468,7 +474,10 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _importPinRaw는 openImportPinSheet()가 세팅하고 doImportPinSubmit()이 소비하는 "PIN 입력을
 // 기다리는 암호화 백업 원본" 상태라(let 선언, realm에 안 붙음) 같은 이유로 LETS를 통해 가져온다
 // (app-evolve cycle289 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', 'CLOUD_SYNC_ERR_KIND'];
+// _debtPlanAnnT는 debtWhatIfUpdate가 쓰는 _debtWhatIfAnnT와 같은 220ms 디바운스 announceLive
+// 타이머를 debtPlanUpdate()(부채 상환 계획, app-evolve cycle373 advance)가 쓰는 것이라 같은
+// 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다.
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', 'CLOUD_SYNC_ERR_KIND'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -794,11 +803,20 @@ const sandbox = {
   // 있음) 안전하게 넘어가는 분기를 검증한다.
   bootSplashEl: { remove: () => { sandbox.bootSplashRemoveCalls++; } },
   bootSplashRemoveCalls: 0,
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : id === 'txCatSuggest' ? (sandbox.txCatSuggestMissing ? null : sandbox.txCatSuggestEl) : id === 'recCatSuggest' ? (sandbox.recCatSuggestMissing ? null : sandbox.recCatSuggestEl) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : id === 'debtPlanExtra' ? (sandbox.debtPlanExtraValue === undefined ? null : { value: sandbox.debtPlanExtraValue }) : id === 'debtPlanBody' ? (sandbox.debtPlanBodyMissing ? null : sandbox.debtPlanBodyEl) : id === 'txCatSuggest' ? (sandbox.txCatSuggestMissing ? null : sandbox.txCatSuggestEl) : id === 'recCatSuggest' ? (sandbox.recCatSuggestMissing ? null : sandbox.recCatSuggestEl) : null,
   // debtWhatIfResultEl은 debtWhatIfUpdate()가 textContent를 직접 대입하는 결과 표시 엘리먼트
   // (부채 상환 추가 납입 시뮬레이터, app-evolve cycle262 advance) — bkTextEl처럼 호출 간에도
   // 값이 남는 공유 객체로 선언해 textContent 갱신을 검사할 수 있게 한다.
   debtWhatIfResultEl: { textContent: '' },
+  // debtPlanBodyEl은 debtPlanStrategySel()/debtPlanUpdate()(부채 상환 계획, app-evolve cycle373
+  // advance)가 innerHTML을 직접 대입한 뒤 그 textContent로 announceLive를 공지하는 결과
+  // 영역이다 — debtWhatIfResultEl처럼 단순 textContent 대입이 아니라 innerHTML(태그 포함
+  // 문자열)을 대입하므로, 실제 DOM처럼 innerHTML→자식 파싱→textContent 도출이 되는
+  // domstub.createElement를 그대로 재사용한다(assetBodyEl류의 "_html만 저장하는" 단순 흉내로는
+  // 태그가 빠진 textContent를 만들 수 없음). debtPlanBodyMissing=true면 $(...)가 null을 돌려줘
+  // 시트가 이미 닫힌 뒤 호출되는 조기 반환 경로를 재현한다.
+  debtPlanBodyMissing: false,
+  debtPlanBodyEl: domstub.createElement('div'),
   // txCatSuggestEl/recCatSuggestEl은 txCatSuggestUpdate()/recCatSuggestUpdate()(메모 기반
   // 카테고리 추천 칩, app-evolve cycle270 advance)가 style.display/innerHTML/onclick을 직접
   // 대입하는 칩 엘리먼트 흉내 — debtWhatIfResultEl처럼 호출 간에도 값이 남는 공유 객체로
@@ -2723,6 +2741,15 @@ test('multiDebtPlan: 추가 납입을 못 받는 부채의 추세가 증가 중�
   assert.strictEqual(worseningResult.achieved, false);
   assert.strictEqual(worseningResult.projectedDate, null, '추가 납입을 못 받고 추세가 악화 중이면 베이스라인처럼 투사 불가');
   assert.strictEqual(plan.allDebtFreeDate, null);
+});
+// debtPlanBodyHTML(아래, app-evolve cycle373 advance)이 각 행에 부채 이름을 보여주려고
+// plan.order[i].name을 esc()로 직접 읽는다 — 이 테스트를 추가하기 전에는 multiDebtPlan()의
+// 결과 매핑이 {id,balance,interestRate,achieved,projectedDate}만 돌려주고 name을 빠뜨려,
+// "부채 상환 계획" 시트의 모든 행에서 이름이 항상 빈 문자열로 보이는 실제 버그가 있었다.
+test('multiDebtPlan: order 항목에 입력받은 debt의 name을 그대로 돌려준다("부채 상환 계획" 시트가 각 행에 이름을 보여주려면 필요)', () => {
+  const pts = [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }];
+  const plan = sandbox.multiDebtPlan([{ id: 'x', name: '마이너스통장', balance: 200000, interestRate: 5, pts }], 50000, 'avalanche', '2026-01-11');
+  assert.strictEqual(plan.order[0].name, '마이너스통장');
 });
 /* ---------- debtNewlyPaidOff: 완납했지만 아직 ack(payoffAckAt) 안 된 부채 판정 (app-evolve cycle257 advance) ----------
  * goalNewlyAchieved와 정확히 같은 모양 — achieved는 debtPayoffProjection()의 반환값을 그대로 받는다. */
@@ -10951,6 +10978,193 @@ test('[실행형] debtWhatIfUpdate: 존재하지 않는 자산이거나 결과 �
   assert.doesNotThrow(() => sandbox.debtWhatIfUpdate('d1'), '결과 영역이 없어도(시트 닫힘 등) 안전하게 넘어가야 함');
   sandbox.debtWhatIfResultMissing = false;
   assert.strictEqual(sandbox.announceLiveCalls.length, 0, '두 조기 반환 경로 모두 announceLive를 부르지 않아야 함');
+});
+
+/* ---------- debtPlanDebts/debtPlanBodyHTML/openDebtPlan/debtPlanStrategySel/debtPlanUpdate:
+ * 여러 부채 동시 상환 계획("부채 상환 계획", app-evolve cycle355 critique/advance) UI의 화면
+ * 조립 레이어 — multiDebtPlan/debtPayoffOrder(logic.js)만 순수 계산으로 검증돼 있었고 이
+ * 조립부 자체는 실행형 테스트가 전혀 없던 공백이었다(app-evolve cycle373 critique/advance).
+ * debtPlanBodyHTML/openDebtPlan/debtPlanStrategySel/debtPlanUpdate 테스트는 debtPlanDebts()를
+ * 임시로 바꿔치기해(위 openGoalsList류와 같은 패턴) DB/거래내역을 통한 간접 조립 없이
+ * multiDebtPlan이 만드는 헤드라인 분기(전체완납일/이미완납/가늠불가)만 직접 통제한다 —
+ * debtPlanDebts() 자신의 DB→매핑 로직은 바로 아래 첫 테스트에서 별도로 검증한다. 이 과정에서
+ * multiDebtPlan()의 결과 매핑이 name을 빠뜨려 이 시트의 모든 행에서 이름이 항상 빈 문자열로
+ * 보이던 실제 버그를 발견해 고쳤다(위 multiDebtPlan 테스트 섹션의 "order 항목에 입력받은
+ * debt의 name을 그대로 돌려준다" 참고). ---------- */
+test('[실행형] debtPlanDebts: includeInTotal이 false이거나 type이 debt가 아닌 자산은 제외하고, 포함된 debt 자산은 id/name/balance/interestRate/pts를 debtPayoffPtsFor와 정확히 같은 값으로 매핑한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_FROM = '2023-01-01';
+  const to = sandbox.TODAY;
+  const txns = [-85, -45, -5].map((n, i) => ({
+    id: 'p' + i, date: sandbox.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 100000,
+  }));
+  sandbox.DB = {
+    assets: [
+      { id: 'd1', name: '카드빚', type: 'debt', includeInTotal: true, interestRate: 5, baseAmount: 900000 },
+      { id: 'd2', name: '미포함부채', type: 'debt', includeInTotal: false, interestRate: 10, baseAmount: 500000 },
+      { id: 'd3', name: '현금', type: 'cash', includeInTotal: true, baseAmount: 100000 },
+    ],
+    txns, recurrences: [], settings: { confirmTransfers: false },
+  };
+  const result = sandbox.debtPlanDebts();
+  assert.strictEqual(result.length, 1, 'includeInTotal=false이거나 type!==debt인 자산은 빠져야 함');
+  const expectedPts = sandbox.debtPayoffPtsFor(sandbox.DB.assets[0]);
+  // debtPayoffPtsFor를 두 번(위/debtPlanDebts 내부) 독립적으로 호출한 결과라 vm 컨텍스트 realm상
+  // 서로 다른 배열/객체 인스턴스가 된다 — assert.deepStrictEqual은 구조가 같아도 "참조가 다르다"며
+  // 깨지므로(app-evolve cycle372/373이 반복해 만난 vm realm 함정), plain JS 값만 남게
+  // JSON.parse(JSON.stringify(...)) 왕복으로 정규화한 뒤 비교한다(필드가 전부 JSON-safe 값).
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(result[0])), { id: 'd1', name: '카드빚', balance: expectedPts[expectedPts.length - 1].bal, interestRate: 5, pts: JSON.parse(JSON.stringify(expectedPts)) });
+});
+test('[실행형] debtPlanDebts: debt 자산이 하나도 없으면(0개) 빈 배열을 돌려준다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'cash', includeInTotal: true, baseAmount: 0 }], txns: [], recurrences: [], settings: { confirmTransfers: false } };
+  assert.deepStrictEqual(sandbox.debtPlanDebts(), []);
+});
+(() => {
+  const origDebtPlanDebts = sandbox.debtPlanDebts;
+  function restore() { sandbox.debtPlanDebts = origDebtPlanDebts; }
+  test('[실행형] debtPlanBodyHTML: 부채가 하나도 없으면 "부채가 없어요" 빈 상태를 보여준다', () => {
+    sandbox.debtPlanDebts = () => [];
+    try {
+      const html = sandbox.debtPlanBodyHTML('avalanche', 0);
+      assert.ok(html.includes('class="empty"'));
+      assert.ok(html.includes('부채가 없어요'));
+    } finally { restore(); }
+  });
+  test('[실행형] debtPlanBodyHTML: 아직 안 끝난 부채의 투사일을 알 수 있으면 "전체 부채 상환 완료" 헤드라인과 shortDate2로 포맷된 날짜, 각 행에 부채 이름을 보여준다', () => {
+    sandbox.TODAY = '2026-01-11';
+    const pts = [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }];
+    const debts = [{ id: 'a', name: '마이너스통장', balance: 200000, interestRate: 5, pts }];
+    sandbox.debtPlanDebts = () => debts;
+    try {
+      const html = sandbox.debtPlanBodyHTML('avalanche', 50000);
+      const expected = sandbox.multiDebtPlan(debts, 50000, 'avalanche', '2026-01-11');
+      assert.ok(expected.allDebtFreeDate, '전제 확인: 이 시나리오는 allDebtFreeDate가 있어야 함');
+      assert.ok(html.includes('전체 부채 상환 완료'));
+      assert.ok(html.includes(sandbox.shortDate2(expected.allDebtFreeDate)));
+      assert.ok(html.includes('마이너스통장'), '부채 이름이 각 행에 표시돼야 함(multiDebtPlan name 전달 버그 수정 확인)');
+      assert.ok(!html.includes('이미 모든 부채를 다 갚았어요'));
+      assert.ok(!html.includes('가늠하기 어려워요'));
+    } finally { restore(); }
+  });
+  test('[실행형] debtPlanBodyHTML: 모든 부채를 이미 다 갚았으면 "이미 모든 부채를 다 갚았어요 🎉" 헤드라인을 보여준다', () => {
+    const pts = [{ date: '2026-01-01', bal: 100000 }, { date: '2026-01-11', bal: 0 }];
+    sandbox.debtPlanDebts = () => [{ id: 'a', name: '다갚음', balance: 0, interestRate: 0, pts }];
+    try {
+      const html = sandbox.debtPlanBodyHTML('avalanche', 0);
+      assert.ok(html.includes('이미 모든 부채를 다 갚았어요'));
+      assert.ok(html.includes('🎉'));
+      assert.ok(!html.includes('전체 부채 상환 완료'));
+      assert.ok(!html.includes('최근 추세로는 전체 완납일을 가늠하기 어려워요'));
+    } finally { restore(); }
+  });
+  test('[실행형] debtPlanBodyHTML: 추세가 악화돼 투사일을 가늠할 수 없으면 헤드라인과 해당 행 부제 모두 "가늠하기 어려워요" 계열 문구를 보여준다', () => {
+    sandbox.TODAY = '2026-02-01';
+    const pts = [{ date: '2026-01-01', bal: 400000 }, { date: '2026-02-01', bal: 500000 }];
+    sandbox.debtPlanDebts = () => [{ id: 'a', name: '악화중', balance: 500000, interestRate: 10, pts }];
+    try {
+      const html = sandbox.debtPlanBodyHTML('avalanche', 0);
+      assert.ok(html.includes('최근 추세로는 전체 완납일을 가늠하기 어려워요'), '헤드라인');
+      assert.ok(html.includes('악화중'));
+      assert.ok(html.includes('가늠하기 어려워요'), '행 부제');
+      assert.ok(!html.includes('전체 부채 상환 완료'));
+      assert.ok(!html.includes('이미 모든 부채를 다 갚았어요'));
+    } finally { restore(); }
+  });
+  test('[실행형] openDebtPlan: 부채가 있으면 전략 세그먼트와 추가 납입액 입력란을 포함해서 시트를 열고, 이전에 입력해둔 값/전략을 그대로 반영한다', () => {
+    sandbox.debtPlanDebts = () => [{ id: 'a', name: '빚', balance: 100000, interestRate: 5, pts: [] }];
+    sandbox.ST = { hist: { debtPlanStrategy: 'snowball', debtPlanExtra: 123000 } };
+    sandbox.lastSheetHtml = null;
+    try {
+      sandbox.openDebtPlan();
+      assert.ok(sandbox.lastSheetHtml.includes('상환 전략'));
+      assert.ok(sandbox.lastSheetHtml.includes('id="debtPlanExtra"'));
+      assert.ok(sandbox.lastSheetHtml.includes('123,000'), '이전에 입력해둔 추가 납입액이 그대로 채워져 있어야 함');
+      assert.ok(/class="on"[^>]*>잔액 적은 빚 먼저/.test(sandbox.lastSheetHtml), '이전에 선택해둔 전략(snowball)이 세그먼트에 그대로 반영돼야 함');
+      assert.ok(sandbox.lastSheetHtml.includes('id="debtPlanBody"'));
+    } finally { restore(); }
+  });
+  test('[실행형] openDebtPlan: 부채가 하나도 없으면 전략 세그먼트/추가 납입액 입력란 없이 빈 상태 본문만 보여준다', () => {
+    sandbox.debtPlanDebts = () => [];
+    sandbox.ST = { hist: {} };
+    sandbox.lastSheetHtml = null;
+    try {
+      sandbox.openDebtPlan();
+      assert.ok(!sandbox.lastSheetHtml.includes('상환 전략'));
+      assert.ok(!sandbox.lastSheetHtml.includes('id="debtPlanExtra"'));
+      assert.ok(sandbox.lastSheetHtml.includes('부채가 없어요'));
+    } finally { restore(); }
+  });
+})();
+test('[실행형] debtPlanStrategySel: 이미 선택된 전략을 다시 클릭하면 조용히 아무 것도 하지 않는다(ST.hist도 안 바뀌고 debtPlanBody도 다시 그려지지 않는다)', () => {
+  sandbox.ST = { hist: { debtPlanStrategy: 'avalanche', debtPlanExtra: 0 } };
+  sandbox.debtPlanBodyEl.innerHTML = '<div>이전 내용</div>';
+  const prevHtml = sandbox.debtPlanBodyEl.innerHTML;
+  sandbox.debtPlanStrategySel('avalanche');
+  assert.strictEqual(sandbox.ST.hist.debtPlanStrategy, 'avalanche');
+  assert.strictEqual(sandbox.debtPlanBodyEl.innerHTML, prevHtml, '동일 전략 재클릭은 no-op이어야 함');
+});
+test('[실행형] debtPlanStrategySel: 다른 전략을 클릭하면 ST.hist.debtPlanStrategy를 갱신하고 debtPlanBody를 새 전략의 debtPlanBodyHTML로 다시 그린다', () => {
+  sandbox.ST = { hist: { debtPlanStrategy: 'avalanche', debtPlanExtra: 70000 } };
+  const origDebtPlanDebts = sandbox.debtPlanDebts;
+  sandbox.debtPlanDebts = () => [];
+  try {
+    sandbox.debtPlanStrategySel('snowball');
+    assert.strictEqual(sandbox.ST.hist.debtPlanStrategy, 'snowball');
+    assert.strictEqual(sandbox.debtPlanBodyEl.innerHTML, sandbox.debtPlanBodyHTML('snowball', 70000));
+  } finally { sandbox.debtPlanDebts = origDebtPlanDebts; }
+});
+test('[실행형] debtPlanStrategySel: #debtPlanBody가 이미 사라졌으면(시트가 닫힌 뒤 등) 아무 것도 하지 않고 조용히 반환한다', () => {
+  sandbox.ST = { hist: { debtPlanStrategy: 'avalanche' } };
+  sandbox.debtPlanBodyMissing = true;
+  try {
+    assert.doesNotThrow(() => sandbox.debtPlanStrategySel('snowball'));
+  } finally { sandbox.debtPlanBodyMissing = false; }
+});
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout;
+  function restoreTimers() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; }
+  test('[실행형] debtPlanUpdate: 입력값을 num()으로 읽어 ST.hist.debtPlanExtra에 반영하고, debtPlanBody를 새 debtPlanBodyHTML로 다시 그리고, announceLive는 220ms 디바운스 뒤 그 textContent로 정확히 1번 공지한다', () => {
+    sandbox.ST = { hist: { debtPlanStrategy: 'avalanche', debtPlanExtra: 0 } };
+    sandbox.debtPlanExtraValue = '70,000';
+    sandbox.announceLiveCalls = [];
+    const origDebtPlanDebts = sandbox.debtPlanDebts;
+    sandbox.debtPlanDebts = () => [];
+    let capturedMs = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; fn(); return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    try {
+      sandbox.debtPlanUpdate();
+      assert.strictEqual(sandbox.ST.hist.debtPlanExtra, 70000, '쉼표 포맷을 벗겨 숫자로 ST.hist.debtPlanExtra에 반영돼야 함');
+      assert.strictEqual(sandbox.debtPlanBodyEl.innerHTML, sandbox.debtPlanBodyHTML('avalanche', 70000));
+      assert.strictEqual(capturedMs, 220, '다른 입력란과 같은 220ms 디바운스를 써야 함');
+      assert.strictEqual(sandbox.announceLiveCalls.length, 1);
+      assert.strictEqual(sandbox.announceLiveCalls[0], sandbox.debtPlanBodyEl.textContent, 'announceLive는 el.textContent(태그가 빠진 읽기용 텍스트)를 그대로 공지해야 함');
+    } finally { restoreTimers(); sandbox.debtPlanDebts = origDebtPlanDebts; }
+  });
+  test('[실행형] debtPlanUpdate: 연속 입력마다 이전 announceLive 디바운스 타이머를 지우고 새로 하나만 건다(매 keystroke마다 스크린리더가 끊어 읽지 않도록)', () => {
+    sandbox.ST = { hist: { debtPlanStrategy: 'avalanche', debtPlanExtra: 0 } };
+    const origDebtPlanDebts = sandbox.debtPlanDebts;
+    sandbox.debtPlanDebts = () => [];
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer' + setCalls; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    try {
+      sandbox.debtPlanExtraValue = '1'; sandbox.debtPlanUpdate();
+      sandbox.debtPlanExtraValue = '12'; sandbox.debtPlanUpdate();
+      sandbox.debtPlanExtraValue = '123'; sandbox.debtPlanUpdate();
+      assert.strictEqual(setCalls, 3, 'keystroke마다 디바운스 타이머를 새로 걸어야 함');
+      assert.strictEqual(clearCalls, 3, 'keystroke마다 이전 타이머를 지워야 중복 공지가 안 쌓임');
+    } finally { restoreTimers(); sandbox.debtPlanDebts = origDebtPlanDebts; }
+  });
+})();
+test('[실행형] debtPlanUpdate: #debtPlanBody가 이미 사라졌으면(시트가 닫힌 뒤 등) 아무 것도 하지 않고 조용히 반환한다(announceLive도 불리지 않음)', () => {
+  sandbox.ST = { hist: { debtPlanStrategy: 'avalanche', debtPlanExtra: 0 } };
+  sandbox.announceLiveCalls = [];
+  sandbox.debtPlanBodyMissing = true;
+  try {
+    assert.doesNotThrow(() => sandbox.debtPlanUpdate());
+    assert.strictEqual(sandbox.announceLiveCalls.length, 0);
+  } finally { sandbox.debtPlanBodyMissing = false; }
 });
 
 /* ---------- openAssetHistory가 fx/gold/stock에선 전체내역 대신 수량 변경 기록(openAssetQtyLog)으로
