@@ -1,15 +1,8 @@
 {
   "cycle": 377,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 372,
-      "phase": "review",
-      "timestamp": "2026-11-18T19:40:00.000Z",
-      "summary": "develop(cycle372, 09553f5: notifyAlertInfo()의 budgetOver/goalBehind/debtBehind dedupe 키에 20%p/30일/10만원 단위 버킷 추가)을 검토했다. 경계 조건을 직접 추적해 분모 0/음수 버킷 불가함을 확인. 새/갱신 테스트 6건이 구현과 정확히 일치. node test/run.js 3609/3609 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 372,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-19T14:10:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-376에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: goLedgerTo()(index.html:4497, 가계부 날짜 행 탭 → 전체내역 드릴다운)가 sumTap/openAssetHistory/openCatHistory와 달리 History 탭 필터(ST.hist.cat/q/assetId/catExact/owner/selMode)를 리셋하지 않고 histEnsureRange()만 불러 화면을 연다. 재현: 전체내역에서 owner/category/검색어/자산 필터를 걸어둔 채 홈/플랜의 '이번 달 나갈 돈' 등 필터 없는 카드에서 그 필터와 안 맞는 행을 탭하면, 화면은 열리지만 대상 행이 필터에 걸러져 안 보여 거래가 조용히 사라진 것처럼 보인다. 수정: list 모드 분기에서 histEnsureRange() 호출 전에 다른 세 함수와 동일하게 cat='전체'/q=''/assetId=null/catExact=null/catExactType=null/owner='전체'/selMode=false/sel.clear()를 리셋하고 histInvalidate()를 호출하도록 추가. goLedgerTo/histEnsureRange를 FUNCTIONS에 등록하고 flashRow를 go()와 같은 화면 전용 no-op 스텁으로 추가해 실행형 테스트 3건 추가(list 모드 필터 전체 리셋+이동, calendar 모드는 ST.hist 무관, histEnsureRange로 범위 밖 날짜도 보이게 확장). node test/run.js 3661->3664/3664 통과. index.html을 수정했으므로 APP_VERSION 1.47.485->1.47.486, sw.js CACHE v752->v753.",
+      "commit": "dd94ec1"
+    },
+    {
+      "cycle": 377,
+      "phase": "review",
+      "timestamp": "2026-11-19T15:00:00.000Z",
+      "summary": "develop(cycle377, dd94ec1: goLedgerTo() list 모드 분기에 History 필터 리셋 추가)을 검토했다. sumTap/openAssetHistory/openCatHistory의 리셋 패턴과 1:1로 대조해 동일함을 확인, histEnsureRange()가 range를 건드리지 않고 필요할 때만 확장하는 것도 함수 목적(특정 날짜로 드릴다운)에 맞게 의도적임을 확인. 유일한 호출부(monthOutflowCard의 '이번 달 나갈 돈' 목록, 필터 없는 카드)가 버그 시나리오와 정확히 일치. 새 테스트 3건이 구현과 일치. node test/run.js 3664/3664 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
