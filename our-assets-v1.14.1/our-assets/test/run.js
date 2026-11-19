@@ -229,7 +229,7 @@ const FUNCTIONS = [
   'applyPendingCloudConflictMerge',
   'bytesToBase64', 'base64ToBytes', 'encodeCloudPayload', 'decodeCloudPayload',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
-  'clampDay', 'saveTx', 'commitTx', 'commitTxAsRec', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
+  'clampDay', 'saveTx', 'commitTx', 'commitTxAsRec', 'duplicateTx', 'editTx', 'delTx', 'openAdjustEdit', 'delAdjust', 'recEditScope', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers', 'resetStaleDebtPayoffAcks',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'interestRateField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'openOwnerPicker', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   // 정산(settlement, app-evolve cycle314 critique/advance): settlementSummary(logic.js)를 둘러싼
@@ -24207,6 +24207,67 @@ test('editRec: recDraft를 불러올 때 _recCatSuggAnnounced를 리셋해 이�
   sandbox._recCatSuggAnnounced = '관리비';
   sandbox.editRec('r9');
   assert.strictEqual(sandbox._recCatSuggAnnounced, null, 'editRec은 openRecSheet()과 동일하게 announced 캐시를 리셋해야 함');
+});
+
+/* ---------- delTx/openAdjustEdit/delAdjust/recEditScope (app-evolve cycle376 develop) ----------
+ * editTx()의 반복(recId)/잔액조정(adjust) 분기 대상인 recEditScope()/openAdjustEdit(), 그리고
+ * 메인 거래 편집 시트의 삭제 버튼이 거치는 delTx()/delAdjust()는 앱에서 가장 자주 눌리는
+ * 쓰기 경로(거래 삭제) 중 하나인데도 FUNCTIONS에 없어 실행형 테스트가 전혀 없었다. */
+test('delTx: recId가 있으면 confirmSheet 없이 recEditScope로 위임해 "이 내역만/이후 모두/전체" 범위를 고르게 한다', () => {
+  sandbox.DB = { recurrences: [{ id: 'r1', memo: '월세', category: '주거' }] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastSheetHtml = null;
+  sandbox.delTx('t1', 'r1', '2026-01-05');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, 'recId가 있으면 delTx 자체는 confirmSheet를 띄우면 안 됨');
+  assert.ok(/반복 내역 삭제/.test(sandbox.lastSheetHtml), 'recEditScope가 삭제 모드 시트를 열어야 함');
+  assert.ok(sandbox.lastSheetHtml.includes("recApply('r1','2026-01-05','delete','one')"));
+  assert.ok(sandbox.lastSheetHtml.includes("recApply('r1','2026-01-05','delete','future')"));
+  assert.ok(sandbox.lastSheetHtml.includes("recApply('r1','2026-01-05','delete','all')"));
+});
+test('delTx: recId가 없으면 confirmSheet로 확인을 받고, 확인하면 deleteTxnsUndo로 실제 삭제한다', () => {
+  sandbox.DB = { txns: [{ id: 't2', type: 'expense', amount: 1000, date: '2026-01-05' }], deletedIds: {}, trashTxns: [] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delTx('t2', '', '2026-01-05');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.strictEqual(sandbox.confirmSheetCalls[0].title, '내역 삭제');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.txns.length, 0, '확인하면 실제로 DB.txns에서 지워져야 함');
+  assert.strictEqual(sandbox.DB.trashTxns.length, 1, '삭제된 내역은 최근 삭제함(trash)에 들어가야 함');
+});
+test('recEditScope: 반복이 이미 사라졌으면(r 못 찾음) 시트를 열지 않고 조용히 넘어간다', () => {
+  sandbox.DB = { recurrences: [] };
+  sandbox.lastSheetHtml = 'untouched';
+  sandbox.recEditScope('missing', '2026-01-05', 'delete');
+  assert.strictEqual(sandbox.lastSheetHtml, 'untouched', 'r을 못 찾으면 openSheet를 부르면 안 됨');
+});
+test('recEditScope: mode가 edit이면 "반복 내역 수정" 제목으로 열리고 memo가 없으면 category로 대체돼 escape된다', () => {
+  sandbox.DB = { recurrences: [{ id: 'r2', memo: '', category: '<문화>' }] };
+  sandbox.lastSheetHtml = null;
+  sandbox.recEditScope('r2', '2026-02-10', 'edit');
+  assert.ok(/반복 내역 수정/.test(sandbox.lastSheetHtml));
+  assert.ok(sandbox.lastSheetHtml.includes('&lt;문화&gt;'), 'memo가 비어 있으면 category로 대체하고 esc()로 이스케이프해야 함');
+  assert.ok(sandbox.lastSheetHtml.includes("recApply('r2','2026-02-10','edit','one')"));
+});
+test('openAdjustEdit: income/expense 부호와 천단위 콤마 금액을 표시하고 삭제 버튼을 delAdjust(id)로 연결한다', () => {
+  sandbox.lastSheetHtml = null;
+  sandbox.openAdjustEdit({ id: 'adj1', type: 'income', amount: 50000, inSurplus: false });
+  assert.ok(sandbox.lastSheetHtml.includes('+50,000원'), 'income이면 +부호와 콤마 포맷 금액이어야 함');
+  assert.ok(sandbox.lastSheetHtml.includes("delAdjust('adj1')"));
+  assert.ok(!sandbox.lastSheetHtml.includes('class="switch on"'), 'inSurplus가 false면 토글이 꺼져 있어야 함');
+
+  sandbox.lastSheetHtml = null;
+  sandbox.openAdjustEdit({ id: 'adj2', type: 'expense', amount: 1234, inSurplus: true });
+  assert.ok(sandbox.lastSheetHtml.includes('-1,234원'), 'expense면 -부호여야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('switch on'), 'inSurplus가 true면 토글이 켜져 있어야 함');
+});
+test('delAdjust: 확인하면 deleteTxnsUndo로 조정 내역을 실제로 지워 잔액을 조정 전으로 되돌린다', () => {
+  sandbox.DB = { txns: [{ id: 'adj3', type: 'income', amount: 1000, adjust: true, adjustAsset: 'a1' }], deletedIds: {}, trashTxns: [] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delAdjust('adj3');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.strictEqual(sandbox.confirmSheetCalls[0].title, '조정 내역 삭제');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.txns.length, 0);
 });
 
 /* ---------- duplicateTx: 복제(빠른 재입력) (app-evolve cycle193 advance) ----------

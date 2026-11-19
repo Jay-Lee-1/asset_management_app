@@ -1,15 +1,8 @@
 {
   "cycle": 376,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 371,
-      "phase": "develop",
-      "timestamp": "2026-11-18T14:17:31.295Z",
-      "summary": "kakaoReady()(카카오 로그인 SDK 초기화 유일 진입점)가 isInitialized() 여부만 보고 init()을 재호출할지 결정해, 틀린/오타난 Kakao JS 키로 한 번이라도 시도하면 isInitialized()가 true로 고정돼버려 키를 고쳐 재시도해도 새로고침 전까진 반영되지 않는 버그를 Explore 서브에이전트가 찾았다. 수정: 모듈 스코프 _kakaoInitKey를 추가해 키가 바뀌었으면 Kakao.cleanup() 후 init()을 다시 호출하도록 바꿨다. kakaoReadyCtx() ad hoc vm 컨텍스트로 테스트 6건 추가. node test/run.js 3589->3595/3595 통과. APP_VERSION 1.47.477->1.47.478, sw.js CACHE v744->v745. 참고: 로컬 git이 다시 detached HEAD였다 — git checkout -B main HEAD로 재설정 후 진행했다.",
-      "commit": "84e4872"
-    },
     {
       "cycle": 371,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-19T09:40:00.000Z",
       "summary": "critique(cycle375)의 계획대로 7개 *ToCSV 함수(txnsToCSV/assetsToCSV/nwHistoryToCSV/assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV)에 복제돼 있던 guard()/esc() 헬퍼를 logic.js의 csvInjectGuard()/csvCellEsc() 공유 순수 함수로 통합했다(동작 변경 없는 단순 치환, 각 함수는 const guard=csvInjectGuard,esc=csvCellEsc로 대체). csvInjectGuard/csvCellEsc 자체에 대한 유닛 테스트 8건을 test/run.js에 추가(=,+,-,@,tab,CR 각 트리거, 이미 '로 시작하는 값의 이중 가드, 콤마/CRLF/큰따옴표 이스케이프, null/undefined 처리). 기존 7개 함수별 CSV 인젝션 테스트는 수정 없이 그대로 통과해 리팩터링이 동작을 바꾸지 않았음을 확인. node test/run.js 3651/3651 통과(신규 8건 포함). node --check logic.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.484->1.47.485, sw.js CACHE v751->v752. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 376,
+      "phase": "develop",
+      "timestamp": "2026-11-19T10:20:00.000Z",
+      "summary": "Explore 서브에이전트에게 cycle371-375에서 다룬 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: 메인 거래 삭제/편집 경로인 delTx()(거래 삭제 버튼 공통 핸들러)·recEditScope()(반복 내역 삭제/수정 범위 선택: 이 내역만/이후 모두/전체)·openAdjustEdit()/delAdjust()(잔액조정 전용 편집·삭제)가 FUNCTIONS 목록 밖에 있어 실행형 테스트가 전혀 없었다. 4개 함수를 FUNCTIONS에 등록하고 실행형 테스트 6건 추가(recId 분기로 confirmSheet 없이 recEditScope 위임/one·future·all 범위 와이어링, confirmSheet 확인 후 deleteTxnsUndo로 실제 삭제, r 못 찾으면 조용히 종료, memo 없으면 category로 대체돼 esc() 이스케이프, income/expense 부호·콤마 포맷·토글 on/off, 조정 내역 확인 삭제). 실제 버그는 발견되지 않음(순수 커버리지 보강). node test/run.js 3651->3657/3657 통과. test/run.js만 수정해 APP_VERSION/CACHE는 올리지 않음.",
       "commit": null
     }
   ]
