@@ -1,15 +1,8 @@
 {
   "cycle": 374,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 369,
-      "phase": "review",
-      "timestamp": "2026-11-18T06:30:00.000Z",
-      "summary": "develop 커밋(ef4c40c, acctSafety() 실행형 테스트 3건 추가)을 검토: acctSafety(id)는 planNegatives().find(n=>n.assetId===id)의 결과를 shortDate/comma로 포맷해 {lv,txt}로 돌려주는 1:1 파생 함수임을 index.html:7770-7774에서 직접 확인. 새 테스트 3건이 구현과 정확히 일치하고 엣지 케이스를 놓치지 않음. node test/run.js 3574/3574 통과. 코드 변경 없음, 버그 없음.",
-      "commit": null
-    },
     {
       "cycle": 369,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-19T02:21:08.628Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-373에서 이미 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: doExport()의 데이터 내보내기 \"바로 저장 (공유)\" 경로(JSON 백업)가 navigator.canShare() 지원 여부를 판정하는 canShareFiles()와 다른 File 객체를 공유하고 있었다 — canShareFiles()는 backupFile()이 만드는 iOS 안전 파일(.json을 .txt로 바꾸고 type을 text/plain으로 바꾼 버전)로 지원 여부를 probe하는데, 실제 공유 시점의 doExport()는 new File([text],name,{type:mime})로 원본 .json 파일을 그대로 공유해 iOS에서 canShareFiles()가 true를 반환해 \"바로 저장 (권장)\" 버튼을 보여줘도 실제 공유 시도는 검증 안 된 .json으로 실패해 조용히 클립보드 복사로 폴백하는 판정↔실행 드리프트 버그였다(downloadCorruptBackup 주변 주석이 doExport가 이미 backupFile()을 쓴다고 잘못 가정하고 있던 것도 함께 확인). 수정: non-CSV(JSON) 공유 분기가 backupFile(name,text)를 쓰도록 변경(CSV 분기는 영향 없어 그대로 둠). backupFile() 실행형 테스트 3건 + doExport가 backupFile()을 호출하는지 확인하는 소스 패턴 회귀 테스트 1건 추가. git stash로 수정 전 코드에서 새 회귀 테스트만 FAIL함을 확인한 뒤 복원. node test/run.js 3634->3638/3638 통과. node --check sw.js/logic.js/test/run.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.481->1.47.482, sw.js CACHE v748->v749.",
       "commit": "81e2cc3"
+    },
+    {
+      "cycle": 374,
+      "phase": "review",
+      "timestamp": "2026-11-19T03:07:33.000Z",
+      "summary": "develop(cycle374, 81e2cc3: doExport()의 공유 경로가 canShareFiles()와 동일한 backupFile(name,text)를 쓰도록 수정)을 검토했다. backupFile()/canShareFiles() 구현(index.html:9320-9324)과 doExport() 공유 분기(약 9801행)를 직접 대조: canShareFiles()가 떠보는 입력(backupFile(\"t.json\",...))과 실제 공유 시 만드는 File이 이제 둘 다 backupFile()을 거쳐 iOS 여부에 따라 동일한 이름/MIME 치환 규칙(.json->.txt, application/json->text/plain)을 따름을 확인했고, CSV 분기는 isCsv 삼항으로 그대로 분리돼 영향 없음을 확인했다. exportPin으로 암호화된 JSON도 backupFile이 내용이 아니라 파일명/MIME만 바꾸므로 안전함을 확인. 새 테스트 4건(backupFile 비iOS/iOS 치환, canShareFiles와 동일 입력 일치, doExport 소스 패턴)이 구현과 정확히 일치. node test/run.js 3638/3638 재실행 통과, node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
     }
   ]
 }
