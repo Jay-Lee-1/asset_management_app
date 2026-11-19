@@ -1,19 +1,8 @@
 {
-  "cycle": 375,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "7개 CSV export 함수(txnsToCSV/assetsToCSV/nwHistoryToCSV/assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV)에 흩어진 동일한 guard/esc 헬퍼를 logic.js 공유 함수로 통합",
-    "why": "logic.js 헤더 주석(1-8행)이 \"DOM/DB/전역 상태를 전혀 참조하지 않는 순수 함수는 index.html 대신 logic.js로 옮긴다\"는 원칙을 명시하는데, CSV 인젝션 가드 guard()와 CSV 셀 이스케이프 esc()는 100% 순수 함수인데도 index.html의 7개 *ToCSV 함수(9326/9355/9389/9409/9429/9456/9478행 시작) 안에 각각 byte-for-byte 동일한 복제본으로 존재한다(guard는 6곳: 9334/9358/9411/9433/9459/9479, esc는 7곳: 9335/9359/9390/9412/9434/9460/9480 — grep으로 직접 재확인함). 향후 CSV 인젝션 정규식을 고쳐야 할 때(Excel/Sheets가 새 트리거 문자를 추가하거나 유니코드 변종이 발견되는 경우) 6~7곳을 손으로 동기화해야 하고 아무 장치도 이를 강제하지 않아, 한 곳만 고치고 나머지가 누락되는 드리프트가 발생하기 쉽다 — 이는 이미 cycle374에서 고친 esc() HTML 어트리뷰트 이스케이프 우회 드리프트와 같은 종류의 위험이다.",
-    "approach": "logic.js에 공유 순수 함수 csvInjectGuard(v)와 csvCellEsc(v)를 추가한다(기존 guard/esc 구현과 동일한 정규식/동작 유지). index.html의 7개 *ToCSV 함수에서 로컬 const guard=.../const esc=... 선언 9줄(9334-9335, 9358-9359, 9390, 9411-9412, 9433-9434, 9459-9460, 9479-9480)을 제거하고 각 함수 본문의 guard(...)/esc(...) 호출부를 csvInjectGuard(...)/csvCellEsc(...)로 치환한다(동작 변경 없는 단순 리네임). test/run.js에 csvInjectGuard/csvCellEsc 자체에 대한 유닛 테스트를 추가한다(따옴표 중복 처리, CRLF 래핑, = + - @ tab CR 각 트리거 prefix, 이미 따옴표로 시작하는 값에 대한 이중 가드 케이스). 기존 7개 함수별 CSV 인젝션 테스트(약 7514-8100행)는 수정 없이 그대로 통과해야 하며, 이것으로 리팩터링이 동작을 바꾸지 않았음을 확인한다. index.html을 수정하므로 APP_VERSION과 sw.js CACHE 버전을 올린다."
-  },
+  "cycle": 376,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 370,
-      "phase": "advance",
-      "timestamp": "2026-11-18T13:13:35.488Z",
-      "summary": "critique가 지적한 SW 업데이트 배너의 초안 소실 버그를 고쳤다. closeSheetGuarded()에 선택적 afterClose 콜백을 추가하고 reloadForUpdate()가 isDraftDirty()면 closeSheetGuarded(false,()=>location.reload())로 확인을 먼저 띄우도록 바꿈. 메뉴의 두 location.reload() 직접 호출도 reloadForUpdate()를 거치도록 통일. APP_VERSION/sw.js CACHE 버전을 올리고 회귀 테스트 2개 추가. 전체 3589개 테스트 통과.",
-      "commit": "7080ea6"
-    },
     {
       "cycle": 371,
       "phase": "develop",
@@ -46,105 +35,112 @@
       "cycle": 372,
       "phase": "develop",
       "timestamp": "2026-11-18T18:30:00.000Z",
-      "summary": "Explore 서브에이전트에게 cycle340-371에서 이미 다룬 모든 주제(반복거래, 정산, goalBehind/costBasis, 클라우드동기화/fx폴백, 팔레트, undoToast/App Lock/PIN/생체인증, 사진 페이로드/가구공유, visibilitychange/SRI/CSP/localStorage 쿼터, 카테고리 rename/merge/CSV/csvDedupeKey, assetGainLossBadge/전역검색, role=button 중첩, assetQtyLog, openSheet/closeSheet/load() 실행형 테스트, duplicateRec 포커스, acctSafety, netlify 가격조회, SVG 차트 접근성, FAB 팝업 오버레이 접근성, reloadForUpdate/SW배너, kakaoReady, 온보딩 튜토리얼)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: notifyAlertInfo()(index.html)의 budgetOver/goalBehind/debtBehind 세 OS 푸시 dedupe 키가 월(또는 goalId/assetId) 단위로만 묶여 있어, settleDue/allocationDrift가 이미 cycle 초반에 \"diffAmount/diffPct가 계속 바뀌는데 월만으로 묶으면 같은 달 안에서 더 나빠져도 재알림이 안 된다\"는 이유로 버킷팅을 추가했던 것과 정확히 같은 결함을 그대로 갖고 있었다 — 예산을 1%만 넘겨 한 번 알린 뒤 그 달 안에 300%까지 치솟아도, 목표가 며칠 늦다가 몇 달씩 늦어져도, 부채가 계속 불어나도 OS 알림이 다시는 안 가는 무음 실패 경로(기존 테스트 test/run.js:32332 등이 월 단위 키만 잠가둔 상태로 이 공백을 그대로 통과시키고 있었다). settleDue/allocationDrift와 동일 클래스의 실제 회귀/일관성 버그로 최우선 판단. 수정: budgetOver는 spent/budget 비율을 20%p 단위로(Math.floor(spent/budget*100/20)*20), goalBehind는 daysBetween(targetDate,projectedDate)를 30일 단위로(projectedDate가 null이면 'na' 토큰), debtBehind는 Math.abs(amount)를 settleDue와 동일한 10만원 단위로 버킷팅해 key에 추가했다. 기존 3개 테스트의 하드코딩된 key 리터럴을 새 버킷 포함 값으로 갱신하고, allocationDrift 테스트와 같은 패턴으로 '같은 버킷은 dedupe/다른 버킷은 재알림' 회귀 테스트 3건을 신규 추가(budgetOver 150%->158%(동일 버킷)->320%(재알림), goalBehind 9일->19일(동일)->96일(재알림)+projectedDate가 null로 바뀌는 경우도 재알림, debtBehind 550000->590000(동일)->1200000(재알림)+음수 금액도 Math.abs로 같은 버킷). 수정 전 index.html로 git stash해 새/갱신된 테스트 6건이 전부 FAIL함을 직접 확인한 뒤 복원. node test/run.js 3606->3609/3609 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.479->1.47.480, sw.js CACHE v746->v747. 참고: 이번 사이클도 시작 시 로컬 git이 detached HEAD였다(cycle369/370/371에서도 반복) — git checkout -B main HEAD로 로컬 main을 HEAD로 재설정해 origin/main(이미 75c00f3까지 fast-forward로 올라가 있었음)과 맞춘 뒤 진행했다.",
+      "summary": "Explore 서브에이전트에게 cycle340-371에서 이미 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: notifyAlertInfo()(index.html)의 budgetOver/goalBehind/debtBehind 세 OS 푸시 dedupe 키가 월(또는 goalId/assetId) 단위로만 묶여 있어, settleDue/allocationDrift와 같은 결함을 그대로 갖고 있었다. 수정: budgetOver는 20%p 단위, goalBehind는 30일 단위, debtBehind는 10만원 단위로 버킷팅해 key에 추가. 신규 테스트 3건 추가. node test/run.js 3606->3609/3609 통과. APP_VERSION 1.47.479->1.47.480, sw.js CACHE v746->v747.",
       "commit": "09553f5"
     },
     {
       "cycle": 372,
       "phase": "review",
       "timestamp": "2026-11-18T19:40:00.000Z",
-      "summary": "develop(cycle372, 09553f5: notifyAlertInfo()의 budgetOver/goalBehind/debtBehind dedupe 키에 20%p/30일/10만원 단위 버킷 추가)을 검토했다. 경계 조건을 직접 추적: budgetOver는 호출부(_bo 필터, index.html:12062)가 b>0&&r.v>b를 보장해 al.spent/al.budget*100/20 나눗셈에서 분모 0이 될 수 없음을 확인. goalBehind는 호출부(_gb 필터, index.html:12099)가 !p.projectedDate||p.projectedDate>g.targetDate를 보장해, daysBetween(targetDate,projectedDate)가 항상 양수(또는 projectedDate가 null→'na')이므로 음수 버킷이 나올 여지가 없음을 확인. debtBehind는 assetEval()이 음수(잔액식 부채)를 돌려줄 수 있는데 Math.abs로 올바르게 처리함을 재확인. 새/갱신 테스트 6건이 구현과 정확히 일치하고(동일 버킷 dedupe/다른 버킷 재알림/na 전환 모두 커버) allocationDrift/settleDue와 같은 패턴을 그대로 따름을 diff로 확인. node test/run.js 3609/3609 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전). 참고: 이번 사이클도 시작 시 로컬 git이 detached HEAD였다(cycle369-372에서 반복) — git checkout -B main HEAD로 재설정해 origin/main과 일치시킨 뒤 진행했다.",
+      "summary": "develop(cycle372, 09553f5: notifyAlertInfo()의 budgetOver/goalBehind/debtBehind dedupe 키에 20%p/30일/10만원 단위 버킷 추가)을 검토했다. 경계 조건을 직접 추적해 분모 0/음수 버킷 불가함을 확인. 새/갱신 테스트 6건이 구현과 정확히 일치. node test/run.js 3609/3609 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     },
     {
       "cycle": 372,
       "phase": "critique",
       "timestamp": "2026-11-18T20:50:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-372에서 이미 다룬 모든 주제(반복거래, 정산, goalBehind/costBasis, 클라우드동기화/fx폴백, 팔레트, PIN/생체인증, 사진페이로드/가구공유, SRI/CSP/쿼터, CSV/csvDedupeKey, 전역검색, role=button 중첩, assetQtyLog, openSheet/closeSheet/load() 실행형 테스트, duplicateRec 포커스, acctSafety, netlify 가격조회, SVG 차트 접근성, FAB 팝업 오버레이 접근성, reloadForUpdate/SW배너, kakaoReady, 온보딩 튜토리얼, notifyAlertInfo dedupe 버킷팅)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: openTxSheet()/openRecSheet()(index.html:6345,6899 — 신규 거래/반복거래 작성 시 txDraft/recDraft를 초기화하는 유일한 진입점, FAB 빈상태 CTA/스와이프탭/PWA 숏컷 4곳/반복관리 UI 등 10곳 이상에서 호출되는 앱 전체에서 가장 호출 빈도 높은 쓰기 경로)가 test/run.js FUNCTIONS 목록 밖에 있어 실행형 테스트가 전혀 없다 — load()/openSheet/acctSafety/twScreen과 동일한 공백 클래스이면서 영향 범위가 이 중 가장 넓다고 판단. renderTxSheet/renderRecSheet/firstCash/snapDraft/openSheet(stub)가 이미 메인 sandbox에 있어 추가 저항이 적다는 것도 확인(renderMenu/doImportPinSubmit 계열은 DOM/암호화 I/O에 더 깊이 엉켜 있어 러너업으로 낮게 평가). pending_advance_plan에 FUNCTIONS 등록 + txDraft/recDraft 기본 shape 검증 + firstCash() null(현금성 자산 없음) 엣지케이스 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 발견: openTxSheet()/openRecSheet()(신규 거래/반복거래 작성 유일 진입점, 앱 전체 최다 호출 쓰기 경로)가 FUNCTIONS 목록 밖에 있어 실행형 테스트가 전혀 없다. pending_advance_plan에 FUNCTIONS 등록 + txDraft/recDraft 기본 shape 검증 + firstCash() null 엣지케이스 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     },
     {
       "cycle": 372,
       "phase": "advance",
       "timestamp": "2026-11-18T22:05:00.000Z",
-      "summary": "critique(cycle372)의 계획대로 openTxSheet()/openRecSheet()(신규 거래/반복거래 작성 진입점)를 실행형으로 테스트했다. 계획은 renderRecSheet/snapDraft가 이미 메인 sandbox에 있다고 가정했지만 실제로는 둘 다 FUNCTIONS 목록 밖이라(renderRecSheet는 지금까지 단 한 번도 실행된 적이 없었고, snapDraft는 closeSheetGuarded류 격리 컨텍스트에서만 개별 추출돼 있었음) FUNCTIONS에 'openTxSheet','openRecSheet','snapDraft','renderRecSheet'를 새로 추가하고, renderRecSheet가 참조하는 WK(주말·공휴일 조정 어휘) 상수도 CONSTS에 추가해야 했다. 실행형 테스트 4건 추가: txDraft/recDraft 기본 shape(ST.ledger.sel/firstCash() 결과 포함)과 window._recCtx/_txFocusAmt/_txCatSuggAnnounced/_recCatSuggAnnounced 리셋·snapDraft 스냅샷·renderTxSheet/renderRecSheet 실행 확인, firstCash()가 null을 반환하는(현금성 자산 없음) 엣지 케이스에서 크래시 없이 fromAssetId=null로 남는지 확인. 과정에서 vm 컨텍스트 안의 객체 리터럴과 호스트 쪽 리터럴이 realm이 달라 deepStrictEqual이 \"참조가 다르다\"며 실패하는 함정을 만나, JSON.parse(JSON.stringify(...)) 왕복으로 정규화해 해결했다(필드가 전부 JSON-safe 값이라 손실 없음). 실제 버그는 발견되지 않았다(순수 커버리지 보강). node test/run.js 3609->3613/3613 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/run.js만 수정했고 index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 올리지 않는다. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle372)의 계획대로 openTxSheet()/openRecSheet()를 실행형으로 테스트했다. FUNCTIONS에 'openTxSheet','openRecSheet','snapDraft','renderRecSheet' 추가, WK 상수도 CONSTS에 추가. 실행형 테스트 4건 추가(txDraft/recDraft 기본 shape, 전역 리셋·스냅샷, firstCash() null 엣지케이스). vm realm deepStrictEqual 함정은 JSON 왕복으로 해결. 실제 버그는 발견되지 않음(순수 커버리지 보강). node test/run.js 3609->3613/3613 통과. test/run.js만 수정해 APP_VERSION/CACHE는 올리지 않음. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 373,
       "phase": "develop",
       "timestamp": "2026-11-18T23:20:00.000Z",
-      "summary": "scanCorruptBackupKeys()/scanWipeBackupKeys()(index.html — 매 부팅마다 실제 localStorage를 Object.keys()로 훑고 오래된 __corrupt_/__pre*_ 백업 키를 removeItem()으로 지우며 CORRUPT_BACKUP_KEYS/WIPE_BACKUP_KEYS 전역을 채우는 두 스캔 함수)가 findCorruptBackupKeys/pruneOldCorruptKeys(순수 함수, 이미 검증됨)와 homeAlerts()의 corruptBackup/wipeBackup 카드(전역을 손으로 세팅해 검증)만 각각 테스트돼 있었을 뿐, 그 전역을 실제로 채우는 두 스캔 함수 자신은 load()/openSheet/acctSafety와 같은 '공유 핵심인데 실행형 커버리지 0' 공백이었음을 Explore로 확인했다(cycle340-372에서 다룬 주제는 모두 배제). loadCtx() 패턴을 따라 Object.keys/getItem/removeItem이 실제로 동작하는 plain-object localStorage 목을 주는 scanBackupKeysCtx() ad hoc vm 컨텍스트를 신설, findCorruptBackupKeys/pruneOldCorruptKeys는 이미 검증된 실제 구현을 그대로 재사용했다. 테스트 6건 추가: scanCorruptBackupKeys(정상 필터링/다른 계정·보조 키 보존, CORRUPT_BACKUP_MAX_AGE_MS 초과 키 실제 삭제, STORAGE_OK=false 시 localStorage 미접근, dataKey() throw 시 안전하게 빈 배열 유지)와 scanWipeBackupKeys(7가지 __pre*_ 접두사가 kind와 함께 ts 내림차순으로 합쳐짐, 오래된 건 kind 무관 삭제+STORAGE_OK=false 가드). 과정에서 cycle372와 동일한 vm realm 함정(findCorruptBackupKeys/pruneOldCorruptKeys가 sandbox realm에서 만든 배열이라 호스트 리터럴과 deepStrictEqual 시 '참조가 다르다'로 깨짐)을 다시 만나 JSON.parse(JSON.stringify(...)) 왕복(plain() 헬퍼)으로 해결했다. 실제 버그는 발견되지 않았다(순수 커버리지 보강). node test/run.js 3613->3619/3619 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 이번 사이클은 test/run.js만 수정했고 index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 올리지 않는다.",
+      "summary": "scanCorruptBackupKeys()/scanWipeBackupKeys()가 '공유 핵심인데 실행형 커버리지 0' 공백이었음을 Explore로 확인했다. scanBackupKeysCtx() ad hoc vm 컨텍스트를 신설해 테스트 6건 추가(정상 필터링, 오래된 키 실제 삭제, STORAGE_OK=false 가드, dataKey() throw 안전 처리, 7가지 __pre*_ 접두사 병합 정렬). 실제 버그는 발견되지 않음(순수 커버리지 보강). node test/run.js 3613->3619/3619 통과. test/run.js만 수정해 APP_VERSION/CACHE는 올리지 않음.",
       "commit": null
     },
     {
       "cycle": 373,
       "phase": "review",
       "timestamp": "2026-11-18T23:08:38.210Z",
-      "summary": "develop(cycle373, 8844b8b: scanCorruptBackupKeys()/scanWipeBackupKeys() 실행형 테스트 6건 추가)을 검토했다. 두 함수의 구현(index.html:2727-2736, 2788-2806)과 의존하는 순수 함수 findCorruptBackupKeys/pruneOldCorruptKeys(logic.js:2189-2202)를 직접 대조: CORRUPT_BACKUP_KEYS/WIPE_BACKUP_KEYS를 함수 맨 앞에서 무조건 []로 리셋한 뒤 STORAGE_OK 가드→try/catch 안에서 스캔·정리→removeItem으로 오래된 키 실제 삭제하는 순서를 테스트 6건 모두가 정확히 반영함을 확인(STORAGE_OK=false일 때도 결과가 비는 이유, dataKey() throw가 바깥 try/catch에 잡혀 조용히 빈 배열로 끝나는 경로, scanWipeBackupKeys의 7개 prefix가 개별 findCorruptBackupKeys 호출 후 합쳐 ts 내림차순 재정렬되는 순서까지 테스트 기대값과 일치). node test/run.js 3619/3619 재실행 통과, node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "summary": "develop(cycle373, 8844b8b: scanCorruptBackupKeys()/scanWipeBackupKeys() 실행형 테스트 6건 추가)을 검토했다. 구현과 테스트 기대값이 정확히 일치함을 확인. node test/run.js 3619/3619 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     },
     {
       "cycle": 373,
       "phase": "critique",
       "timestamp": "2026-11-19T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-373에서 이미 다룬 모든 주제(반복거래, 정산, goalBehind/costBasis, 클라우드동기화/fx폴백, 팔레트, PIN/생체인증, 사진페이로드/가구공유, SRI/CSP/쿼터, CSV/csvDedupeKey, 전역검색, role=button 중첩, assetQtyLog, openSheet/closeSheet/load() 실행형 테스트, duplicateRec 포커스, acctSafety, netlify 가격조회, SVG 차트 접근성, FAB 팝업 오버레이 접근성, reloadForUpdate/SW배너, kakaoReady, 온보딩 튜토리얼, notifyAlertInfo dedupe 버킷팅, openTxSheet/openRecSheet/snapDraft/renderRecSheet 실행형 테스트, scanCorruptBackupKeys/scanWipeBackupKeys 실행형 테스트)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: \"부채 상환 계획\"(multi-debt payoff planner, avalanche/snowball) UI/조립 레이어 — debtPlanDebts/debtPlanBodyHTML/openDebtPlan/debtPlanStrategySel/debtPlanUpdate(index.html:5994-6044) — 가 test/run.js 어디에도 등장하지 않아 실행형 테스트가 전혀 없다. 이 기능이 의존하는 순수 계산(multiDebtPlan/debtPayoffOrder, logic.js:1214/1230)은 이미 ~15개 케이스로 잘 테스트돼 있는데, 정작 화면을 조립하는 glue 레이어는 load()/openSheet/acctSafety/openTxSheet와 같은 '공유 핵심인데 실행형 커버리지 0' 공백 클래스임을 확인. 러너업: (1) openSortSheet/openOwnerSheet/날짜휠 피커(dpExtend/dpOnScroll/whScrollTo/whKeydown) 등 ~100+ 미테스트 함수 군 — 대부분 DOM/requestAnimationFrame에 깊이 엉켜있거나 분기 로직이 얕아 순위를 낮춤, (2) saveKakaoKey()의 빈 if 블록(cycle371 리뷰에서 발견된 비활성 죽은 코드) — 기능적 공백이 아니라 낮게 평가. pending_advance_plan에 5개 함수 FUNCTIONS 등록 + headline 3분기/strategy 토글 가드/디바운스 실행형 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 발견: \"부채 상환 계획\" UI 조립 레이어(debtPlanDebts/debtPlanBodyHTML/openDebtPlan/debtPlanStrategySel/debtPlanUpdate)가 실행형 테스트가 전혀 없다(의존 순수 계산 multiDebtPlan/debtPayoffOrder는 이미 잘 테스트됨). pending_advance_plan에 5개 함수 FUNCTIONS 등록 + headline 3분기/strategy 토글 가드/디바운스 실행형 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     },
     {
       "cycle": 373,
       "phase": "advance",
       "timestamp": "2026-11-19T01:15:57.193Z",
-      "summary": "critique(cycle373)의 계획대로 부채 상환 계획 UI 조립 레이어(debtPlanDebts/debtPlanBodyHTML/openDebtPlan/debtPlanStrategySel/debtPlanUpdate, index.html:5994-6044)를 실행형으로 테스트했다. FUNCTIONS 배열에 5개 함수와 LETS에 _debtPlanAnnT를 추가하고, 기존 $ 스텁 체인에 debtPlanExtra/debtPlanBody 항목을 추가했다(debtPlanBody는 innerHTML→textContent 파생이 필요해 debtWhatIfResultEl류의 단순 텍스트 객체 대신 domstub.createElement('div')를 재사용). debtPlanBodyHTML의 headline 분기를 독립적으로 통제하려 debtPlanDebts()를 임시로 바꿔치기하는 패턴(openGoalsList류와 동일)을 썼다. 테스트 15건 추가: debtPlanDebts의 includeInTotal/type 필터링과 id/name/balance/interestRate/pts 매핑(0/1/N), debtPlanBodyHTML의 empty-state·3가지 headline 분기, openDebtPlan의 hasDebts 조건부 세그먼트/입력란과 이전 입력값 복원, debtPlanStrategySel의 동일 전략 재클릭 no-op·다른 전략 재렌더·시트 닫힘 가드, debtPlanUpdate의 num()→ST.hist.debtPlanExtra 반영·220ms 디바운스 announceLive·연속입력 디바운스 재설정·시트 닫힘 가드. 과정에서 실제 버그를 발견해 고쳤다: multiDebtPlan(logic.js)의 결과 매핑이 {id,balance,interestRate,achieved,projectedDate}만 돌려주고 입력받은 debt의 name을 빠뜨려, \"부채 상환 계획\" 시트의 모든 행에서 부채 이름이 항상 빈 문자열로 보이던 실제 버그였다(debtPlanBodyHTML이 esc(r.name)으로 직접 읽음) — multiDebtPlan에 name:d.name을 추가하고 회귀 테스트 1건도 별도로 추가했다. 수정 전 코드로 git stash해 두 테스트(이름 회귀 + debtPlanBodyHTML의 이름 표시 assert)가 FAIL함을 직접 확인한 뒤 복원. 과정에서 cycle372/373과 동일한 vm realm 함정(debtPayoffPtsFor를 독립적으로 두 번 호출한 결과를 deepStrictEqual로 비교하면 \"참조가 다르다\"로 깨짐)을 다시 만나 JSON.parse(JSON.stringify(...)) 왕복으로 해결했다. node test/run.js 3619->3634/3634 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. logic.js(실제 배포되는 순수 로직 모듈)를 수정했으므로 APP_VERSION 1.47.480->1.47.481, sw.js CACHE v747->v748. pending_advance_plan null로 비움. 참고: 이번 사이클 시작 시 로컬 git이 detached HEAD였고 로컬 main이 origin/main보다 25 커밋 앞서 있었다(여러 과거 사이클의 push가 실제로 반영되지 않았던 것으로 보임) — git checkout -B main HEAD로 재설정 후 git fetch로 재확인하니 origin/main이 실제로는 이미 그 커밋까지 올라가 있었다(최초 조회가 stale cache였음). git push로 진행.",
+      "summary": "critique(cycle373)의 계획대로 부채 상환 계획 UI 조립 레이어를 실행형으로 테스트했다. 테스트 15건 추가. 과정에서 실제 버그를 발견해 고쳤다: multiDebtPlan(logic.js)의 결과 매핑이 debt의 name을 빠뜨려 \"부채 상환 계획\" 시트의 모든 행에서 부채 이름이 항상 빈 문자열로 보이던 버그 — name:d.name 추가 + 회귀 테스트 1건. node test/run.js 3619->3634/3634 통과. logic.js를 수정했으므로 APP_VERSION 1.47.480->1.47.481, sw.js CACHE v747->v748. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 374,
       "phase": "develop",
       "timestamp": "2026-11-19T02:21:08.628Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-373에서 이미 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: doExport()의 데이터 내보내기 \"바로 저장 (공유)\" 경로(JSON 백업)가 navigator.canShare() 지원 여부를 판정하는 canShareFiles()와 다른 File 객체를 공유하고 있었다 — canShareFiles()는 backupFile()이 만드는 iOS 안전 파일(.json을 .txt로 바꾸고 type을 text/plain으로 바꾼 버전)로 지원 여부를 probe하는데, 실제 공유 시점의 doExport()는 new File([text],name,{type:mime})로 원본 .json 파일을 그대로 공유해 iOS에서 canShareFiles()가 true를 반환해 \"바로 저장 (권장)\" 버튼을 보여줘도 실제 공유 시도는 검증 안 된 .json으로 실패해 조용히 클립보드 복사로 폴백하는 판정↔실행 드리프트 버그였다(downloadCorruptBackup 주변 주석이 doExport가 이미 backupFile()을 쓴다고 잘못 가정하고 있던 것도 함께 확인). 수정: non-CSV(JSON) 공유 분기가 backupFile(name,text)를 쓰도록 변경(CSV 분기는 영향 없어 그대로 둠). backupFile() 실행형 테스트 3건 + doExport가 backupFile()을 호출하는지 확인하는 소스 패턴 회귀 테스트 1건 추가. git stash로 수정 전 코드에서 새 회귀 테스트만 FAIL함을 확인한 뒤 복원. node test/run.js 3634->3638/3638 통과. node --check sw.js/logic.js/test/run.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.481->1.47.482, sw.js CACHE v748->v749.",
+      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 발견: doExport()의 \"바로 저장 (공유)\" JSON 경로가 canShareFiles()가 probe하는 것과 다른 File 객체(backupFile() 미사용)를 공유해 iOS에서 판정↔실행 드리프트로 조용히 클립보드 폴백하던 버그. non-CSV 공유 분기가 backupFile(name,text)를 쓰도록 수정. 테스트 4건 추가. node test/run.js 3634->3638/3638 통과. APP_VERSION 1.47.481->1.47.482, sw.js CACHE v748->v749.",
       "commit": "81e2cc3"
     },
     {
       "cycle": 374,
       "phase": "review",
       "timestamp": "2026-11-19T03:07:33.000Z",
-      "summary": "develop(cycle374, 81e2cc3: doExport()의 공유 경로가 canShareFiles()와 동일한 backupFile(name,text)를 쓰도록 수정)을 검토했다. backupFile()/canShareFiles() 구현(index.html:9320-9324)과 doExport() 공유 분기(약 9801행)를 직접 대조: canShareFiles()가 떠보는 입력(backupFile(\"t.json\",...))과 실제 공유 시 만드는 File이 이제 둘 다 backupFile()을 거쳐 iOS 여부에 따라 동일한 이름/MIME 치환 규칙(.json->.txt, application/json->text/plain)을 따름을 확인했고, CSV 분기는 isCsv 삼항으로 그대로 분리돼 영향 없음을 확인했다. exportPin으로 암호화된 JSON도 backupFile이 내용이 아니라 파일명/MIME만 바꾸므로 안전함을 확인. 새 테스트 4건(backupFile 비iOS/iOS 치환, canShareFiles와 동일 입력 일치, doExport 소스 패턴)이 구현과 정확히 일치. node test/run.js 3638/3638 재실행 통과, node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "summary": "develop(cycle374, 81e2cc3: doExport()의 공유 경로가 canShareFiles()와 동일한 backupFile(name,text)를 쓰도록 수정)을 검토했다. backupFile()/canShareFiles()/doExport() 공유 분기를 직접 대조해 일치함을 확인. CSV 분기는 영향 없음. node test/run.js 3638/3638 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     },
     {
       "cycle": 374,
       "phase": "critique",
       "timestamp": "2026-11-19T04:20:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-374에서 이미 다룬 모든 주제(반복거래, 정산, goalBehind/costBasis, 클라우드동기화/fx폴백, 팔레트, PIN/생체인증, 사진페이로드/가구공유, SRI/CSP/쿼터, CSV/csvDedupeKey, 전역검색, role=button 중첩, assetQtyLog, openSheet/closeSheet/load() 실행형 테스트, duplicateRec/duplicateAsset/duplicateGoal 포커스, acctSafety, netlify 가격조회, SVG 차트 접근성, FAB 팝업 오버레이 접근성, reloadForUpdate/SW배너, kakaoReady, 온보딩 튜토리얼, notifyAlertInfo dedupe 버킷팅, openTxSheet/openRecSheet/snapDraft/renderRecSheet 실행형 테스트, scanCorruptBackupKeys/scanWipeBackupKeys 실행형 테스트, 부채 상환 계획 UI 실행형 테스트+multiDebtPlan name 버그, doExport 공유경로 File 드리프트)를 배제 목록으로 주고 새 영역을 조사시켰다. migrate/sanitizeBackup, logic.js 전체 함수 커버리지, sw.js, 오버레이 포커스트랩 접근성, amortizationPayoffMonths, nwHistory 엣지케이스를 훑었으나 새로운 고심각도 버그는 못 찾음(300+ 사이클을 거치며 명백한 문제는 이미 드러난 상태). 대신 cross-cutting 이스케이핑 불일치를 발견: logic.js:665의 esc() 헬퍼는 &<>\"'를 함께 이스케이프(특히 & 포함)해 안전한데, 7개 어트리뷰트 보간부(index.html:7015 rMemo, 8040/8041 Supabase URL/key, 8076/13893 카카오 키, 8612 catAddDraft.name, 8677 catRenameDraft.name)는 .replace(/\"/g,'&quot;')만 써서 \"는 막지만 &는 그대로 둬, 저장된 텍스트에 이미 &amp;/&quot; 같은 실제 HTML 엔티티 시퀀스가 들어있으면(복붙 등으로) 재렌더링마다 브라우저가 그걸 디코드해 사용자 텍스트를 영구 변형시키는 데이터 정합성 드리프트를 확인(grep으로 7곳 line 번호 직접 검증, txMemo:6458/splitMemo:6506이 esc()를 올바르게 쓰는 대조군도 확인). XSS/속성 breakout은 아님(HTML5 토크나이저상 디코드된 엔티티가 어트리뷰트 값 내부에 머묾). 러너업: (1) DB.nwHistory가 다른 모든 엔티티(txns/assets/recs/goals/qtyLog/cats/inquiries)와 달리 trash+GC max-age pruning이 전혀 없어 매일 1건씩 무한 누적 — 성장 속도가 느려 낮은 우선순위, (2) openSortSheet/openOwnerSheet/날짜휠 피커 등 ~100+ 미테스트 DOM/rAF 함수 — 분기 얕아 낮은 우선순위. pending_advance_plan에 7개 호출부를 esc()로 교체 + renderRecSheet/renameCatSheet 왕복 회귀 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 고심각도 새 버그는 못 찾았으나 cross-cutting 이스케이핑 불일치를 발견: logic.js의 esc() 헬퍼는 &<>\"'를 모두 이스케이프하는데 index.html의 7개 어트리뷰트 보간부(rMemo/Supabase URL·key/카카오 키/catAddDraft.name/catRenameDraft.name)는 .replace(/\"/g,'&quot;')만 써서 &를 그대로 둬, 이미 엔티티 시퀀스가 포함된 텍스트가 재렌더링마다 디코드되는 데이터 정합성 드리프트. pending_advance_plan에 7개 호출부를 esc()로 교체 + 왕복 회귀 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     },
     {
       "cycle": 374,
       "phase": "advance",
       "timestamp": "2026-11-19T05:14:11.000Z",
-      "summary": "critique(cycle374)의 계획대로 esc() 헬퍼를 우회해 \"만 막고 &는 그대로 두던 .replace(/\"/g,'&quot;') 7곳(index.html:7015 rMemo, 8040/8041 Supabase URL/key, 8076/13893 카카오 키, 8612 newCat/catAddDraft.name, 8677 renameCat/catRenameDraft.name)을 모두 기존 esc() 헬퍼 호출로 교체했다(txMemo:6458/splitMemo:6506과 동일 패턴으로 통일). renameCatSheet는 지금까지 FUNCTIONS 실행 목록 밖에 있어 extractFunction 소스 패턴으로만 검증됐는데, catIconOf/CATICON/catAv가 이미 공유 sandbox에 로드돼 있어 FUNCTIONS에 추가해 실제 실행으로 승격했다. 회귀 테스트 3건 추가: openCatManage(newCat/catAddDraft.name)와 renameCatSheet(renameCat/catRenameDraft.name), renderRecSheet(rMemo/recDraft.memo) 각각에 'R&D \"테스트\"' 같은 &/\"가 섞인 값을 넣어 value=\"...\" 어트리뷰트가 esc()로 이스케이프된 그대로(풀린 생 &가 아니라 &amp;) 왕복하는지 확인한다. git stash로 수정 전 코드에서 새 테스트 3건이 모두 FAIL함을 직접 확인한 뒤 복원했다. node test/run.js 3638->3641/3641 통과. node --check logic.js 통과, 추출한 메인 인라인 <script> 블록도 node --check 통과. index.html을 수정했으므로 APP_VERSION 1.47.482->1.47.483, sw.js CACHE v749->v750.",
+      "summary": "critique(cycle374)의 계획대로 esc() 헬퍼를 우회하던 7곳(rMemo, Supabase URL/key, 카카오 키, catAddDraft.name, catRenameDraft.name)을 모두 esc() 호출로 교체했다. renameCatSheet를 FUNCTIONS에 추가해 실제 실행으로 승격. 회귀 테스트 3건 추가(& / \" 섞인 값 왕복 확인). node test/run.js 3638->3641/3641 통과. APP_VERSION 1.47.482->1.47.483, sw.js CACHE v749->v750.",
       "commit": "ebed91a"
     },
     {
       "cycle": 375,
       "phase": "develop",
       "timestamp": "2026-11-19T06:00:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-374에서 이미 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: 부팅 1.2초 뒤 뜨는 '저축 만기 N건이 임박했어요' 토스트(index.html:14152)가 maturityDate<=TODAY+7인 저축을 overdue(이미 지난 만기, doMaturity() 미처리)와 soon(아직 안 지난 만기)의 구분 없이 모두 같은 count에 섞어, overdue뿐인 상황에서도 앱을 열 때마다 매번 \"곧 만기\"처럼 잘못 안내하는 버그를 발견했다. 이 혼동은 OS 알림(notifyAlertInfo 'mat'/'matMulti', cycle232)·저축 관리 목록(openMaturity, cycle268)·홈 알림 카드(homeAlertCard 'mat'/'matMulti', cycle362)에서 이미 세 번 고쳐졌는데, 부팅 토스트만 한 번도 고쳐지지 않은 채 남아 있었다. homeAlertCard의 allOverdue/someOverdue 판정과 동일한 규칙을 따르는 순수 함수 maturityToastMsg(logic.js)를 추가해 전부 지났으면 '지났어요', 일부만 지났으면 '임박했어요 (지난 건 포함)', 하나도 안 지났으면 기존 '임박했어요'로 구분하도록 부팅 토스트를 다시 연결했다. 회귀 테스트 5건 추가. node test/run.js 3641->3646/3646 통과. APP_VERSION 1.47.483->1.47.484, sw.js CACHE v750->v751.",
+      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 발견: 부팅 1.2초 뒤 뜨는 '저축 만기 N건이 임박했어요' 토스트가 overdue(이미 지난 만기)와 soon(아직 안 지난 만기)의 구분 없이 모두 섞어, overdue뿐인 상황에서도 매번 \"곧 만기\"처럼 잘못 안내하던 버그(OS 알림/저축 관리 목록/홈 알림 카드에서 이미 세 번 고쳐진 혼동이 부팅 토스트만 누락). homeAlertCard의 allOverdue/someOverdue 판정과 동일한 maturityToastMsg(logic.js) 추가. 테스트 5건 추가. node test/run.js 3641->3646/3646 통과. APP_VERSION 1.47.483->1.47.484, sw.js CACHE v750->v751.",
       "commit": "934d959"
     },
     {
       "cycle": 375,
       "phase": "review",
       "timestamp": "2026-11-19T06:45:00.000Z",
-      "summary": "develop(cycle375, 934d959: 부팅 저축 만기 토스트에 maturityToastMsg(logic.js) 추가해 overdue/soon 구분)을 검토했다. 호출부(index.html:14152) soon.filter(a=>a.maturityDate<TODAY).length가 notifyAlertInfo(cycle232)/homeAlertCard(cycle362)와 정확히 같은 overdue 판정식(maturityDate<TODAY)을 그대로 재사용함을 grep으로 직접 대조해 확인. maturityToastMsg(count,overdueCount)의 분기(count<=0→null, overdueCount>=count→'지났어요', 그 외→'임박했어요'+(overdueCount>0?' (지난 건 포함)':'))가 homeAlertCard의 allOverdue/someOverdue 판정과 동일함을 확인. node test/run.js 3646/3646 재실행 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "summary": "develop(cycle375, 934d959: 부팅 저축 만기 토스트에 maturityToastMsg(logic.js) 추가해 overdue/soon 구분)을 검토했다. 호출부가 notifyAlertInfo/homeAlertCard와 정확히 같은 overdue 판정식을 재사용함을 확인, 분기도 일치. node test/run.js 3646/3646 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     },
     {
       "cycle": 375,
       "phase": "critique",
       "timestamp": "2026-11-19T08:30:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-375에서 이미 다룬 모든 주제(boot 저축 만기 토스트 포함)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: CSV 인젝션 가드 guard()와 CSV 셀 이스케이프 esc()가 100% 순수 함수인데도 7개 *ToCSV 함수(txnsToCSV/assetsToCSV/nwHistoryToCSV/assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV) 안에 각각 복제돼 있음을 확인(guard 6곳, esc 7곳, 전부 byte-for-byte 동일 — grep으로 직접 재확인). logic.js 헤더 주석의 순수 함수 추출 원칙을 위반하며, cycle374에서 고친 esc() HTML 어트리뷰트 이스케이프 우회와 같은 종류의 동기화 드리프트 위험(한 곳만 고치고 나머지 누락)을 안고 있음. pending_advance_plan에 csvInjectGuard/csvCellEsc를 logic.js로 통합하고 7곳 호출부를 치환 + 유닛 테스트 추가하는 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 발견: CSV 인젝션 가드 guard()와 CSV 셀 이스케이프 esc()가 100% 순수 함수인데도 7개 *ToCSV 함수(txnsToCSV/assetsToCSV/nwHistoryToCSV/assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV) 안에 각각 복제돼 있음을 확인(guard 6곳, esc 7곳, byte-for-byte 동일). logic.js 헤더 주석의 순수 함수 추출 원칙 위반이며 cycle374와 같은 동기화 드리프트 위험. pending_advance_plan에 csvInjectGuard/csvCellEsc를 logic.js로 통합하고 7곳 호출부를 치환 + 유닛 테스트 추가하는 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 375,
+      "phase": "advance",
+      "timestamp": "2026-11-19T09:40:00.000Z",
+      "summary": "critique(cycle375)의 계획대로 7개 *ToCSV 함수(txnsToCSV/assetsToCSV/nwHistoryToCSV/assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV)에 복제돼 있던 guard()/esc() 헬퍼를 logic.js의 csvInjectGuard()/csvCellEsc() 공유 순수 함수로 통합했다(동작 변경 없는 단순 치환, 각 함수는 const guard=csvInjectGuard,esc=csvCellEsc로 대체). csvInjectGuard/csvCellEsc 자체에 대한 유닛 테스트 8건을 test/run.js에 추가(=,+,-,@,tab,CR 각 트리거, 이미 '로 시작하는 값의 이중 가드, 콤마/CRLF/큰따옴표 이스케이프, null/undefined 처리). 기존 7개 함수별 CSV 인젝션 테스트는 수정 없이 그대로 통과해 리팩터링이 동작을 바꾸지 않았음을 확인. node test/run.js 3651/3651 통과(신규 8건 포함). node --check logic.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.484->1.47.485, sw.js CACHE v751->v752. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

@@ -1633,6 +1633,20 @@ function findPossibleDuplicateRec(recurrences,draft){
   return r.fromAssetId===draft.fromAssetId;
  })||null;
 }
+/* ===== CSV 내보내기 공유 헬퍼(순수) ===== */
+/* 카테고리/자산명/메모 등 사용자가 자유롭게 입력한 값은 =,+,-,@ 로 시작하면 엑셀/스프레드시트가
+ * 수식으로 해석할 수 있어(CSV 인젝션) 앞에 '를 붙여 무력화한다. 원문이 이미 '로 시작하는 경우도
+ * 똑같이 한 번 더 '를 붙여야 한다 — 안 그러면 "'=foo"처럼 '뒤에 위험 문자가 바로 오는 원본과,
+ * 이 가드가 막 보호한 "'=foo"(원본 "=foo")를 내보낸 뒤에는 구분할 수 없어, unguardCsv(index.html)가
+ * 재가져오기 때 원본에 있던 '까지 지워버린다. txnsToCSV/assetsToCSV/assetQtyLogToCSV/
+ * recurrencesToCSV/goalsToCSV/budgetHistoryToCSV(index.html)가 각자 똑같이 들고 있던 복제본을
+ * 하나로 합친 것 — 향후 트리거 문자를 추가/수정할 때 여러 곳을 손으로 동기화하다 한 곳을 빠뜨리는
+ * 드리프트를 막는다(app-evolve cycle375 advance). */
+function csvInjectGuard(v){const s=String(v==null?'':v);return /^['=+\-@\t\r]/.test(s)?"'"+s:s}
+/* CSV 셀 하나를 RFC4180 규칙으로 이스케이프한다 — 콤마/줄바꿈/큰따옴표가 포함되면 전체를
+ * 큰따옴표로 감싸고 내부 큰따옴표는 두 번 반복한다(parseCSV가 대칭으로 되돌린다). 위 7개
+ * *ToCSV 함수와 nwHistoryToCSV가 각자 들고 있던 동일한 복제본을 합친 것. */
+function csvCellEsc(v){const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
 /* ===== 범용(은행/카드사) CSV 가져오기 — 열 매핑 ===== */
 /* txnsToCSV가 내보내는 이 앱 자신의 CSV 헤더(순서 고정) — detectOwnCsvFormat/csvRowToImportTxn이
  * 암묵적으로 가정해 온 "날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모" 7칸을 공유 상수로

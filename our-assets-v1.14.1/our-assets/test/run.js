@@ -7511,6 +7511,42 @@ test('mergeRemoteDataIntoLocal: 이미 DB.categories로 되살아난(병합 결�
   assert.strictEqual(sandbox.DB.trashCats.find(c => c.id === sandbox.catTombKey('expense', '커피')), undefined, 'live인 카테고리가 트래시에 중복으로 남으면 안 됨');
 });
 
+/* ---------- csvInjectGuard/csvCellEsc(logic.js): CSV 내보내기 공유 헬퍼 ----------
+ * txnsToCSV/assetsToCSV/assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV/
+ * nwHistoryToCSV(index.html)가 각자 들고 있던 동일한 guard()/esc() 복제본을 logic.js로 합친
+ * 뒤(app-evolve cycle375 advance) 이 두 함수 자체에 대한 유닛 테스트. 아래 txnsToCSV 등
+ * 7개 함수별 CSV 인젝션 테스트는 수정 없이 그대로 두어, 리팩터링이 동작을 바꾸지 않았음을
+ * 별도로 확인한다. */
+test('csvInjectGuard: =,+,-,@,tab,CR 각 트리거 문자로 시작하면 앞에 \'를 붙인다', () => {
+  assert.strictEqual(sandbox.csvInjectGuard('=1+1'), "'=1+1");
+  assert.strictEqual(sandbox.csvInjectGuard('+1+1'), "'+1+1");
+  assert.strictEqual(sandbox.csvInjectGuard('-2000원'), "'-2000원");
+  assert.strictEqual(sandbox.csvInjectGuard('@SUM(A1)'), "'@SUM(A1)");
+  assert.strictEqual(sandbox.csvInjectGuard('\t=cmd'), "'\t=cmd");
+  assert.strictEqual(sandbox.csvInjectGuard('\rcarriage'), "'\rcarriage");
+});
+test('csvInjectGuard: 트리거 문자로 시작하지 않으면 그대로 둔다', () => {
+  assert.strictEqual(sandbox.csvInjectGuard('평범한 메모'), '평범한 메모');
+  assert.strictEqual(sandbox.csvInjectGuard(''), '');
+  assert.strictEqual(sandbox.csvInjectGuard(null), '');
+  assert.strictEqual(sandbox.csvInjectGuard(undefined), '');
+});
+test('csvInjectGuard: 원본이 이미 \'로 시작하면(그 다음이 위험 문자든 아니든) 무조건 한 번 더 \'를 붙인다', () => {
+  assert.strictEqual(sandbox.csvInjectGuard("'=할인"), "''=할인", '다음이 위험 문자면 보호');
+  assert.strictEqual(sandbox.csvInjectGuard("'평범"), "''평범", '다음이 평범해도 unguardCsv와 짝을 맞추려면 똑같이 보호해야 함');
+});
+test('csvCellEsc: 콤마/CR/LF/큰따옴표가 있으면 전체를 따옴표로 감싸고 내부 큰따옴표는 두 배로 만든다(CRLF 래핑 포함)', () => {
+  assert.strictEqual(sandbox.csvCellEsc('a,b'), '"a,b"');
+  assert.strictEqual(sandbox.csvCellEsc('line1\r\nline2'), '"line1\r\nline2"');
+  assert.strictEqual(sandbox.csvCellEsc('say "hi"'), '"say ""hi"""');
+});
+test('csvCellEsc: 특수문자가 없으면 그대로 두고, null/undefined는 빈 문자열로 만든다', () => {
+  assert.strictEqual(sandbox.csvCellEsc('평범한 값'), '평범한 값');
+  assert.strictEqual(sandbox.csvCellEsc(123), '123');
+  assert.strictEqual(sandbox.csvCellEsc(null), '');
+  assert.strictEqual(sandbox.csvCellEsc(undefined), '');
+});
+
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */
 test('txnsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
   const csv = sandbox.txnsToCSV([], []);
