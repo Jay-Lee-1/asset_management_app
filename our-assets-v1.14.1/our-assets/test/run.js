@@ -35269,6 +35269,48 @@ test('renderLedger: 이전/다음 달 패널의 실제 날짜 셀도 해당 날�
   assert.ok(html.includes('9,000'), '다음 달 패널의 실제 날짜 셀에 해당 날짜 지출이 반영돼야 함');
 });
 
+/* ---------- calCellsFor: dayLabel(스크린리더용 aria-label)에 저축/예정/이체도 포함 (app-evolve cycle377 critique/advance) ----------
+ * 달력 날짜 셀은 시각적으로 수입/지출/저축 금액과 예정거래 점(dotp)·내부이체 점(dott)을 모두
+ * 보여주지만(6077-6078행), 스크린리더용 dayLabel(6075행)은 수입/지출/선택됨/오늘만 조립해
+ * 저축 위주인 날이나 예정·이체가 있는 날을 보이스오버/톡백 사용자가 구분할 수 없었다. */
+test('calCellsFor: 저축만 있는 날은 dayLabel에 "저축 금액"이 포함된다', () => {
+  setupLedgerDB();
+  const txMap = new Map([['2026-06-10', [
+    { id: 't1', date: '2026-06-10', type: 'saving', category: '적금', memo: '', amount: 50000, fromAssetId: 'a1', toAssetId: 'a2' },
+  ]]]);
+  const html = sandbox.calCellsFor(2026, 6, '2026-06-15', txMap);
+  assert.ok(/aria-label="10일 저축 5만"/.test(html), `저축만 있는 날의 dayLabel에 "저축 5만"이 없음: ${html.match(/aria-label="[^"]*10일[^"]*"/)}`);
+});
+test('calCellsFor: 예정 거래(미래 날짜)가 있는 날은 dayLabel에 "예정 거래 있음"이 포함된다', () => {
+  setupLedgerDB();
+  const txMap = new Map([['2026-06-20', [
+    { id: 't1', date: '2026-06-20', type: 'income', category: '급여', memo: '', amount: 3000000, toAssetId: 'a1' },
+  ]]]);
+  const html = sandbox.calCellsFor(2026, 6, '2026-06-15', txMap);
+  const m = html.match(/aria-label="20일[^"]*"/);
+  assert.ok(m && m[0].includes('예정 거래 있음'), `미래 날짜 거래가 있는 날의 dayLabel에 "예정 거래 있음"이 없음: ${m}`);
+});
+test('calCellsFor: 지출+예정+내부이체가 겹친 날은 dayLabel에 지출/저축/예정/이체 조각이 시각 순서(수입→지출→저축→점표시)와 동일하게 모두 포함된다', () => {
+  setupLedgerDB();
+  const txMap = new Map([['2026-06-20', [
+    { id: 't1', date: '2026-06-20', type: 'expense', category: '식비', memo: '', amount: 8000, fromAssetId: 'a1' },
+    { id: 't2', date: '2026-06-20', type: 'saving', category: '적금', memo: '', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2' },
+    { id: 't3', date: '2026-06-20', type: 'transfer', category: '이체', memo: '', amount: 20000, fromAssetId: 'a1', toAssetId: 'a2' },
+  ]]]);
+  const html = sandbox.calCellsFor(2026, 6, '2026-06-15', txMap);
+  const m = html.match(/aria-label="20일[^"]*"/);
+  assert.ok(m, 'dayLabel이 렌더되지 않음');
+  assert.strictEqual(m[0], 'aria-label="20일 지출 8,000 저축 1만 예정 거래 있음 내부이체 있음"', `시각 순서(지출→저축→예정→이체)와 다름: ${m[0]}`);
+});
+test('calCellsFor: 수입만 있고 예정/이체가 없는 날은 저축/예정/이체 조각이 전혀 붙지 않는다(회귀 방지)', () => {
+  setupLedgerDB();
+  const txMap = new Map([['2026-06-10', [
+    { id: 't1', date: '2026-06-10', type: 'income', category: '급여', memo: '', amount: 3000000, toAssetId: 'a1' },
+  ]]]);
+  const html = sandbox.calCellsFor(2026, 6, '2026-06-15', txMap);
+  assert.ok(/aria-label="10일 수입 300만"/.test(html), `수입만 있는 날의 dayLabel이 예상과 다름: ${html.match(/aria-label="[^"]*10일[^"]*"/)}`);
+});
+
 /* ---------- renderHistory: 렌더 함수 스모크 테스트 (app-evolve cycle51 critique/advance) ----------
  * openCatManage(cycle43)·renderTxSheet(cycle44)·renderHome(cycle47)·renderAssets(cycle49)·
  * renderLedger(cycle50)에 이어 여섯 번째 render* 안전망 대상. renderHistory()는 내비게이션에서
