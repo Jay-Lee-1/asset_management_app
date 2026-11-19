@@ -1,19 +1,8 @@
 {
-  "cycle": 374,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "esc() 헬퍼를 우회하는 임의의 .replace(/\"/g,'&quot;') 속성 이스케이핑 7곳이 &를 놓쳐 저장된 텍스트를 재표시 때마다 조용히 변형시킨다",
-    "why": "logic.js:665의 esc(s)는 &<>\"'를 한 번에 함께 이스케이프해(특히 &까지 이스케이프) value=\"...\" 어트리뷰트 왕복이 안전하다(txMemo, index.html:6458이 올바른 예). 반면 7곳은 .replace(/\"/g,'&quot;')만 써서 \"는 막지만 &는 그대로 둔다: index.html:7015(rMemo, 반복거래 메모), 8612(newCat/catAddDraft.name), 8677(renameCat/catRenameDraft.name — 기존 저장된 카테고리 이름), 8040/8041(Supabase URL/key), 8076/13893(카카오 키). 저장된 값에 이미 &amp;/&quot;/&lt; 같은 실제 HTML 문자 참조 시퀀스가 들어있으면(예: 메모/카테고리 이름에 \"R&D\"를 HTML에서 복붙한 경우) 브라우저 어트리뷰트 토크나이저가 다음 렌더링 때 그걸 디코드해버려 사용자 텍스트가 재열 때마다 영구적으로 변형되고 그 변형된 값이 재저장된다. XSS/속성 breakout은 아님(디코드된 엔티티가 어트리뷰트 값 안에 그대로 남음, HTML5 토크나이저 스펙 확인) — 데이터 정합성/일관성 드리프트 버그.",
-    "approach": "7개 호출부(index.html:7015, 8040, 8041, 8076, 8612, 8677, 13893)의 .replace(/\"/g,'&quot;')를 기존 esc() 헬퍼 호출로 교체(txMemo:6458, splitMemo:6506과 동일 패턴). test/run.js에 회귀 테스트 추가: renderRecSheet()을 recDraft.memo='R&D \"x\"'로 렌더해 emit된 value=\"...\" 어트리뷰트가 바이트 그대로(맨 & 아니라 &amp;) 왕복되는지 확인, renameCatSheet도 카테고리 이름에 '&amp;'가 들어간 케이스로 동일 검증. 수정 전 코드로 git stash해 새 테스트가 FAIL하는지 먼저 확인한 뒤 복원. 마지막으로 replace(/\"/g, 패턴이 남아있지 않은지 grep으로 재확인(index.html:9335 등 CSV용 로컬 esc 변수는 다른 목적이라 제외)."
-  },
+  "cycle": 375,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 369,
-      "phase": "advance",
-      "timestamp": "2026-11-18T08:10:00.000Z",
-      "summary": "critique(cycle369)의 계획대로 FAB '+' 팝업(#fabPop)을 #sheet/#dpModal/#dpWheel이 공유하는 통합 오버레이 접근성 시스템에 4번째 상태로 편입했다. overlayEscapeTarget에 fabPopOpen 매개변수 추가, syncOverlayInert()가 #fabPop만 열려 있을 때 #app에만 inert를 걸도록 확장, onSheetKeydown()에 fab 분기 추가(Escape 복귀, Tab 트랩), aria-haspopup/aria-expanded/role=menu/menuitem 추가. 실제 결함 수정: #fabPop에 기본 inert를 박아두고 열 때 제거/닫을 때 복원해 숨겨진 .fp-item 2개가 영구 탭 가능하던 버그를 근본적으로 고쳤다. fabPopCtx() ad hoc vm 컨텍스트로 테스트 11건 추가. node test/run.js 3574->3585/3585 통과. APP_VERSION 1.47.474->1.47.475, sw.js CACHE v741->v742. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 370,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-19T04:20:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-374에서 이미 다룬 모든 주제(반복거래, 정산, goalBehind/costBasis, 클라우드동기화/fx폴백, 팔레트, PIN/생체인증, 사진페이로드/가구공유, SRI/CSP/쿼터, CSV/csvDedupeKey, 전역검색, role=button 중첩, assetQtyLog, openSheet/closeSheet/load() 실행형 테스트, duplicateRec/duplicateAsset/duplicateGoal 포커스, acctSafety, netlify 가격조회, SVG 차트 접근성, FAB 팝업 오버레이 접근성, reloadForUpdate/SW배너, kakaoReady, 온보딩 튜토리얼, notifyAlertInfo dedupe 버킷팅, openTxSheet/openRecSheet/snapDraft/renderRecSheet 실행형 테스트, scanCorruptBackupKeys/scanWipeBackupKeys 실행형 테스트, 부채 상환 계획 UI 실행형 테스트+multiDebtPlan name 버그, doExport 공유경로 File 드리프트)를 배제 목록으로 주고 새 영역을 조사시켰다. migrate/sanitizeBackup, logic.js 전체 함수 커버리지, sw.js, 오버레이 포커스트랩 접근성, amortizationPayoffMonths, nwHistory 엣지케이스를 훑었으나 새로운 고심각도 버그는 못 찾음(300+ 사이클을 거치며 명백한 문제는 이미 드러난 상태). 대신 cross-cutting 이스케이핑 불일치를 발견: logic.js:665의 esc() 헬퍼는 &<>\"'를 함께 이스케이프(특히 & 포함)해 안전한데, 7개 어트리뷰트 보간부(index.html:7015 rMemo, 8040/8041 Supabase URL/key, 8076/13893 카카오 키, 8612 catAddDraft.name, 8677 catRenameDraft.name)는 .replace(/\"/g,'&quot;')만 써서 \"는 막지만 &는 그대로 둬, 저장된 텍스트에 이미 &amp;/&quot; 같은 실제 HTML 엔티티 시퀀스가 들어있으면(복붙 등으로) 재렌더링마다 브라우저가 그걸 디코드해 사용자 텍스트를 영구 변형시키는 데이터 정합성 드리프트를 확인(grep으로 7곳 line 번호 직접 검증, txMemo:6458/splitMemo:6506이 esc()를 올바르게 쓰는 대조군도 확인). XSS/속성 breakout은 아님(HTML5 토크나이저상 디코드된 엔티티가 어트리뷰트 값 내부에 머묾). 러너업: (1) DB.nwHistory가 다른 모든 엔티티(txns/assets/recs/goals/qtyLog/cats/inquiries)와 달리 trash+GC max-age pruning이 전혀 없어 매일 1건씩 무한 누적 — 성장 속도가 느려 낮은 우선순위, (2) openSortSheet/openOwnerSheet/날짜휠 피커 등 ~100+ 미테스트 DOM/rAF 함수 — 분기 얕아 낮은 우선순위. pending_advance_plan에 7개 호출부를 esc()로 교체 + renderRecSheet/renameCatSheet 왕복 회귀 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 374,
+      "phase": "advance",
+      "timestamp": "2026-11-19T05:14:11.000Z",
+      "summary": "critique(cycle374)의 계획대로 esc() 헬퍼를 우회해 \"만 막고 &는 그대로 두던 .replace(/\"/g,'&quot;') 7곳(index.html:7015 rMemo, 8040/8041 Supabase URL/key, 8076/13893 카카오 키, 8612 newCat/catAddDraft.name, 8677 renameCat/catRenameDraft.name)을 모두 기존 esc() 헬퍼 호출로 교체했다(txMemo:6458/splitMemo:6506과 동일 패턴으로 통일). renameCatSheet는 지금까지 FUNCTIONS 실행 목록 밖에 있어 extractFunction 소스 패턴으로만 검증됐는데, catIconOf/CATICON/catAv가 이미 공유 sandbox에 로드돼 있어 FUNCTIONS에 추가해 실제 실행으로 승격했다. 회귀 테스트 3건 추가: openCatManage(newCat/catAddDraft.name)와 renameCatSheet(renameCat/catRenameDraft.name), renderRecSheet(rMemo/recDraft.memo) 각각에 'R&D \"테스트\"' 같은 &/\"가 섞인 값을 넣어 value=\"...\" 어트리뷰트가 esc()로 이스케이프된 그대로(풀린 생 &가 아니라 &amp;) 왕복하는지 확인한다. git stash로 수정 전 코드에서 새 테스트 3건이 모두 FAIL함을 직접 확인한 뒤 복원했다. node test/run.js 3638->3641/3641 통과. node --check logic.js 통과, 추출한 메인 인라인 <script> 블록도 node --check 통과. index.html을 수정했으므로 APP_VERSION 1.47.482->1.47.483, sw.js CACHE v749->v750.",
       "commit": null
     }
   ]

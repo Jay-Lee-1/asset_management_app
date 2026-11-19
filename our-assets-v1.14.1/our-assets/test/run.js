@@ -274,6 +274,11 @@ const FUNCTIONS = [
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission', 'toggleNotifyMuteGroup',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'openIconPicker', 'pickCatIcon',
+  // renameCatSheet는 지금까지 extractFunction 소스 패턴으로만 검증돼(29984줄 부근) renameCat 입력의
+  // value="${esc(catRenameDraft.name)}" 같은 실제 왕복 이스케이핑은 한 번도 실행된 적이 없었다
+  // (app-evolve cycle374 advance — .replace(/"/g,'&quot;') 7곳을 esc()로 통일한 critique 계획의
+  // 회귀 가드). catIconOf/CATICON/catAv가 이미 이 sandbox에 있어 keep=true가 아니어도 그대로 돈다.
+  'renameCatSheet',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat', 'txToggleShared',
   // renderRecSheet는 renderTxSheet의 반복거래 쪽 짝인데도 지금까지 한 번도 FUNCTIONS에 오르지
   // 않아 실행형으로 돌려진 적이 없었다(app-evolve cycle372 critique/advance) — openTxSheet()/
@@ -33051,6 +33056,27 @@ test('openCatManage: newCat(카테고리 추가 입력)도 다른 이름 입력�
   assert.ok(html.includes('<div class="field-clear"><input id="newCat"'), 'newCat 입력이 field-clear로 감싸져 있지 않음');
   assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">`), 'newCat에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
+/* newCat/renameCat는 esc() 헬퍼를 우회한 .replace(/"/g,'&quot;')로 "만 막고 &는 그대로 둬서,
+ * "R&D" 같은 카테고리 이름이 value="..." 어트리뷰트에 풀린 &로 박히면 재렌더 때마다 브라우저
+ * 토크나이저가 그 뒤의 문자 참조 시퀀스를 디코드해 저장값을 조용히 변형시킬 수 있었다
+ * (app-evolve cycle374 critique가 찾은 7곳 중 2곳 — advance에서 esc()로 교체). esc()는 &까지
+ * 함께 이스케이프하므로(logic.js) 값 자체에 &나 "가 있어도 어트리뷰트 왕복이 바이트 그대로여야 한다. */
+test('openCatManage: newCat(catAddDraft.name)에 &/"가 있어도 esc()로 이스케이프돼 그대로 왕복한다(풀린 & 디코드 드리프트 회귀 가드)', () => {
+  setupCatManageDB();
+  sandbox.catAddDraft = { name: 'R&D "테스트"', icon: '' };
+  sandbox.openCatManage('expense', true);
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes(`id="newCat" maxlength="${sandbox.NAME_MAX}" placeholder="새 지출 카테고리" value="R&amp;D &quot;테스트&quot;"`), 'newCat의 value가 esc(catAddDraft.name)으로 이스케이프되지 않음(풀린 &가 그대로 남아 디코드 드리프트 위험)');
+  assert.ok(!html.includes('value="R&D'), 'newCat의 value에 이스케이프 안 된 생 &가 남아있으면 안 됨');
+});
+test('renameCatSheet: renameCat(catRenameDraft.name)에 &/"가 있어도 esc()로 이스케이프돼 그대로 왕복한다(풀린 & 디코드 드리프트 회귀 가드)', () => {
+  setupCatManageDB();
+  sandbox.catRenameDraft = { name: 'R&D "테스트"', icon: '' };
+  sandbox.renameCatSheet('expense', 0, true);
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes(`id="renameCat" maxlength="${sandbox.NAME_MAX}" value="R&amp;D &quot;테스트&quot;"`), 'renameCat의 value가 esc(catRenameDraft.name)으로 이스케이프되지 않음(풀린 &가 그대로 남아 디코드 드리프트 위험)');
+  assert.ok(!html.includes('value="R&D'), 'renameCat의 value에 이스케이프 안 된 생 &가 남아있으면 안 됨');
+});
 /* 카테고리는 addCat()이 끝에 push만 해서 추가된 순서 그대로 영원히 고정이라, 자주 쓰는 카테고리를
  * 거래 입력 카테고리 피커 맨 위로 올릴 방법이 전혀 없었다 — 자산 그룹(moveGroup)·그룹 안 개별
  * 자산(moveAsset)은 이미 같은 .grp-move 위/아래 버튼으로 순서를 바꿀 수 있는 것과의 비일관성
@@ -33375,6 +33401,19 @@ test('[실행형] openRecSheet: 현금성 자산이 하나도 없으면(firstCas
   assert.doesNotThrow(() => sandbox.openRecSheet(), '현금성 자산이 없어도 openRecSheet()은 죽지 않아야 함');
   assert.strictEqual(sandbox.recDraft.fromAssetId, null, '현금성 자산이 없으면 fromAssetId는 null로 남아야 함(saveRec 가드가 토스트로 막음)');
   assert.ok(sandbox.lastSheetHtml, '현금성 자산이 없어도 시트는 정상적으로 렌더링돼야 함');
+});
+/* rMemo는 esc() 헬퍼를 우회한 .replace(/"/g,'&quot;')로 "만 막고 &는 그대로 둬서, "R&D" 같은
+ * 메모가 value="..." 어트리뷰트에 풀린 &로 박히면 재렌더 때마다 브라우저 토크나이저가 그 뒤의
+ * 문자 참조 시퀀스를 디코드해 저장된 메모를 조용히 변형시킬 수 있었다(app-evolve cycle374
+ * critique가 찾은 7곳 중 1곳 — advance에서 esc()로 교체. txMemo/splitMemo는 원래부터 esc()를
+ * 썼음). */
+test('[실행형] renderRecSheet: rMemo(recDraft.memo)에 &/"가 있어도 esc()로 이스케이프돼 그대로 왕복한다(풀린 & 디코드 드리프트 회귀 가드)', () => {
+  setupTxSheetDB();
+  sandbox.recDraft = { id: null, type: 'expense', category: '식비', memo: 'R&D "테스트"', amount: 0, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 1, startDate: '2026-03-10', endDate: null, count: null, skip: [], edits: {} };
+  sandbox.renderRecSheet();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes(`id="rMemo" maxlength="${sandbox.MEMO_MAX}" value="R&amp;D &quot;테스트&quot;"`), 'rMemo의 value가 esc(d.memo)로 이스케이프되지 않음(풀린 &가 그대로 남아 디코드 드리프트 위험)');
+  assert.ok(!html.includes('value="R&D'), 'rMemo의 value에 이스케이프 안 된 생 &가 남아있으면 안 됨');
 });
 test('renderTxSheet: type별로 자산 필드가 from/to 중 올바른 조합으로 나온다', () => {
   setupTxSheetDB();

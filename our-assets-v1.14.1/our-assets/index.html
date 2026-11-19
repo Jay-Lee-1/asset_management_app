@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.482';
+const APP_VERSION='1.47.483';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -7012,7 +7012,7 @@ function renderRecSheet(){
  openFormSheet(`<div class="tx-head"><h3>${editing?'반복 수정':'반복 설정'}</h3>${sharedChip}</div><div class="desc">고정지출·정기수입·이체·저축을 자동 기록해요</div>
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${typeSeg}</div>
   ${catField}
-  <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" maxlength="${MEMO_MAX}" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recMemoInput(this)"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
+  <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" maxlength="${MEMO_MAX}" value="${(d.memo&&d.memo!==d.category)?esc(d.memo):''}" placeholder="예: 넷플릭스 구독" oninput="recMemoInput(this)"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
   <div id="recCatSuggest" style="display:none;margin:-4px 0 14px;text-align:right"></div>
   <div class="field"><label for="rAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="recAmtInput(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
   ${assetFields}
@@ -8037,8 +8037,8 @@ function openHelpCloud(){
  const c=sbCfg();
  openSheet(`<h3>이메일 로그인 · 클라우드 동기화</h3>
   <div class="help-body"><p><b>1) Supabase 프로젝트 준비</b><br>supabase.com 에서 무료 프로젝트를 만들고, <b>Project Settings › API</b>에서 <b>Project URL</b>과 <b>anon public</b> 키를 복사해 아래에 붙여넣으세요.</p></div>
-  <div class="field"><label for="sbUrlIn">Project URL</label><div class="field-clear"><input id="sbUrlIn" placeholder="https://xxxx.supabase.co" value="${(c.url||'').replace(/"/g,'&quot;')}"><button type="button" class="fc-x" aria-label="Project URL 지우기" onclick="clrInput('sbUrlIn')">✕</button></div></div>
-  <div class="field"><label for="sbKeyIn">anon public 키</label><div class="field-clear"><input id="sbKeyIn" placeholder="anon public key" value="${(c.key||'').replace(/"/g,'&quot;')}" onkeydown="if(event.key==='Enter')saveCloudCfg()"><button type="button" class="fc-x" aria-label="anon public 키 지우기" onclick="clrInput('sbKeyIn')">✕</button></div></div>
+  <div class="field"><label for="sbUrlIn">Project URL</label><div class="field-clear"><input id="sbUrlIn" placeholder="https://xxxx.supabase.co" value="${esc(c.url||'')}"><button type="button" class="fc-x" aria-label="Project URL 지우기" onclick="clrInput('sbUrlIn')">✕</button></div></div>
+  <div class="field"><label for="sbKeyIn">anon public 키</label><div class="field-clear"><input id="sbKeyIn" placeholder="anon public key" value="${esc(c.key||'')}" onkeydown="if(event.key==='Enter')saveCloudCfg()"><button type="button" class="fc-x" aria-label="anon public 키 지우기" onclick="clrInput('sbKeyIn')">✕</button></div></div>
   <div class="two-btn" style="margin-bottom:16px">${c.url?`<button class="btn btn-soft cancel" onclick="localStorage.removeItem('asset_app_sb_url');localStorage.removeItem('asset_app_sb_key');SB=null;closeSheet();toast('클라우드 설정을 삭제했어요')">설정 삭제</button>`:`<button class="btn btn-soft cancel" onclick="closeSheet()">닫기</button>`}<button class="btn btn-primary" onclick="saveCloudCfg()">저장</button></div>
   <div class="help-body">
    <p><b>2) 테이블 만들기</b><br>Supabase <b>SQL Editor</b>에서 아래 SQL을 한 번 실행하세요.</p>
@@ -8073,7 +8073,7 @@ function openHelpKakao(){
  const cur=(localStorage.getItem('asset_app_kakao_key')||'');
  openSheet(`<h3>카카오 로그인 · 클라우드 설정</h3>
   <div class="help-body"><p><b>1) 카카오 키 입력</b><br>developers.kakao.com에서 앱을 만들고 [앱 키]의 <b>JavaScript 키</b>를 복사해 아래에 붙여넣으세요.</p></div>
-  <div class="field"><div class="field-clear"><input id="kkeyIn2" placeholder="카카오 JavaScript 키" value="${cur.replace(/"/g,'&quot;')}" onkeydown="if(event.key==='Enter')saveKakaoKey2()"><button type="button" class="fc-x" aria-label="카카오 키 지우기" onclick="clrInput('kkeyIn2')">✕</button></div></div>
+  <div class="field"><div class="field-clear"><input id="kkeyIn2" placeholder="카카오 JavaScript 키" value="${esc(cur)}" onkeydown="if(event.key==='Enter')saveKakaoKey2()"><button type="button" class="fc-x" aria-label="카카오 키 지우기" onclick="clrInput('kkeyIn2')">✕</button></div></div>
   <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="localStorage.removeItem('asset_app_kakao_key');closeSheet();toast('카카오 키를 삭제했어요')">키 삭제</button>`:`<button class="btn btn-soft cancel" onclick="closeSheet()">닫기</button>`}<button class="btn btn-primary" onclick="saveKakaoKey2()">저장</button></div>
   <div class="help-body">
    <p><b>2) 도메인 등록</b><br>카카오 개발자 [플랫폼 › Web]에 이 앱을 올린 <b>도메인</b>을 등록하고, [카카오 로그인]을 활성화 + 동의항목에서 '닉네임'을 허용하세요.</p>
@@ -8609,7 +8609,7 @@ function openCatManage(kind,keep){
     const moveBtns=isSysAdjust?'':`<div class="grp-move"><button type="button" class="grp-move-btn" aria-label="${esc(c)} 위로 이동" onclick="moveCat('${k}',${i},-1)"${i===0?' disabled':''}>${svg('arrowUp')}</button><button type="button" class="grp-move-btn" aria-label="${esc(c)} 아래로 이동" onclick="moveCat('${k}',${i},1)"${i===DB.categories[k].length-1?' disabled':''}>${svg('arrowDn')}</button></div>`;
     return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${rollPill}${moveBtns}${acts}</div>`;
    }).join('')}</div>
-  <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><div class="field-clear"><input id="newCat" maxlength="${NAME_MAX}" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value" onkeydown="if(event.key==='Enter'&&!event.isComposing)addCat('${k}')"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">✕</button></div><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
+  <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><div class="field-clear"><input id="newCat" maxlength="${NAME_MAX}" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${esc(catAddDraft.name)}" oninput="catAddDraft.name=this.value" onkeydown="if(event.key==='Enter'&&!event.isComposing)addCat('${k}')"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">✕</button></div><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
 function addCat(k){if(twGuard())return;const v=cleanName(($('newCat')&&$('newCat').value)||catAddDraft.name);if(!v)return;
@@ -8674,7 +8674,7 @@ function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
  if(!keep)catRenameDraft={name:cur,icon:catIconOf(k,cur)||CATICON[cur]||'tag'};
  const avCls=k==='income'?'a-in':k==='saving'?'a-save':'a-food';
  openSheet(`<h3>카테고리 수정</h3><div class="desc">아이콘과 이름을 바꿀 수 있어요. 이 카테고리로 저장된 기존 내역도 함께 반영돼요.</div>
-  <div class="cat-edit-row"><button class="emo-pick lg ${avCls}" onclick="pickCatRenameIcon('${k}',${i})" aria-label="아이콘 선택">${svg(catRenameDraft.icon||'tag',24)}</button><div class="field-clear"><input id="renameCat" maxlength="${NAME_MAX}" value="${catRenameDraft.name.replace(/"/g,'&quot;')}" oninput="catRenameDraft.name=this.value" placeholder="카테고리 이름" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameCat('${k}',${i})"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('renameCat')">✕</button></div></div>
+  <div class="cat-edit-row"><button class="emo-pick lg ${avCls}" onclick="pickCatRenameIcon('${k}',${i})" aria-label="아이콘 선택">${svg(catRenameDraft.icon||'tag',24)}</button><div class="field-clear"><input id="renameCat" maxlength="${NAME_MAX}" value="${esc(catRenameDraft.name)}" oninput="catRenameDraft.name=this.value" placeholder="카테고리 이름" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameCat('${k}',${i})"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('renameCat')">✕</button></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openCatManage('${k}')">취소</button><button class="btn btn-primary" onclick="doRenameCat('${k}',${i})">저장</button></div>`);
  setTimeout(()=>{const el=$('renameCat');el&&el.focus()},300)}
 function doRenameCat(k,i){if(twGuard())return;const v=cleanName(catRenameDraft.name!=null?catRenameDraft.name:($('renameCat')&&$('renameCat').value));if(!v){toast('이름을 입력해 주세요');return}
@@ -13890,7 +13890,7 @@ function renderAuth(){
    <div style="font-size:12px;color:var(--text-3);text-align:center;margin:6px 0 2px">기기 간 동기화는 이메일 로그인에서만 지원돼요 · 카카오는 이 기기에만 저장돼요</div>
    ${AUTHKEY?`<div class="kkey">
      <label for="kkeyIn">카카오 JavaScript 키</label>
-     <div class="field-clear"><input id="kkeyIn" placeholder="카카오 JavaScript 키 붙여넣기" value="${(localStorage.getItem('asset_app_kakao_key')||'').replace(/"/g,'&quot;')}" onkeydown="if(event.key==='Enter')saveKakaoKey()"><button type="button" class="fc-x" aria-label="카카오 JavaScript 키 지우기" onclick="clrInput('kkeyIn')">✕</button></div>
+     <div class="field-clear"><input id="kkeyIn" placeholder="카카오 JavaScript 키 붙여넣기" value="${esc(localStorage.getItem('asset_app_kakao_key')||'')}" onkeydown="if(event.key==='Enter')saveKakaoKey()"><button type="button" class="fc-x" aria-label="카카오 JavaScript 키 지우기" onclick="clrInput('kkeyIn')">✕</button></div>
      <div class="kkey-row"><button class="btn btn-soft cancel" onclick="AUTHKEY=false;authErr('');renderAuth()">취소</button><button class="btn btn-primary" onclick="saveKakaoKey()">저장하고 로그인</button></div>
      <div class="kkey-help">키가 없다면 <b>developers.kakao.com</b> → 앱 생성 → [앱 키]의 <b>JavaScript 키</b>를 복사해 붙여넣으세요. 이 앱을 올린 <b>도메인 등록</b>과 [카카오 로그인] 활성화도 필요해요.</div>
    </div>`:''}
