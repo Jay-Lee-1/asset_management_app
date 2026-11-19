@@ -4250,6 +4250,30 @@ test('saveBudget: 존재하지 않는 idx를 넘기면 아무것도 하지 않�
   sandbox.saveBudget(99);
   assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 0);
 });
+/* saveBudget도 delBudget과 마찬가지로 되돌릴 수 있어야 한다 — 예산 덮어쓰기는 오타(자릿수 실수 등)로
+ * 이전 값이 그 자리에서 영구히 사라지는 유일한 예산 관련 편집이었다(app-evolve cycle378 develop). */
+test('saveBudget: 기존 예산을 덮어쓰면 undoToast로 이전 금액이 되돌아온다', () => {
+  sandbox.DB = { txns: [{ type: 'expense', category: '식비', amount: 10000, date: '2026-06-10' }], recurrences: [], budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.budgetInValue = '3,200,000'; // 32만원을 쓰려다 0을 하나 더 친 상황을 재현
+  sandbox.lastUndo = null;
+  sandbox.saveBudget(0);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 3200000, '입력한 금액대로 저장은 돼야 함');
+  assert.ok(sandbox.lastUndo && typeof sandbox.lastUndo.undoFn === 'function', 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000, '되돌리면 덮어쓰기 전 금액(30만원)으로 복원돼야 함');
+});
+test('saveBudget: 그 달에 처음 설정하는 예산이면 undo 시 항목 자체가 제거된다(다른 달 예산은 영향 없음)', () => {
+  sandbox.DB = { txns: [{ type: 'expense', category: '식비', amount: 10000, date: '2026-06-10' }], recurrences: [], budgetHistory: { 식비: [{ from: '2026-01', amount: 50000 }] } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.budgetInValue = '80000';
+  sandbox.lastUndo = null;
+  sandbox.saveBudget(0);
+  assert.strictEqual(sandbox.DB.budgetHistory.식비.length, 2, '6월부터 적용되는 새 항목이 추가돼야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.budgetHistory.식비.length, 1, '되돌리면 새로 추가된 6월 항목이 제거돼야 함');
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 8), 50000, '되돌린 뒤에는 8월도 다시 1월부터 이어지는 5만원이어야 함');
+});
 
 /* ---------- addCat: 중복 이름 추가 시 무반응 대신 안내 토스트 ---------- */
 test('addCat: 이미 있는 카테고리명을 추가하면 토스트를 띄우고 배열/아이콘을 건드리지 않는다', () => {
