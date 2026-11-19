@@ -141,7 +141,7 @@
       "phase": "advance",
       "timestamp": "2026-11-19T05:14:11.000Z",
       "summary": "critique(cycle374)의 계획대로 esc() 헬퍼를 우회해 \"만 막고 &는 그대로 두던 .replace(/\"/g,'&quot;') 7곳(index.html:7015 rMemo, 8040/8041 Supabase URL/key, 8076/13893 카카오 키, 8612 newCat/catAddDraft.name, 8677 renameCat/catRenameDraft.name)을 모두 기존 esc() 헬퍼 호출로 교체했다(txMemo:6458/splitMemo:6506과 동일 패턴으로 통일). renameCatSheet는 지금까지 FUNCTIONS 실행 목록 밖에 있어 extractFunction 소스 패턴으로만 검증됐는데, catIconOf/CATICON/catAv가 이미 공유 sandbox에 로드돼 있어 FUNCTIONS에 추가해 실제 실행으로 승격했다. 회귀 테스트 3건 추가: openCatManage(newCat/catAddDraft.name)와 renameCatSheet(renameCat/catRenameDraft.name), renderRecSheet(rMemo/recDraft.memo) 각각에 'R&D \"테스트\"' 같은 &/\"가 섞인 값을 넣어 value=\"...\" 어트리뷰트가 esc()로 이스케이프된 그대로(풀린 생 &가 아니라 &amp;) 왕복하는지 확인한다. git stash로 수정 전 코드에서 새 테스트 3건이 모두 FAIL함을 직접 확인한 뒤 복원했다. node test/run.js 3638->3641/3641 통과. node --check logic.js 통과, 추출한 메인 인라인 <script> 블록도 node --check 통과. index.html을 수정했으므로 APP_VERSION 1.47.482->1.47.483, sw.js CACHE v749->v750.",
-      "commit": null
+      "commit": "ebed91a"
     }
   ]
 }
