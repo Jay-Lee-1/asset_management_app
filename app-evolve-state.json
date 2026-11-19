@@ -1,15 +1,8 @@
 {
   "cycle": 374,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 369,
-      "phase": "develop",
-      "timestamp": "2026-11-18T06:11:56.029Z",
-      "summary": "통장 안전 신호등 acctSafety(id)(openPlanAsset 통장 선택 목록에서 쓰임)가 FUNCTIONS 목록 밖에 있어 planNegatives()/homeAlerts()/openNegList()는 모두 실행형 테스트가 있는데도 정작 그 위에서 파생되는 acctSafety 자체는 한 번도 실제로 실행된 적이 없었음을 Explore로 확인했다(cycle340-368에서 다룬 주제는 모두 배제). FUNCTIONS 목록에 acctSafety 추가 후 실행형 테스트 3건을 신설. 버그는 발견되지 않았고 순수 테스트 커버리지 보강이다. node test/run.js 3571->3574/3574 통과. index.html/sw.js 변경 없음(test/run.js만 수정)이라 APP_VERSION/CACHE 버전업 불필요.",
-      "commit": null
-    },
     {
       "cycle": 369,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-19T01:15:57.193Z",
       "summary": "critique(cycle373)의 계획대로 부채 상환 계획 UI 조립 레이어(debtPlanDebts/debtPlanBodyHTML/openDebtPlan/debtPlanStrategySel/debtPlanUpdate, index.html:5994-6044)를 실행형으로 테스트했다. FUNCTIONS 배열에 5개 함수와 LETS에 _debtPlanAnnT를 추가하고, 기존 $ 스텁 체인에 debtPlanExtra/debtPlanBody 항목을 추가했다(debtPlanBody는 innerHTML→textContent 파생이 필요해 debtWhatIfResultEl류의 단순 텍스트 객체 대신 domstub.createElement('div')를 재사용). debtPlanBodyHTML의 headline 분기를 독립적으로 통제하려 debtPlanDebts()를 임시로 바꿔치기하는 패턴(openGoalsList류와 동일)을 썼다. 테스트 15건 추가: debtPlanDebts의 includeInTotal/type 필터링과 id/name/balance/interestRate/pts 매핑(0/1/N), debtPlanBodyHTML의 empty-state·3가지 headline 분기, openDebtPlan의 hasDebts 조건부 세그먼트/입력란과 이전 입력값 복원, debtPlanStrategySel의 동일 전략 재클릭 no-op·다른 전략 재렌더·시트 닫힘 가드, debtPlanUpdate의 num()→ST.hist.debtPlanExtra 반영·220ms 디바운스 announceLive·연속입력 디바운스 재설정·시트 닫힘 가드. 과정에서 실제 버그를 발견해 고쳤다: multiDebtPlan(logic.js)의 결과 매핑이 {id,balance,interestRate,achieved,projectedDate}만 돌려주고 입력받은 debt의 name을 빠뜨려, \"부채 상환 계획\" 시트의 모든 행에서 부채 이름이 항상 빈 문자열로 보이던 실제 버그였다(debtPlanBodyHTML이 esc(r.name)으로 직접 읽음) — multiDebtPlan에 name:d.name을 추가하고 회귀 테스트 1건도 별도로 추가했다. 수정 전 코드로 git stash해 두 테스트(이름 회귀 + debtPlanBodyHTML의 이름 표시 assert)가 FAIL함을 직접 확인한 뒤 복원. 과정에서 cycle372/373과 동일한 vm realm 함정(debtPayoffPtsFor를 독립적으로 두 번 호출한 결과를 deepStrictEqual로 비교하면 \"참조가 다르다\"로 깨짐)을 다시 만나 JSON.parse(JSON.stringify(...)) 왕복으로 해결했다. node test/run.js 3619->3634/3634 통과. node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. logic.js(실제 배포되는 순수 로직 모듈)를 수정했으므로 APP_VERSION 1.47.480->1.47.481, sw.js CACHE v747->v748. pending_advance_plan null로 비움. 참고: 이번 사이클 시작 시 로컬 git이 detached HEAD였고 로컬 main이 origin/main보다 25 커밋 앞서 있었다(여러 과거 사이클의 push가 실제로 반영되지 않았던 것으로 보임) — git checkout -B main HEAD로 재설정 후 git fetch로 재확인하니 origin/main이 실제로는 이미 그 커밋까지 올라가 있었다(최초 조회가 stale cache였음). git push로 진행.",
       "commit": null
+    },
+    {
+      "cycle": 374,
+      "phase": "develop",
+      "timestamp": "2026-11-19T02:21:08.628Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-373에서 이미 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: doExport()의 데이터 내보내기 \"바로 저장 (공유)\" 경로(JSON 백업)가 navigator.canShare() 지원 여부를 판정하는 canShareFiles()와 다른 File 객체를 공유하고 있었다 — canShareFiles()는 backupFile()이 만드는 iOS 안전 파일(.json을 .txt로 바꾸고 type을 text/plain으로 바꾼 버전)로 지원 여부를 probe하는데, 실제 공유 시점의 doExport()는 new File([text],name,{type:mime})로 원본 .json 파일을 그대로 공유해 iOS에서 canShareFiles()가 true를 반환해 \"바로 저장 (권장)\" 버튼을 보여줘도 실제 공유 시도는 검증 안 된 .json으로 실패해 조용히 클립보드 복사로 폴백하는 판정↔실행 드리프트 버그였다(downloadCorruptBackup 주변 주석이 doExport가 이미 backupFile()을 쓴다고 잘못 가정하고 있던 것도 함께 확인). 수정: non-CSV(JSON) 공유 분기가 backupFile(name,text)를 쓰도록 변경(CSV 분기는 영향 없어 그대로 둠). backupFile() 실행형 테스트 3건 + doExport가 backupFile()을 호출하는지 확인하는 소스 패턴 회귀 테스트 1건 추가. git stash로 수정 전 코드에서 새 회귀 테스트만 FAIL함을 확인한 뒤 복원. node test/run.js 3634->3638/3638 통과. node --check sw.js/logic.js/test/run.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.481->1.47.482, sw.js CACHE v748->v749.",
+      "commit": "81e2cc3"
     }
   ]
 }
