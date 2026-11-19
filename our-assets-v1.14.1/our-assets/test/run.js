@@ -38204,12 +38204,52 @@ test('doChangePin 소스: 현재 PIN 오류/새 PIN 형식 오류/확인 불일�
   assert.match(fnSrc, /if\(p1!==p2\)\{if\(btn\)btn\.disabled=false;showErr\('PIN이 일치하지 않아요'\);const el=\$\('pinChgNewIn2'\);if\(el\)\{el\.value='';el\.focus\(\)\}return\}/, '확인 불일치 분기가 pinChgNewIn2를 비우고 focus()하지 않음');
 });
 
+/* ---------- backupFile: iOS 공유 시트의 .json 거부 회피(파일명/MIME 치환) ----------
+ * canShareFiles()(exportData()가 '바로 저장' 공유 버튼을 보여줄지 정하는 판정)는 이 함수가
+ * 돌려주는 File로 navigator.canShare()를 떠본다 — iOS면 이름을 .txt로, MIME을 text/plain으로
+ * 바꾼 File을 테스트해 "된다"고 보고한다. 그런데 doExport()의 실제 공유 경로(바로 아래 블록)는
+ * 지금까지 이 함수를 거치지 않고 원본 name(.json)/mime(application/json) 그대로 File을 만들어
+ * 넘겼다 — canShareFiles()가 떠본 모양과 실제로 공유하는 모양이 서로 달라, iOS가 정말로 .json
+ * 공유를 거부하는 기기에서는 '바로 저장 (권장)' 버튼이 뜨고도 탭하면 한 번도 가능성을 확인받지
+ * 않은 .json File이 똑같이 거부당해 copyFallback(클립보드 복사)으로 조용히 떨어진다 —
+ * backupFile()이 막으려던 바로 그 실패가 '권장' 경로에서 재발하는 판정↔실행 드리프트였다
+ * (app-evolve cycle374 develop). 여기서는 backupFile() 자체의 치환 규칙을 실행형으로 고정하고,
+ * 바로 아래 doExport 소스 테스트가 그 수정(공유 경로가 이 함수를 쓰도록)을 검증한다. */
+function backupFileCtx(isIOS) {
+  const ctx = { File, IS_IOS: !!isIOS };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('backupFile'), ctx, { filename: 'backup-file-real' });
+  return ctx;
+}
+test('[실행형] backupFile: iOS가 아니면 원본 파일명·application/json MIME 그대로 File을 만든다', () => {
+  const ctx = backupFileCtx(false);
+  const f = ctx.backupFile('backup_261119_1430.json', '{"a":1}');
+  assert.strictEqual(f.name, 'backup_261119_1430.json');
+  assert.strictEqual(f.type, 'application/json');
+});
+test('[실행형] backupFile: iOS면 .json을 .txt로, MIME을 text/plain으로 바꿔 공유 시트의 .json 거부를 피한다', () => {
+  const ctx = backupFileCtx(true);
+  const f = ctx.backupFile('backup_261119_1430.json', '{"a":1}');
+  assert.strictEqual(f.name, 'backup_261119_1430.txt');
+  assert.strictEqual(f.type, 'text/plain');
+});
+test('[실행형] backupFile: canShareFiles()가 떠보는 것과 동일한 입력(t.json)에서도 같은 치환 규칙을 따른다(판정↔실행 일치 전제)', () => {
+  const ctx = backupFileCtx(true);
+  const f = ctx.backupFile('t.json', '{}');
+  assert.strictEqual(f.name, 't.txt');
+  assert.strictEqual(f.type, 'text/plain');
+});
+
 /* ---------- 백업 내보내기/가져오기 PIN 암호화(app-evolve cycle289 advance) ----------
  * doExport()/importFile 핸들러는 openSheet/APPLOCK.verify/decryptDbBlob 등에 엮여 있어
  * doSetPin/doChangePin/doDisableAppLock과 같은 이유로 제출 핸들러(doExportPinSubmit/
  * doImportPinSubmit)는 소스 패턴으로만 검증한다. 다만 importFile 'change' 최상위 statement
  * 자체는 이미 실행형으로 로드돼 있으므로(위 [실행형] importFile change 테스트들), 평문/암호화
  * 두 모양을 올바르게 구분해 분기하는지는 실제 실행으로 검증한다. */
+test('doExport 소스: 공유(share) 경로의 JSON 백업(kind 없음)은 canShareFiles()와 똑같이 backupFile(name,text)로 File을 만들고, CSV는 원본 mime(text/csv)을 그대로 쓴다', () => {
+  const fnSrc = extractFunction('doExport');
+  assert.ok(fnSrc.includes('const file=isCsv?new File([text],name,{type:mime}):backupFile(name,text);'), "doExport의 공유 경로가 canShareFiles()가 떠본 backupFile()을 그대로 쓰지 않음 — iOS에서 '된다'고 보고된 공유가 실제로는 원본 .json File로 다시 거부당할 수 있음(판정↔실행 드리프트)");
+});
 test('doExport 소스: JSON 전체 백업(kind 없음)이고 APPLOCK.enabled()면 promptExportPin()을 await해 PIN을 받고, 취소(null)하면 내보내기를 중단한다', () => {
   const fnSrc = extractFunction('doExport');
   assert.ok(fnSrc.includes("if(!isCsv&&APPLOCK.enabled()){\n  exportPin=await promptExportPin();\n  if(exportPin==null){toast('내보내기를 취소했어요');return}\n }"), 'PIN 게이트가 없거나 취소 시 return하지 않음');

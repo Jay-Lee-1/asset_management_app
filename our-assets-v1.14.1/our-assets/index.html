@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.481';
+const APP_VERSION='1.47.482';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -9798,7 +9798,16 @@ async function doExport(mode,kind){
  /* 1) 공유 시트 — 되면 이게 가장 확실 */
  if(mode==='share'){
   try{
-   const file=new File([text],name,{type:mime});
+   /* canShareFiles()(exportData가 '바로 저장' 버튼을 보여줄지 정하는 판정)는 JSON 백업을
+    * backupFile()로 만든 File(iOS면 .txt/text-plain)로 navigator.canShare()를 떠본다 — 그런데
+    * 여기 실제 공유는 지금까지 backupFile()을 거치지 않고 원본 name/mime(.json/application-json)
+    * 그대로 File을 만들어 넘겼다. iOS가 실제로 .json 공유를 거부하는 기기에서는 canShareFiles()가
+    * '된다'고 보고해 '바로 저장 (권장)' 버튼을 보여주고도, 탭하면 가능성을 확인받은 적 없는 .json
+    * File을 그대로 공유해 똑같이 거부당해 copyFallback으로 떨어진다 — backupFile()이 막으려던
+    * 바로 그 실패가 '권장' 경로에서 재발하는 판정↔실행 드리프트였다(app-evolve cycle374 develop).
+    * CSV는 처음부터 이 문제의 대상이 아니었으므로(이름이 .csv라 backupFile()의 .json 치환도 안
+    * 먹고, mime도 그대로 text/csv여야 함) 그대로 둔다. */
+   const file=isCsv?new File([text],name,{type:mime}):backupFile(name,text);
    await navigator.share({files:[file],title:isCsv?csvMeta.shareTitle:'우리의 자산 백업'});
    done(isCsv?'CSV 파일을 저장했어요':'백업 파일을 저장했어요');
    return;
