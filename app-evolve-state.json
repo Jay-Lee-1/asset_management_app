@@ -1,15 +1,12 @@
 {
   "cycle": 375,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "7개 CSV export 함수(txnsToCSV/assetsToCSV/nwHistoryToCSV/assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV)에 흩어진 동일한 guard/esc 헬퍼를 logic.js 공유 함수로 통합",
+    "why": "logic.js 헤더 주석(1-8행)이 \"DOM/DB/전역 상태를 전혀 참조하지 않는 순수 함수는 index.html 대신 logic.js로 옮긴다\"는 원칙을 명시하는데, CSV 인젝션 가드 guard()와 CSV 셀 이스케이프 esc()는 100% 순수 함수인데도 index.html의 7개 *ToCSV 함수(9326/9355/9389/9409/9429/9456/9478행 시작) 안에 각각 byte-for-byte 동일한 복제본으로 존재한다(guard는 6곳: 9334/9358/9411/9433/9459/9479, esc는 7곳: 9335/9359/9390/9412/9434/9460/9480 — grep으로 직접 재확인함). 향후 CSV 인젝션 정규식을 고쳐야 할 때(Excel/Sheets가 새 트리거 문자를 추가하거나 유니코드 변종이 발견되는 경우) 6~7곳을 손으로 동기화해야 하고 아무 장치도 이를 강제하지 않아, 한 곳만 고치고 나머지가 누락되는 드리프트가 발생하기 쉽다 — 이는 이미 cycle374에서 고친 esc() HTML 어트리뷰트 이스케이프 우회 드리프트와 같은 종류의 위험이다.",
+    "approach": "logic.js에 공유 순수 함수 csvInjectGuard(v)와 csvCellEsc(v)를 추가한다(기존 guard/esc 구현과 동일한 정규식/동작 유지). index.html의 7개 *ToCSV 함수에서 로컬 const guard=.../const esc=... 선언 9줄(9334-9335, 9358-9359, 9390, 9411-9412, 9433-9434, 9459-9460, 9479-9480)을 제거하고 각 함수 본문의 guard(...)/esc(...) 호출부를 csvInjectGuard(...)/csvCellEsc(...)로 치환한다(동작 변경 없는 단순 리네임). test/run.js에 csvInjectGuard/csvCellEsc 자체에 대한 유닛 테스트를 추가한다(따옴표 중복 처리, CRLF 래핑, = + - @ tab CR 각 트리거 prefix, 이미 따옴표로 시작하는 값에 대한 이중 가드 케이스). 기존 7개 함수별 CSV 인젝션 테스트(약 7514-8100행)는 수정 없이 그대로 통과해야 하며, 이것으로 리팩터링이 동작을 바꾸지 않았음을 확인한다. index.html을 수정하므로 APP_VERSION과 sw.js CACHE 버전을 올린다."
+  },
   "history": [
-    {
-      "cycle": 370,
-      "phase": "critique",
-      "timestamp": "2026-11-18T12:17:35.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-370에서 이미 다룬 모든 주제(csvDedupeKey 포함)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: reloadForUpdate()(SW 업데이트 배너 #swUpdateBar의 onclick이자 메뉴 두 곳도 직접 호출하는 location.reload())가 이 앱의 다른 모든 시트 닫기 경로(isDraftDirty()+closeSheetGuarded()의 확인을 거침)와 달리 아무 확인 없이 즉시 reload돼, 거래/자산/목표/반복거래를 입력 중(저장 전) 배포가 나가면 입력이 영구 소실되는 재현 가능한 데이터 손실 경로를 발견 — 이 앱의 다른 모든 파괴적 동작이 confirmSheet/undoToast/사전 스냅샷 중 하나를 쓰는 관례의 유일한 예외라 최우선으로 판단. pending_advance_plan에 reloadForUpdate()가 isDraftDirty()+closeSheetGuarded()를 거치게 하고 메뉴의 두 직접 reload도 통일하는 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 370,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-19T06:45:00.000Z",
       "summary": "develop(cycle375, 934d959: 부팅 저축 만기 토스트에 maturityToastMsg(logic.js) 추가해 overdue/soon 구분)을 검토했다. 호출부(index.html:14152) soon.filter(a=>a.maturityDate<TODAY).length가 notifyAlertInfo(cycle232)/homeAlertCard(cycle362)와 정확히 같은 overdue 판정식(maturityDate<TODAY)을 그대로 재사용함을 grep으로 직접 대조해 확인. maturityToastMsg(count,overdueCount)의 분기(count<=0→null, overdueCount>=count→'지났어요', 그 외→'임박했어요'+(overdueCount>0?' (지난 건 포함)':'))가 homeAlertCard의 allOverdue/someOverdue 판정과 동일함을 확인. node test/run.js 3646/3646 재실행 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 375,
+      "phase": "critique",
+      "timestamp": "2026-11-19T08:30:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-375에서 이미 다룬 모든 주제(boot 저축 만기 토스트 포함)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: CSV 인젝션 가드 guard()와 CSV 셀 이스케이프 esc()가 100% 순수 함수인데도 7개 *ToCSV 함수(txnsToCSV/assetsToCSV/nwHistoryToCSV/assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV) 안에 각각 복제돼 있음을 확인(guard 6곳, esc 7곳, 전부 byte-for-byte 동일 — grep으로 직접 재확인). logic.js 헤더 주석의 순수 함수 추출 원칙을 위반하며, cycle374에서 고친 esc() HTML 어트리뷰트 이스케이프 우회와 같은 종류의 동기화 드리프트 위험(한 곳만 고치고 나머지 누락)을 안고 있음. pending_advance_plan에 csvInjectGuard/csvCellEsc를 logic.js로 통합하고 7곳 호출부를 치환 + 유닛 테스트 추가하는 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
