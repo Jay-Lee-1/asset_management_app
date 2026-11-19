@@ -1,15 +1,8 @@
 {
   "cycle": 379,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 374,
-      "phase": "review",
-      "timestamp": "2026-11-19T03:07:33.000Z",
-      "summary": "develop(cycle374, 81e2cc3: doExport()의 공유 경로가 canShareFiles()와 동일한 backupFile(name,text)를 쓰도록 수정)을 검토했다. backupFile()/canShareFiles()/doExport() 공유 분기를 직접 대조해 일치함을 확인. CSV 분기는 영향 없음. node test/run.js 3638/3638 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 374,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-19T22:10:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle374-378에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 반복/날짜 순수함수, bulk 선택모드, undoToast 커버리지, CSV 가드, SRI, 빌드 스텝 등 여러 후보를 살폈으나 대부분 이미 매우 잘 커버돼 있거나(SRI/빌드 스텝은 네트워크 확장·CI/CD 불가침 규칙 위반으로 기각) 새로울 게 없었다. cycle377의 calCellsFor dayLabel 접근성 수정과 같은 버그 클래스를 목표 관리 화면에서 발견: goalRowHTML()(index.html:4054)/goalsManageBody()(4139)가 role=\"button\" 컨테이너의 aria-label에 진행률%·지남 여부만 담아, role=\"button\" aria-label이 하위 텍스트를 접근성 트리에서 완전히 대체하는 특성상 시각적으로는 보이는 '달성' 배지와 '연결된 자산이 삭제됐어요'/'연결된 자산을 추적할 수 없어요'/'일부 미확인' 경고 캡션이 스크린리더 사용자에게 전혀 전달되지 않던 공백(마지막 경고는 실제 행동이 필요한 상태인데도 안내되지 않음). 두 함수 모두 시각 캡션과 동일한 조건(assetGone/assetBroken/hasUnknown/p.achieved)을 재사용해 aria-label에 보강(ariaWarn 변수). 기존 테스트 3건에 aria-label 어서션을 확장하고 '달성' 배지 aria-label 보강을 확인하는 신규 테스트 1건 추가. node test/run.js 3696->3697/3697 통과, node --check logic.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.489->1.47.490, sw.js CACHE v756->v757.",
       "commit": "4dd287f"
+    },
+    {
+      "cycle": 379,
+      "phase": "review",
+      "timestamp": "2026-11-19T23:07:25.000Z",
+      "summary": "develop(cycle379, 4dd287f: goalRowHTML/goalsManageBody의 role=\"button\" aria-label에 달성 배지·연결자산 경고 캡션 보강)을 검토했다. 두 함수 모두 ariaWarn 계산에 쓰는 assetGone/assetBroken/hasUnknown/p.achieved가 바로 위에서 시각 캡션에 쓰는 것과 동일한 변수(재선언 없음)임을 직접 대조해 확인, cycle377 calCellsFor dayLabel과 동일한 패턴. node --check logic.js 통과, node test/run.js 3697/3697 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
     }
   ]
 }
