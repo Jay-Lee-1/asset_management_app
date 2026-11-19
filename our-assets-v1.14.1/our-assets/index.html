@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.483';
+const APP_VERSION='1.47.484';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -14150,7 +14150,8 @@ setInterval(()=>{if(!document.hidden)pullCloudIfStale().catch(()=>{})},60*1000);
 setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud().catch(()=>{})},60*1000);
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(DB.settings.themeMode==='system'){syncThemeColorMeta();renderCurrent()}});
 setTimeout(()=>{if(!DB)return;const soon=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7));
- if(soon.length)toast(`저축 만기 ${soon.length}건이 임박했어요`)},1200);
+ const _matMsg=maturityToastMsg(soon.length,soon.filter(a=>a.maturityDate<TODAY).length); /* overdue(이미 지난 만기)와 soon을 구분 — maturityToastMsg(logic.js) 주석 참고(app-evolve cycle375 develop) */
+ if(_matMsg)toast(_matMsg)},1200);
 </script>
 <script>
 /* PWA 서비스워커 등록 — 오프라인 지원 및 홈 화면 설치 */

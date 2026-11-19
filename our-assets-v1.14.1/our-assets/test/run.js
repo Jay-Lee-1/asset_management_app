@@ -39050,6 +39050,32 @@ test("wipeBackupKindLabel: kind별로 '초기화'/'탈퇴'/'복원'/'정리'/'�
   assert.strictEqual(sandbox.wipeBackupKindLabel('unknown-kind'), '초기화');
 });
 
+/* ---------- maturityToastMsg(logic.js): 부팅 1.2초 뒤 '저축 만기 N건이 임박했어요' 토스트가
+ * overdue(이미 지난 만기)와 soon을 구분 없이 항상 '임박'이라 말하던 드리프트 — OS 알림
+ * (notifyAlertInfo 'mat'/'matMulti', cycle232)·저축 관리 목록(openMaturity, cycle268)·홈 알림 카드
+ * (homeAlertCard 'mat'/'matMulti', cycle362)는 이미 overdue를 구분해 "지났어요"로 부르는데, 부팅
+ * 토스트만 그 구분이 없었다(app-evolve cycle375 develop). ---------- */
+test('maturityToastMsg: 전부 지났으면(overdueCount===count) "지났어요", 하나도 안 지났으면 "임박"', () => {
+  assert.strictEqual(sandbox.maturityToastMsg(3, 3), '저축 만기 3건이 지났어요');
+  assert.strictEqual(sandbox.maturityToastMsg(1, 1), '저축 만기 1건이 지났어요');
+  assert.strictEqual(sandbox.maturityToastMsg(2, 0), '저축 만기 2건이 임박했어요');
+});
+test('maturityToastMsg: 일부만 지났으면(혼재) 기존 "임박" 문구를 유지하되 지난 건이 섞였다는 사실을 덧붙인다', () => {
+  assert.strictEqual(sandbox.maturityToastMsg(3, 1), '저축 만기 3건이 임박했어요 (지난 건 포함)');
+});
+test('maturityToastMsg: count<=0이면(해당 사항 없음) null — 호출부가 토스트를 띄우지 않음', () => {
+  assert.strictEqual(sandbox.maturityToastMsg(0, 0), null);
+  assert.strictEqual(sandbox.maturityToastMsg(undefined, undefined), null);
+});
+test('maturityToastMsg: overdueCount를 생략해도(undefined/null) 0으로 취급해 "임박"으로 떨어진다', () => {
+  assert.strictEqual(sandbox.maturityToastMsg(2, undefined), '저축 만기 2건이 임박했어요');
+  assert.strictEqual(sandbox.maturityToastMsg(2, null), '저축 만기 2건이 임박했어요');
+});
+test('[소스] 부팅 저축 만기 토스트가 maturityToastMsg(logic.js)를 거친다 — overdue/soon 구분 없이 항상 "임박했어요"라고 말하던 과거 리터럴이 되돌아오면 회귀', () => {
+  assert.ok(src.includes("maturityToastMsg(soon.length,soon.filter(a=>a.maturityDate<TODAY).length)"), '부팅 토스트가 maturityToastMsg를 호출하지 않음(overdue 구분 드리프트 재발)');
+  assert.ok(!src.includes('저축 만기 ${soon.length}건이 임박했어요`)},1200)'), '부팅 토스트가 overdue 구분 없는 과거 리터럴 문구로 되돌아감');
+});
+
 /* ---------- dismissWipeBackup(): '지우기' 버튼이 wipeBackup 카드의 유일한 복구 수단(전체
  * 계정 백업)을 바로 지워버리던 공백 — dismissCorruptBackup()(단일 레코드, 주 행동이 '다운로드')과
  * 달리 이 백업은 지우면 영영 못 되돌리므로 doResetAll/doLogout 등과 같은 confirmSheet 확인을

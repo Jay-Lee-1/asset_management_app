@@ -2212,3 +2212,21 @@ function wipeBackupKindLabel(kind){
  if(kind==='preMergeAsset'||kind==='preMergeCat'||kind==='preMergeOwner')return '합치기';
  return '초기화';
 }
+
+/* ================= 저축 만기 부팅 토스트 (순수) ================= */
+/* boot() 완료 1.2초 뒤 뜨는 '저축 만기 N건이 임박했어요' 토스트(index.html)가 지금까지 maturityDate<=
+ * TODAY+7인 저축을 "임박"과 "이미 지남(overdue, doMaturity()를 아직 안 돌림)"의 구분 없이 모두 같은
+ * count에 섞어, overdue뿐인 상황에서도 매번 앱을 열 때마다 "곧 만기"처럼 말했다. 바로 이 혼동은
+ * OS 알림(notifyAlertInfo 'mat'/'matMulti', app-evolve cycle232 develop)과 저축 관리 목록
+ * (openMaturity, cycle268 develop), 홈 알림 카드(homeAlertCard 'mat'/'matMulti', cycle362 develop)에서
+ * 이미 세 번 고쳐졌는데, 가장 먼저 눈에 띄는 이 부팅 토스트만 한 번도 고쳐지지 않은 채 남아 있었다
+ * (app-evolve cycle375 develop). homeAlertCard의 allOverdue/someOverdue 판정과 동일한 규칙을 그대로
+ * 따른다 — 전부 지났으면 "지났어요", 일부만 지났으면(혼재) 기존 "임박" 문구를 유지하되 지난 건이
+ * 섞였다는 사실만 덧붙이고, 하나도 안 지났으면 그대로 "임박". count<=0이면 토스트 자체를 띄우지 않는
+ * 호출부 계약과 맞춰 null을 돌려준다. */
+function maturityToastMsg(count,overdueCount){
+ if(!(count>0))return null;
+ overdueCount=overdueCount||0;
+ if(overdueCount>=count)return `저축 만기 ${count}건이 지났어요`;
+ return `저축 만기 ${count}건이 임박했어요${overdueCount>0?' (지난 건 포함)':''}`;
+}

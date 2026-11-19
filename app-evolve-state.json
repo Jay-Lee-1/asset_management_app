@@ -1,15 +1,8 @@
 {
   "cycle": 375,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 370,
-      "phase": "develop",
-      "timestamp": "2026-11-18T10:14:21.000Z",
-      "summary": "CSV 가져오기 중복 판정 키(csvDedupeKey, logic.js)가 날짜/구분/금액/카테고리/자산/메모 필드를 '|'로 그냥 이어붙이고 있어, 카테고리나 메모 중 하나에 리터럴 '|'가 들어있으면 필드 경계가 밀려 서로 다른 두 내역이 같은 키로 뭉개질 수 있는 잠재적 충돌 버그를 발견했다. 수정: csvDedupeKey가 배열을 join('|') 대신 JSON.stringify로 직렬화하게 바꿔 각 원소가 독립적으로 이스케이프되게 했다. 회귀 테스트 2건 추가. node test/run.js 3587/3587 통과(+2). APP_VERSION 1.47.475->1.47.476, sw.js CACHE v742->v743. 참고: 로컬 git이 detached HEAD였던 문제(cycle365에서도 발생)를 git checkout -B main HEAD로 재발 수정, origin/main과 fast-forward 일치 확인 후 진행·push.",
-      "commit": null
-    },
     {
       "cycle": 370,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-19T05:14:11.000Z",
       "summary": "critique(cycle374)의 계획대로 esc() 헬퍼를 우회해 \"만 막고 &는 그대로 두던 .replace(/\"/g,'&quot;') 7곳(index.html:7015 rMemo, 8040/8041 Supabase URL/key, 8076/13893 카카오 키, 8612 newCat/catAddDraft.name, 8677 renameCat/catRenameDraft.name)을 모두 기존 esc() 헬퍼 호출로 교체했다(txMemo:6458/splitMemo:6506과 동일 패턴으로 통일). renameCatSheet는 지금까지 FUNCTIONS 실행 목록 밖에 있어 extractFunction 소스 패턴으로만 검증됐는데, catIconOf/CATICON/catAv가 이미 공유 sandbox에 로드돼 있어 FUNCTIONS에 추가해 실제 실행으로 승격했다. 회귀 테스트 3건 추가: openCatManage(newCat/catAddDraft.name)와 renameCatSheet(renameCat/catRenameDraft.name), renderRecSheet(rMemo/recDraft.memo) 각각에 'R&D \"테스트\"' 같은 &/\"가 섞인 값을 넣어 value=\"...\" 어트리뷰트가 esc()로 이스케이프된 그대로(풀린 생 &가 아니라 &amp;) 왕복하는지 확인한다. git stash로 수정 전 코드에서 새 테스트 3건이 모두 FAIL함을 직접 확인한 뒤 복원했다. node test/run.js 3638->3641/3641 통과. node --check logic.js 통과, 추출한 메인 인라인 <script> 블록도 node --check 통과. index.html을 수정했으므로 APP_VERSION 1.47.482->1.47.483, sw.js CACHE v749->v750.",
       "commit": "ebed91a"
+    },
+    {
+      "cycle": 375,
+      "phase": "develop",
+      "timestamp": "2026-11-19T06:00:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-374에서 이미 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: 부팅 1.2초 뒤 뜨는 '저축 만기 N건이 임박했어요' 토스트(index.html:14152)가 maturityDate<=TODAY+7인 저축을 overdue(이미 지난 만기, doMaturity() 미처리)와 soon(아직 안 지난 만기)의 구분 없이 모두 같은 count에 섞어, overdue뿐인 상황에서도 앱을 열 때마다 매번 \"곧 만기\"처럼 잘못 안내하는 버그를 발견했다. 이 혼동은 OS 알림(notifyAlertInfo 'mat'/'matMulti', cycle232)·저축 관리 목록(openMaturity, cycle268)·홈 알림 카드(homeAlertCard 'mat'/'matMulti', cycle362)에서 이미 세 번 고쳐졌는데, 부팅 토스트만 한 번도 고쳐지지 않은 채 남아 있었다. homeAlertCard의 allOverdue/someOverdue 판정과 동일한 규칙을 따르는 순수 함수 maturityToastMsg(logic.js)를 추가해 전부 지났으면 '지났어요', 일부만 지났으면 '임박했어요 (지난 건 포함)', 하나도 안 지났으면 기존 '임박했어요'로 구분하도록 부팅 토스트를 다시 연결했다. 회귀 테스트 5건 추가. node test/run.js 3641->3646/3646 통과. APP_VERSION 1.47.483->1.47.484, sw.js CACHE v750->v751.",
+      "commit": null
     }
   ]
 }
