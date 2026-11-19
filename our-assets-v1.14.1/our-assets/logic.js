@@ -1856,6 +1856,40 @@ function bulkRecActiveTargets(recs,ids){
  const allPaused=items.every(r=>!r.active);
  return{ok:true,items,mixed:!allActive&&!allPaused,allActive};
 }
+/* 반복 내역 관리 선택모드(ST.recSel)의 일괄 카테고리 변경 대상을 검증한다. bulkCatTargets(거래
+ * 선택모드용)와 똑같은 모양의 {ok,...}를 돌려주고 같은 판정 규칙을 따른다 — 반복거래도 category/
+ * type/splits 필드를 거래와 동일하게 가지므로(saveRec가 거래와 같은 검증을 거쳐 저장) transfer가
+ * 섞이면 reason:'transfer', type(expense/income/saving)이 섞이면 reason:'mixed', 분할(d.splits,
+ * 2개 이상)이 섞이면 reason:'split'을 그대로 재사용한다. 다만 반복거래엔 adjust(잔액 조정 자동
+ * 생성) 개념이 없으므로 그 가드는 두지 않는다(app-evolve cycle378 critique → advance — 거래/
+ * 전체내역/자산 목록은 bulkCatPickFor/bulkAssetMovePickFor로 이미 일괄 카테고리 변경·계좌 이동을
+ * 지원하는데 반복 내역 관리(ST.recSel)만 삭제·일시중지/다시시작만 있고 이 두 액션이 빠져 있던
+ * 공백을 메운다). */
+function bulkRecCatTargets(recs,ids){
+ const idSet=ids instanceof Set?ids:new Set(ids||[]);
+ if(!idSet.size)return{ok:false,reason:'empty'};
+ const items=(recs||[]).filter(r=>idSet.has(r.id));
+ if(!items.length)return{ok:false,reason:'empty'};
+ if(items.some(r=>r.type==='transfer'))return{ok:false,reason:'transfer'};
+ if(items.some(r=>Array.isArray(r.splits)&&r.splits.length>1))return{ok:false,reason:'split'};
+ const kind=items[0].type;
+ if(items.some(r=>r.type!==kind))return{ok:false,reason:'mixed'};
+ return{ok:true,kind,items};
+}
+/* 반복 내역 관리 선택모드(ST.recSel)의 일괄 계좌(자산) 이동 대상을 검증한다. bulkAssetMoveTargets
+ * (거래 선택모드용)와 동일하게 종류 혼합(income+expense)은 허용하고, transfer/saving은 양쪽 계좌가
+ * 모두 거래의 의미에 관여해(어느 쪽을 "이동"할지 모호함) 이체 전용 메뉴(단건 수정)로만 바꿀 수
+ * 있게 제외한다. 반복거래엔 adjust 개념이 없으므로 그 가드는 두지 않고, 분할(splits)은 계좌가
+ * 거래 전체에 하나뿐이라 bulkAssetMoveTargets와 동일하게 막을 이유가 없어 허용한다(app-evolve
+ * cycle378 critique → advance). */
+function bulkRecAssetMoveTargets(recs,ids){
+ const idSet=ids instanceof Set?ids:new Set(ids||[]);
+ if(!idSet.size)return{ok:false,reason:'empty'};
+ const items=(recs||[]).filter(r=>idSet.has(r.id));
+ if(!items.length)return{ok:false,reason:'empty'};
+ if(items.some(r=>r.type!=='expense'&&r.type!=='income'))return{ok:false,reason:'transfer'};
+ return{ok:true,items};
+}
 /* 목표 관리 선택모드(ST.goalSel)의 일괄 '귀속(owner)' 변경 대상을 검증한다. assetOwnerTargets와
  * 같은 모양의 {ok,...}를 돌려주되, asset형 목표(g.type==='asset')는 대상에서 뺀다 — saveGoal()이
  * asset형 목표의 owner를 항상 연결 자산의 owner로 강제해(저장할 때마다 linkedAsset.owner로

@@ -1,19 +1,8 @@
 {
-  "cycle": 378,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복 거래 관리 선택모드(ST.recSel)에 일괄 카테고리 변경/계좌 이동 추가",
-    "why": "거래(ST.lSel)/전체내역(ST.hist.sel)/자산 목록은 이미 bulkCatPickFor/bulkAssetMovePickFor를 통해 다건 선택 상태에서 카테고리 일괄 변경·계좌 일괄 이동을 지원하는데, 구독·보험 등 category/fromAssetId/toAssetId 필드를 똑같이 가진 반복 거래 관리 목록(ST.recSel, index.html:8914-8926, recToggleSel/recSelAll/recDelSel/recActiveSel: 13306-13329)만 삭제·일시중지/다시시작만 있고 이 두 액션이 빠져 있다. 수십 건의 반복 거래를 쌓아둔 사용자가 카테고리 체계를 바꾸거나 계좌를 옮기면 반복 거래마다 편집 시트를 하나씩 열어야 하는 반복 노동이 생기고, 동일한 성격의 목록 UI끼리 기능이 어긋나 있다.",
-    "approach": "1) logic.js에 bulkCatTargets/bulkAssetMoveTargets(logic.js:1785,1807)를 본떠 반복 거래 레코드용 bulkRecCatTargets(recs,ids)/bulkRecAssetMoveTargets(recs,ids)를 추가한다(type이 섞이면 카테고리 변경 거부, transfer는 계좌 이동에서 제외하는 동일 규칙 적용, 반복 거래엔 split/adjust 개념이 없으므로 그 부분은 생략). 2) index.html에 recCatSel()/recAssetMoveSel()을 ledgerCatSel/histCatSel과 같은 패턴으로 추가하고, doBulkCat/doBulkAssetMove 클러스터(~12751-12830) 옆에 doBulkRecCat/doBulkRecAssetMove를 추가해 touchSave+undoToast 패턴을 그대로 따른다. 3) updateSelBottom()의 ST.recSel 분기(~13422-13428)와 바닥바 마크업에 새 버튼 두 개를 연결한다. 4) test/run.js에 bulkRecCatTargets/bulkRecAssetMoveTargets 유닛 테스트(정상 케이스, type 혼합 거부, transfer 거부, 빈 선택)를 bulkCatTargets/bulkAssetMoveTargets 테스트 블록과 같은 모양으로 추가한다. 모두 index.html/logic.js/test/run.js 내부 편집만으로 끝나며 배포/빌드/네트워크 변경은 필요 없다."
-  },
+  "cycle": 379,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 373,
-      "phase": "advance",
-      "timestamp": "2026-11-19T01:15:57.193Z",
-      "summary": "critique(cycle373)의 계획대로 부채 상환 계획 UI 조립 레이어를 실행형으로 테스트했다. 테스트 15건 추가. 과정에서 실제 버그를 발견해 고쳤다: multiDebtPlan(logic.js)의 결과 매핑이 debt의 name을 빠뜨려 \"부채 상환 계획\" 시트의 모든 행에서 부채 이름이 항상 빈 문자열로 보이던 버그 — name:d.name 추가 + 회귀 테스트 1건. node test/run.js 3619->3634/3634 통과. logic.js를 수정했으므로 APP_VERSION 1.47.480->1.47.481, sw.js CACHE v747->v748. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 374,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-19T20:18:04.991Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-378에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 처음 두 시도는 범위 밖으로 기각: (1) CDN 스크립트 SRI 추가는 외부 URL fetch(네트워크 권한 확장)가 필요해 기각, (2) 개발 주석 제거용 빌드 스텝은 netlify.toml 빌드/퍼블리시 설정을 건드려야 해 이 자동화의 안전 규칙(CI/CD 설정 불가침) 위반으로 기각. 세 번째 시도에서 로컬 파일 편집만으로 가능한 후보를 찾음: 거래(ledgerCatSel/ledgerAssetMoveSel)·전체내역(histCatSel/histAssetMoveSel)·자산 목록은 bulkCatPickFor/bulkAssetMovePickFor로 다건 선택 시 카테고리 일괄 변경·계좌 일괄 이동을 지원하는데, 똑같은 category/fromAssetId/toAssetId 필드를 가진 반복 거래 관리 선택모드(ST.recSel, index.html:8914-8926/13306-13329)만 삭제·일시중지/다시시작만 있고 이 두 액션이 빠져 있음을 확인(grep으로 bulkCatTargets/bulkAssetMoveTargets/bulkCatPickFor/bulkAssetMovePickFor 호출부 및 recToggleSel/recSelAll/recDelSel/recActiveSel 실제 라인 존재 재확인). pending_advance_plan에 bulkRecCatTargets/bulkRecAssetMoveTargets(logic.js) 추가 + recCatSel/recAssetMoveSel(index.html) + doBulkRecCat/doBulkRecAssetMove + updateSelBottom 바닥바 연결 + 유닛 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 378,
+      "phase": "advance",
+      "timestamp": "2026-11-19T21:16:09.571Z",
+      "summary": "critique(cycle378)의 계획대로 반복 내역 관리 선택모드(ST.recSel)에 거래/전체내역/자산 목록과 동일한 일괄 카테고리 변경·계좌 이동을 추가했다. logic.js에 bulkRecCatTargets/bulkRecAssetMoveTargets 추가(bulkCatTargets/bulkAssetMoveTargets와 동일 규칙 — transfer 제외, type 혼합 거부). 계획의 전제(\"반복 거래엔 split 개념이 없다\")는 실제로 확인해보니 틀렸다 — recDraft.splits가 이미 존재해(txSplitAdd의 쌍둥이 recSplitAdd 등) bulkCatTargets처럼 분할(splits.length>1)이면 reason:\"split\"으로 거부하는 가드를 추가했다(계좌 이동은 bulkAssetMoveTargets와 동일하게 분할도 허용). index.html에 doBulkRecCat/doBulkRecAssetMove(doBulkCat/doBulkAssetMove와 동일한 touchSave+undoToast 패턴), bulkRecCatPickFor/bulkRecAssetMovePickFor(openCatPicker/openAssetPicker 재사용), recCatSel/recAssetMoveSel을 추가했다. 다만 피커의 onPick이 부르는 closeSheet()가 ST.recSel을 비우는 부수효과에 의존하지 않도록, ledgerCatSel/histCatSel과 동일하게 afterApply에서 ST.recSel.mode/ids를 직접 비우도록 설계해 recActiveSel/recDelSel과 같은 기준으로 테스트 가능하게 했다. updateSelBottom()의 바닥바 마크업(s.cat/s.move 렌더링)이 이미 lSel/hist/recSel에 공통이라 activeSel()의 ST.recSel 분기에 cat/move 키만 추가하면 됐다(마크업 자체는 수정 불필요). 테스트 26건 추가(targets 판정 11건, doBulk 되돌리기/twGuard/안전망 8건, pickFor 피커 연동 4건, recCatSel/recAssetMoveSel 선택모드 종료 2건, activeSel 바닥바 버튼 와이어링 1건). node test/run.js 3670->3696/3696 통과. node --check logic.js 통과. index.html/logic.js를 수정했으므로 APP_VERSION 1.47.488->1.47.489, sw.js CACHE v755->v756. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

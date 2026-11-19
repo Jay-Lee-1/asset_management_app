@@ -205,6 +205,10 @@ const FUNCTIONS = [
   'twActive', 'twGuard', 'deleteTxnsUndo', 'openTrashList', 'restoreTrashTxn', 'purgeTrashTxn', 'deleteRecsUndo', 'openRecTrashList', 'restoreTrashRec', 'purgeTrashRec', 'deleteAssetsUndo', 'openAssetTrashList', 'restoreTrashAsset', 'purgeTrashAsset', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
   'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
   'doBulkRecActive', 'recSelPartial', 'recToggleSel', 'recSelAll', 'recDelSel', 'recActiveSel',
+  // doBulkRecCat/bulkRecCatPickFor/recCatSel, doBulkRecAssetMove/bulkRecAssetMovePickFor/
+  // recAssetMoveSel은 반복 내역 관리 선택모드(ST.recSel)에 거래/전체내역/자산 목록과 동일한 일괄
+  // 카테고리 변경·계좌 이동을 추가한 것(app-evolve cycle378 critique → advance).
+  'doBulkRecCat', 'bulkRecCatPickFor', 'recCatSel', 'doBulkRecAssetMove', 'bulkRecAssetMovePickFor', 'recAssetMoveSel',
   'deleteGoalsUndo', 'openGoalTrashList', 'restoreTrashGoal', 'purgeTrashGoal', 'goalSelPartial', 'goalToggleSel', 'goalSelAll', 'goalDelSel', 'doBulkGoalOwnerMove', 'goalOwnerMovePickFor', 'goalOwnerMoveSel',
   'assetMergeCounts', 'assetMergeSubKey', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
@@ -13500,6 +13504,271 @@ test('doBulkRecActive: bulkRecActiveTargets이 실패(빈 선택)로 판정하�
   sandbox.lastUndo = null;
   sandbox.doBulkRecActive(new Set(['없는id']), false);
   assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+});
+
+/* ---------- bulkRecCatTargets(logic.js)/doBulkRecCat/bulkRecCatPickFor/recCatSel: 반복 내역 관리
+   선택모드(ST.recSel)의 일괄 카테고리 변경 (app-evolve cycle378 critique → advance — 거래/전체내역/
+   자산 목록은 이미 일괄 카테고리 변경·계좌 이동을 지원하는데 반복 내역 관리만 빠져 있던 공백) ---------- */
+test('bulkRecCatTargets: 선택이 비었으면 reason:empty', () => {
+  const recs = [{ id: 'r', type: 'expense', category: '식비' }];
+  const r = sandbox.bulkRecCatTargets(recs, new Set());
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('bulkRecCatTargets: ids가 실제 반복과 하나도 안 맞아도 reason:empty', () => {
+  const recs = [{ id: 'r', type: 'expense', category: '식비' }];
+  const r = sandbox.bulkRecCatTargets(recs, new Set(['없는id']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('bulkRecCatTargets: 선택에 이체가 하나라도 섞이면 reason:transfer', () => {
+  const recs = [{ id: 'a', type: 'expense', category: '식비' }, { id: 'b', type: 'transfer', category: '이체' }];
+  const r = sandbox.bulkRecCatTargets(recs, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'transfer');
+});
+test('bulkRecCatTargets: 선택한 반복들의 종류(expense/income/saving)가 섞이면 reason:mixed', () => {
+  const recs = [{ id: 'a', type: 'expense', category: '식비' }, { id: 'b', type: 'income', category: '급여' }];
+  const r = sandbox.bulkRecCatTargets(recs, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'mixed');
+});
+test('bulkRecCatTargets: 선택에 분할 반복(r.splits, 2개 이상)이 하나라도 섞이면 reason:split', () => {
+  const recs = [
+    { id: 'a', type: 'expense', category: '식비' },
+    { id: 'b', type: 'expense', category: '식비', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] },
+  ];
+  const r = sandbox.bulkRecCatTargets(recs, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'split');
+});
+test('bulkRecCatTargets: splits가 1개짜리 배열이면(분할이 아님) 평소처럼 통과한다', () => {
+  const a = { id: 'a', type: 'expense', category: '식비', splits: [{ category: '식비', amount: 1000 }] };
+  const r = sandbox.bulkRecCatTargets([a], new Set(['a']));
+  assert.strictEqual(r.ok, true);
+});
+test('bulkRecCatTargets: 같은 종류끼리만 선택하면 ok:true로 해당 반복들을 돌려준다', () => {
+  const a = { id: 'a', type: 'expense', category: '식비' };
+  const b = { id: 'b', type: 'expense', category: '교통' };
+  const c = { id: 'c', type: 'expense', category: '기타' }; // 선택 안 됨
+  const r = sandbox.bulkRecCatTargets([a, b, c], new Set(['a', 'b']));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.kind, 'expense');
+  assert.deepStrictEqual(r.items, [a, b]);
+});
+
+test('doBulkRecCat: 선택한 반복들의 카테고리를 바꾸고, 메모가 이전 카테고리명과 같았으면 메모도 같이 옮긴다', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'expense', category: '식비', memo: '식비', updatedAt: 1 };
+  const r2 = { id: 'r2', type: 'expense', category: '식비', memo: '직접 쓴 메모', updatedAt: 1 };
+  sandbox.DB = { recurrences: [r1, r2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecCat(new Set(['r1', 'r2']), '외식');
+  assert.strictEqual(r1.category, '외식');
+  assert.strictEqual(r1.memo, '외식', '메모가 이전 카테고리명과 같았으면 메모도 같이 옮겨야 함');
+  assert.strictEqual(r2.category, '외식');
+  assert.strictEqual(r2.memo, '직접 쓴 메모', '사용자가 직접 쓴 메모는 그대로 둬야 함');
+  assert.strictEqual(r1.updatedAt, 'test-updatedAt', 'touchSave로 touch()가 호출되어야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+});
+test('doBulkRecCat: undo 콜백을 부르면 카테고리/메모를 정확히 복원한다', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'expense', category: '식비', memo: '식비', updatedAt: 1 };
+  sandbox.DB = { recurrences: [r1] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecCat(new Set(['r1']), '외식');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r1.category, '식비');
+  assert.strictEqual(r1.memo, '식비');
+});
+test('doBulkRecCat: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  const r1 = { id: 'r1', type: 'expense', category: '식비' };
+  sandbox.DB = { recurrences: [r1] };
+  sandbox.doBulkRecCat(new Set(['r1']), '외식');
+  assert.strictEqual(r1.category, '식비');
+  sandbox.TWi = -1;
+});
+test('doBulkRecCat: bulkRecCatTargets이 실패(이체 포함/빈 선택)로 판정하면 아무 것도 바꾸지 않는다(안전망)', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'transfer', category: '이체' };
+  sandbox.DB = { recurrences: [r1] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecCat(new Set(['r1']), '외식');
+  assert.strictEqual(r1.category, '이체');
+  assert.strictEqual(sandbox.lastUndo, null);
+});
+
+test('bulkRecCatPickFor: 선택이 비어 있으면 안내 토스트만 띄우고 카테고리 피커를 열지 않는다', () => {
+  sandbox.DB = { recurrences: [] };
+  sandbox.lastPickerHtml = null;
+  sandbox.bulkRecCatPickFor(new Set(), () => {});
+  assert.strictEqual(sandbox.lastToast, '선택된 반복이 없어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null);
+});
+test('bulkRecCatPickFor: 유효한 선택이면 해당 종류의 카테고리 피커를 열고, 고르면 적용→시트 닫기→afterApply까지 이어진다', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'expense', category: '식비', memo: '식비', updatedAt: 1 };
+  sandbox.DB = { recurrences: [r1], categories: { expense: ['식비', '외식', '교통'] } };
+  sandbox.lastPickerHtml = null;
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastUndo = null;
+  let afterApplyCalled = false;
+  sandbox.bulkRecCatPickFor(new Set(['r1']), () => { afterApplyCalled = true; });
+  assert.ok(sandbox.lastPickerHtml, '카테고리 피커(openCatPicker)가 열려야 함');
+  assert.strictEqual(typeof sandbox.window._pkPick, 'function');
+  sandbox.window._pkPick('외식');
+  assert.strictEqual(r1.category, '외식');
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+  assert.ok(afterApplyCalled);
+  assert.ok(sandbox.lastUndo);
+});
+test('recCatSel: 적용 후 선택모드를 끄고 openRecManage()로 시트를 다시 그린다', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'expense', category: '식비', memo: '식비', updatedAt: 1 };
+  sandbox.DB = { recurrences: [r1], categories: { expense: ['식비', '외식'] } };
+  sandbox.ST.recSel = { mode: true, ids: new Set(['r1']) };
+  const origOpenRecManage = sandbox.openRecManage;
+  let openRecManageCalls = 0;
+  sandbox.openRecManage = () => { openRecManageCalls++; };
+  try {
+    sandbox.recCatSel();
+    sandbox.window._pkPick('외식');
+    assert.strictEqual(r1.category, '외식');
+    assert.strictEqual(sandbox.ST.recSel.mode, false, '적용 후 선택모드가 꺼져야 함');
+    assert.strictEqual(sandbox.ST.recSel.ids.size, 0);
+    assert.strictEqual(openRecManageCalls, 1);
+  } finally { sandbox.openRecManage = origOpenRecManage; }
+});
+
+/* ---------- bulkRecAssetMoveTargets(logic.js)/doBulkRecAssetMove/bulkRecAssetMovePickFor/
+   recAssetMoveSel: 반복 내역 관리 선택모드(ST.recSel)의 일괄 계좌(자산) 이동 (app-evolve cycle378
+   critique → advance) ---------- */
+test('bulkRecAssetMoveTargets: 선택이 비었으면 reason:empty', () => {
+  const r = sandbox.bulkRecAssetMoveTargets([{ id: 'a', type: 'expense' }], new Set());
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('bulkRecAssetMoveTargets: 선택에 이체가 하나라도 섞이면 reason:transfer', () => {
+  const recs = [{ id: 'a', type: 'expense' }, { id: 'b', type: 'transfer' }];
+  const r = sandbox.bulkRecAssetMoveTargets(recs, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'transfer');
+});
+test('bulkRecAssetMoveTargets: 선택에 저축(saving)이 하나라도 섞이면 transfer와 같은 이유로 reason:transfer', () => {
+  const recs = [{ id: 'a', type: 'income' }, { id: 'b', type: 'saving' }];
+  const r = sandbox.bulkRecAssetMoveTargets(recs, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'transfer');
+});
+test('bulkRecAssetMoveTargets: income/expense가 섞여도 ok:true', () => {
+  const recs = [{ id: 'a', type: 'expense' }, { id: 'b', type: 'income' }];
+  const r = sandbox.bulkRecAssetMoveTargets(recs, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.items.length, 2);
+});
+test('bulkRecAssetMoveTargets: 분할 반복(r.splits)도 허용한다(계좌는 반복 전체에 하나뿐)', () => {
+  const recs = [{ id: 'a', type: 'expense', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] }];
+  const r = sandbox.bulkRecAssetMoveTargets(recs, new Set(['a']));
+  assert.strictEqual(r.ok, true);
+});
+
+test('doBulkRecAssetMove: expense 반복은 fromAssetId를, income 반복은 toAssetId를 새 계좌로 바꾼다', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'expense', fromAssetId: 'a_old', toAssetId: null, updatedAt: 1 };
+  const r2 = { id: 'r2', type: 'income', fromAssetId: null, toAssetId: 'a_old', updatedAt: 1 };
+  sandbox.DB = { recurrences: [r1, r2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecAssetMove(new Set(['r1', 'r2']), 'a_new');
+  assert.strictEqual(r1.fromAssetId, 'a_new');
+  assert.strictEqual(r1.toAssetId, null);
+  assert.strictEqual(r2.toAssetId, 'a_new');
+  assert.strictEqual(r2.fromAssetId, null);
+  assert.ok(sandbox.lastUndo);
+});
+test('doBulkRecAssetMove: undo 콜백을 부르면 각 반복의 원래 fromAssetId/toAssetId로 정확히 복원한다', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'expense', fromAssetId: 'a_old', toAssetId: null, updatedAt: 1 };
+  sandbox.DB = { recurrences: [r1] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecAssetMove(new Set(['r1']), 'a_new');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r1.fromAssetId, 'a_old');
+});
+test('doBulkRecAssetMove: bulkRecAssetMoveTargets이 실패(이체 포함/빈 선택)로 판정하면 아무 것도 바꾸지 않는다(안전망)', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'transfer', fromAssetId: 'a_old', toAssetId: 'a_old2' };
+  sandbox.DB = { recurrences: [r1] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecAssetMove(new Set(['r1']), 'a_new');
+  assert.strictEqual(r1.fromAssetId, 'a_old');
+  assert.strictEqual(r1.toAssetId, 'a_old2');
+  assert.strictEqual(sandbox.lastUndo, null);
+});
+
+test('bulkRecAssetMovePickFor: 선택에 이체가 섞여 있으면 이체·저축 전용 안내를 띄우고 피커를 열지 않는다', () => {
+  sandbox.DB = { recurrences: [{ id: 'a', type: 'transfer' }] };
+  sandbox.lastPickerHtml = null;
+  sandbox.bulkRecAssetMovePickFor(new Set(['a']), () => {});
+  assert.strictEqual(sandbox.lastToast, '이체·저축 내역은 계좌를 한번에 옮길 수 없어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null);
+});
+test('bulkRecAssetMovePickFor: 유효한 선택이면 자산 피커를 열고, 고르면 적용→시트 닫기→afterApply까지 이어진다', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'expense', fromAssetId: 'a_old', toAssetId: null, updatedAt: 1 };
+  sandbox.DB = {
+    settings: { groupOrder: ['cash'] },
+    assets: [{ id: 'a_cash', name: '지갑', type: 'cash', owner: '나', baseAmount: 10000, includeInTotal: true }],
+    recurrences: [r1],
+    txns: [],
+  };
+  sandbox.lastPickerHtml = null;
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastUndo = null;
+  let afterApplyCalled = false;
+  sandbox.bulkRecAssetMovePickFor(new Set(['r1']), () => { afterApplyCalled = true; });
+  assert.ok(sandbox.lastPickerHtml, '자산 피커(openAssetPicker)가 열려야 함');
+  assert.strictEqual(typeof sandbox.window._pkPick, 'function');
+  sandbox.window._pkPick('a_cash');
+  assert.strictEqual(r1.fromAssetId, 'a_cash');
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+  assert.ok(afterApplyCalled);
+  assert.ok(sandbox.lastUndo);
+});
+test('recAssetMoveSel: 적용 후 선택모드를 끄고 openRecManage()로 시트를 다시 그린다', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'expense', fromAssetId: 'a_old', toAssetId: null, updatedAt: 1 };
+  sandbox.DB = {
+    settings: { groupOrder: ['cash'] },
+    assets: [{ id: 'a_cash', name: '지갑', type: 'cash', owner: '나', baseAmount: 10000, includeInTotal: true }],
+    recurrences: [r1],
+    txns: [],
+  };
+  sandbox.ST.recSel = { mode: true, ids: new Set(['r1']) };
+  const origOpenRecManage = sandbox.openRecManage;
+  let openRecManageCalls = 0;
+  sandbox.openRecManage = () => { openRecManageCalls++; };
+  try {
+    sandbox.recAssetMoveSel();
+    sandbox.window._pkPick('a_cash');
+    assert.strictEqual(r1.fromAssetId, 'a_cash');
+    assert.strictEqual(sandbox.ST.recSel.mode, false, '적용 후 선택모드가 꺼져야 함');
+    assert.strictEqual(sandbox.ST.recSel.ids.size, 0);
+    assert.strictEqual(openRecManageCalls, 1);
+  } finally { sandbox.openRecManage = origOpenRecManage; }
+});
+
+test('activeSel: 반복 내역 관리 선택모드(ST.recSel)엔 거래/전체내역과 동일한 일괄 카테고리 변경(cat)·계좌 이동(move) 버튼이 있다(app-evolve cycle378 advance)', () => {
+  sandbox.DB = { recurrences: [] };
+  sandbox.ST = {
+    aSel: { mode: false, ids: new Set() },
+    lSel: { mode: false, ids: new Set() },
+    hist: { selMode: false },
+    recSel: { mode: true, ids: new Set() },
+  };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.cat, 'recCatSel()');
+  assert.strictEqual(s.move, 'recAssetMoveSel()');
 });
 
 /* ---------- deleteRecsUndo: 반복 삭제(전체) 공용 되돌리기 인프라 (delRecConfirm/recApply 'all' scope) ---------- */

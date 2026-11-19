@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.488';
+const APP_VERSION='1.47.489';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -12819,6 +12819,32 @@ function doBulkRecActive(ids,next){if(twGuard())return;
  undoToast(`${items.length}개 반복을 ${next?'다시 시작':'일시중지'}했어요`,()=>{
   items.forEach((x,i)=>{x.active=prev[i]});
   touchSave(...items);renderCurrent();toast('되돌렸어요')})}
+/* 반복 내역 관리 선택모드(ST.recSel)의 '카테고리' 바닥바 버튼이 피커에서 고른 카테고리를 실제로
+ * 적용하는 지점(app-evolve cycle378 critique → advance). bulkRecCatPickFor()가 이미
+ * bulkRecCatTargets()로 검증해 넘긴 ids/cat만 다루므로 여기선 재검증 없이 바로 적용. doBulkCat과
+ * 동일한 memo-follows-category 관례(메모가 이전 카테고리명과 같았다면 자동 채움으로 보고 메모도
+ * 같이 옮김)를 따르고, touchSave(...)로 한 번에 touch+save한 뒤 undoToast로 되돌릴 수 있게 한다. */
+function doBulkRecCat(ids,cat){if(twGuard())return;
+ const r=bulkRecCatTargets(DB.recurrences,ids);if(!r.ok)return;
+ const items=r.items,prev=items.map(x=>({category:x.category,memo:x.memo}));
+ items.forEach(x=>{if(x.memo===x.category)x.memo=cat;x.category=cat});
+ touchSave(...items);renderCurrent();
+ undoToast(`${items.length}개 반복의 카테고리를 변경했어요`,()=>{
+  items.forEach((x,i)=>{x.category=prev[i].category;x.memo=prev[i].memo});
+  touchSave(...items);renderCurrent();toast('되돌렸어요')})}
+/* 반복 내역 관리 선택모드(ST.recSel)의 '계좌' 바닥바 버튼이 피커에서 고른 계좌를 실제로 적용하는
+ * 지점(app-evolve cycle378 critique → advance). bulkRecAssetMovePickFor()가 이미
+ * bulkRecAssetMoveTargets()로 검증해 넘긴 ids/newAssetId만 다루므로 여기선 재검증 없이 바로
+ * 적용한다. doBulkAssetMove와 동일하게 expense는 fromAssetId, income은 toAssetId만 교체해
+ * _applyOpenAsset(recOpenAsset)의 종류별 필드 규칙과 맞춘다. */
+function doBulkRecAssetMove(ids,newAssetId){if(twGuard())return;
+ const r=bulkRecAssetMoveTargets(DB.recurrences,ids);if(!r.ok)return;
+ const items=r.items,prev=items.map(x=>({fromAssetId:x.fromAssetId,toAssetId:x.toAssetId}));
+ items.forEach(x=>{if(x.type==='expense')x.fromAssetId=newAssetId;else x.toAssetId=newAssetId});
+ touchSave(...items);renderCurrent();
+ undoToast(`${items.length}개 반복의 계좌를 옮겼어요`,()=>{
+  items.forEach((x,i)=>{x.fromAssetId=prev[i].fromAssetId;x.toAssetId=prev[i].toAssetId});
+  touchSave(...items);renderCurrent();toast('되돌렸어요')})}
 function deleteRecsUndo(ids){if(twGuard())return;const removed=DB.recurrences.filter(r=>ids.has(r.id));
  DB.recurrences=DB.recurrences.filter(r=>!ids.has(r.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
@@ -13327,6 +13353,31 @@ function recActiveSel(next){
  doBulkRecActive(ids,next);
  openRecManage();
 }
+/* recCatSel()이 반복 내역 관리 선택모드 바닥바의 '카테고리' 버튼에서 호출 — bulkCatPickFor(거래
+ * 선택모드용)와 동일한 패턴으로 bulkRecCatTargets()로 먼저 검증해 실패 사유별 토스트를 보여주거나
+ * (선택 없음/이체 포함/종류 혼합/분할 포함), 통과하면 단건 카테고리 변경과 동일한 openCatPicker()를
+ * 띄워 고른 카테고리를 doBulkRecCat()으로 적용한다(app-evolve cycle378 critique → advance). 이
+ * 피커는 되돌아갈 이전 시트가 없는 단독 호출이라 onPick에서 직접 closeSheet()로 닫아야 한다.
+ * ledgerCatSel/histCatSel과 동일하게 ST.recSel.mode/ids는 afterApply에서 직접 비운다 — closeSheet()
+ * 자체도 recSel을 정리하지만(스와이프 등 다른 경로), 그 부수효과에 의존하지 않고 선택모드 종료를
+ * 이 호출 경로 안에서 명시적으로 끝내야 recActiveSel/recDelSel과 같은 기준으로 테스트하기 쉽다. */
+function bulkRecCatPickFor(ids,afterApply){
+ const r=bulkRecCatTargets(DB.recurrences,ids);
+ if(!r.ok){toast(r.reason==='transfer'?'이체 내역은 카테고리를 바꿀 수 없어요':r.reason==='mixed'?'같은 종류의 내역만 한번에 바꿀 수 있어요':r.reason==='split'?'분할된 내역은 일괄로 카테고리를 바꿀 수 없어요':'선택된 반복이 없어요');return}
+ openCatPicker({kind:r.kind,current:null,onPick:c=>{closeSheet();doBulkRecCat(ids,c);if(afterApply)afterApply()}});
+}
+function recCatSel(){bulkRecCatPickFor(new Set(ST.recSel.ids),()=>{ST.recSel.mode=false;ST.recSel.ids.clear();openRecManage()})}
+/* recAssetMoveSel()이 반복 내역 관리 선택모드 바닥바의 '계좌' 버튼에서 호출 — bulkAssetMovePickFor
+ * (거래 선택모드용)와 동일한 패턴으로 bulkRecAssetMoveTargets()로 먼저 검증해 실패 사유별 토스트를
+ * 보여주거나(선택 없음/이체·저축 포함), 통과하면 단건 수정과 같은 openAssetPicker()를 띄워 고른
+ * 계좌로 doBulkRecAssetMove()를 적용한다(app-evolve cycle378 critique → advance). bulkRecCatPickFor
+ * 와 동일하게 ST.recSel.mode/ids는 afterApply에서 직접 비운다. */
+function bulkRecAssetMovePickFor(ids,afterApply){
+ const r=bulkRecAssetMoveTargets(DB.recurrences,ids);
+ if(!r.ok){toast(r.reason==='transfer'?'이체·저축 내역은 계좌를 한번에 옮길 수 없어요':'선택된 반복이 없어요');return}
+ openAssetPicker({excludeMarketValued:true,title:'옮길 계좌 선택',onPick:id=>{closeSheet();doBulkRecAssetMove(ids,id);if(afterApply)afterApply()}});
+}
+function recAssetMoveSel(){bulkRecAssetMovePickFor(new Set(ST.recSel.ids),()=>{ST.recSel.mode=false;ST.recSel.ids.clear();openRecManage()})}
 
 /* 목표 관리 선택모드(ST.goalSel) — recToggleSel/recSelAll(반복 내역 관리 선택모드)과 동일한 패턴으로,
  * goalsManageBody가 #goalBody 안에 있으면(시트가 열려 있으면) 그 부분만 다시 그리고, 없으면
@@ -13425,7 +13476,11 @@ function activeSel(){
    const r=bulkRecActiveTargets(DB.recurrences,ST.recSel.ids);
    if(r.ok)recActive=r.mixed?['pause','resume']:(r.allActive?['pause']:['resume']);
   }
-  return{all:'recSelAll()',del:'recDelSel()',recActive,size:ST.recSel.ids.size,total:(DB.recurrences||[]).length};
+  /* cat/move(일괄 카테고리 변경·계좌 이동)도 거래 선택모드(lSel/hist)와 동일하게 항상 버튼을
+     보여주고, 실제 가능 여부(이체 포함/종류 혼합/분할 포함 등) 판정은 move와 동일하게 클릭 시점의
+     bulkRecCatPickFor/bulkRecAssetMovePickFor(logic.js의 bulkRecCatTargets/bulkRecAssetMoveTargets)
+     에서 한다(app-evolve cycle378 critique → advance). */
+  return{all:'recSelAll()',del:'recDelSel()',cat:'recCatSel()',move:'recAssetMoveSel()',recActive,size:ST.recSel.ids.size,total:(DB.recurrences||[]).length};
  }
  /* 목표 관리 선택모드(ST.goalSel) — ownerMove(귀속 일괄 변경)는 자산(aSel)과 동일하게 mixed 판정 없이
     항상 같은 버튼 하나만 보여주고(라벨도 고정), 검증은 goalOwnerMovePickFor() 호출 시점에
