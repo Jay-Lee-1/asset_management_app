@@ -1,15 +1,8 @@
 {
   "cycle": 375,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 370,
-      "phase": "review",
-      "timestamp": "2026-11-18T11:08:20.347Z",
-      "summary": "develop(cycle370, 3ae25b7: csvDedupeKey를 join('|')에서 JSON.stringify로 바꿔 경계 충돌 수정)을 검토했다. diff가 csvDedupeKey 본문과 회귀 테스트 2건 추가에 그치고 다른 로직은 건드리지 않음을 확인. node test/run.js 3587/3587 통과. 코드 변경 없음(이상 없음). 참고: 이번 사이클도 시작 시 로컬 git이 detached HEAD였다 - git checkout -B main HEAD로 재설정해 origin/main(이미 3ae25b7까지 올라가 있었음)과 일치시켰다.",
-      "commit": null
-    },
     {
       "cycle": 370,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-19T06:00:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-374에서 이미 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: 부팅 1.2초 뒤 뜨는 '저축 만기 N건이 임박했어요' 토스트(index.html:14152)가 maturityDate<=TODAY+7인 저축을 overdue(이미 지난 만기, doMaturity() 미처리)와 soon(아직 안 지난 만기)의 구분 없이 모두 같은 count에 섞어, overdue뿐인 상황에서도 앱을 열 때마다 매번 \"곧 만기\"처럼 잘못 안내하는 버그를 발견했다. 이 혼동은 OS 알림(notifyAlertInfo 'mat'/'matMulti', cycle232)·저축 관리 목록(openMaturity, cycle268)·홈 알림 카드(homeAlertCard 'mat'/'matMulti', cycle362)에서 이미 세 번 고쳐졌는데, 부팅 토스트만 한 번도 고쳐지지 않은 채 남아 있었다. homeAlertCard의 allOverdue/someOverdue 판정과 동일한 규칙을 따르는 순수 함수 maturityToastMsg(logic.js)를 추가해 전부 지났으면 '지났어요', 일부만 지났으면 '임박했어요 (지난 건 포함)', 하나도 안 지났으면 기존 '임박했어요'로 구분하도록 부팅 토스트를 다시 연결했다. 회귀 테스트 5건 추가. node test/run.js 3641->3646/3646 통과. APP_VERSION 1.47.483->1.47.484, sw.js CACHE v750->v751.",
       "commit": "934d959"
+    },
+    {
+      "cycle": 375,
+      "phase": "review",
+      "timestamp": "2026-11-19T06:45:00.000Z",
+      "summary": "develop(cycle375, 934d959: 부팅 저축 만기 토스트에 maturityToastMsg(logic.js) 추가해 overdue/soon 구분)을 검토했다. 호출부(index.html:14152) soon.filter(a=>a.maturityDate<TODAY).length가 notifyAlertInfo(cycle232)/homeAlertCard(cycle362)와 정확히 같은 overdue 판정식(maturityDate<TODAY)을 그대로 재사용함을 grep으로 직접 대조해 확인. maturityToastMsg(count,overdueCount)의 분기(count<=0→null, overdueCount>=count→'지났어요', 그 외→'임박했어요'+(overdueCount>0?' (지난 건 포함)':'))가 homeAlertCard의 allOverdue/someOverdue 판정과 동일함을 확인. node test/run.js 3646/3646 재실행 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
     }
   ]
 }
