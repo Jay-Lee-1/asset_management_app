@@ -1,15 +1,8 @@
 {
   "cycle": 376,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 371,
-      "phase": "review",
-      "timestamp": "2026-11-18T15:09:13.000Z",
-      "summary": "develop(cycle371, 84e4872: kakaoReady()가 틀린 키를 고쳐 재시도해도 반영되게 수정)을 검토했다. 4가지 분기(최초 호출/같은 키 재호출/키 변경/cleanup 실패)가 서로 겹치지 않고 배타적임을 확인. 호출부는 index.html 전체에서 kakaoReady() 단 한 곳(kakaoLogin 진입부)뿐이라 충돌 여지 없음. saveKakaoKey()의 빈 if 블록이 이번 수정으로 완전히 무의미해진 죽은 코드임을 발견해 기록(버그는 아님, 다음 사이클 참고용). node test/run.js 3595/3595 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 371,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-19T10:20:00.000Z",
       "summary": "Explore 서브에이전트에게 cycle371-375에서 다룬 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: 메인 거래 삭제/편집 경로인 delTx()(거래 삭제 버튼 공통 핸들러)·recEditScope()(반복 내역 삭제/수정 범위 선택: 이 내역만/이후 모두/전체)·openAdjustEdit()/delAdjust()(잔액조정 전용 편집·삭제)가 FUNCTIONS 목록 밖에 있어 실행형 테스트가 전혀 없었다. 4개 함수를 FUNCTIONS에 등록하고 실행형 테스트 6건 추가(recId 분기로 confirmSheet 없이 recEditScope 위임/one·future·all 범위 와이어링, confirmSheet 확인 후 deleteTxnsUndo로 실제 삭제, r 못 찾으면 조용히 종료, memo 없으면 category로 대체돼 esc() 이스케이프, income/expense 부호·콤마 포맷·토글 on/off, 조정 내역 확인 삭제). 실제 버그는 발견되지 않음(순수 커버리지 보강). node test/run.js 3651->3657/3657 통과. test/run.js만 수정해 APP_VERSION/CACHE는 올리지 않음.",
+      "commit": null
+    },
+    {
+      "cycle": 376,
+      "phase": "review",
+      "timestamp": "2026-11-19T11:08:13.095Z",
+      "summary": "develop(cycle376, d3878df: delTx/openAdjustEdit/delAdjust/recEditScope 실행형 테스트 6건 추가)을 검토했다. 네 함수의 실제 구현(index.html 6798-6823행)을 직접 대조: openAdjustEdit의 sign/comma 포맷과 토글 on/off 클래스, delTx의 recId 분기 위임(confirmSheet 미호출), recEditScope의 r 못 찾으면 조용히 종료 및 memo 없으면 category로 esc() 이스케이프, delAdjust의 confirmSheet 확인 후 deleteTxnsUndo 호출이 테스트 기대값과 정확히 일치함을 확인. node test/run.js 3657/3657 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
