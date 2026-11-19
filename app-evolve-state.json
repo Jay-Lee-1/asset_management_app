@@ -1,15 +1,12 @@
 {
   "cycle": 374,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "esc() 헬퍼를 우회하는 임의의 .replace(/\"/g,'&quot;') 속성 이스케이핑 7곳이 &를 놓쳐 저장된 텍스트를 재표시 때마다 조용히 변형시킨다",
+    "why": "logic.js:665의 esc(s)는 &<>\"'를 한 번에 함께 이스케이프해(특히 &까지 이스케이프) value=\"...\" 어트리뷰트 왕복이 안전하다(txMemo, index.html:6458이 올바른 예). 반면 7곳은 .replace(/\"/g,'&quot;')만 써서 \"는 막지만 &는 그대로 둔다: index.html:7015(rMemo, 반복거래 메모), 8612(newCat/catAddDraft.name), 8677(renameCat/catRenameDraft.name — 기존 저장된 카테고리 이름), 8040/8041(Supabase URL/key), 8076/13893(카카오 키). 저장된 값에 이미 &amp;/&quot;/&lt; 같은 실제 HTML 문자 참조 시퀀스가 들어있으면(예: 메모/카테고리 이름에 \"R&D\"를 HTML에서 복붙한 경우) 브라우저 어트리뷰트 토크나이저가 다음 렌더링 때 그걸 디코드해버려 사용자 텍스트가 재열 때마다 영구적으로 변형되고 그 변형된 값이 재저장된다. XSS/속성 breakout은 아님(디코드된 엔티티가 어트리뷰트 값 안에 그대로 남음, HTML5 토크나이저 스펙 확인) — 데이터 정합성/일관성 드리프트 버그.",
+    "approach": "7개 호출부(index.html:7015, 8040, 8041, 8076, 8612, 8677, 13893)의 .replace(/\"/g,'&quot;')를 기존 esc() 헬퍼 호출로 교체(txMemo:6458, splitMemo:6506과 동일 패턴). test/run.js에 회귀 테스트 추가: renderRecSheet()을 recDraft.memo='R&D \"x\"'로 렌더해 emit된 value=\"...\" 어트리뷰트가 바이트 그대로(맨 & 아니라 &amp;) 왕복되는지 확인, renameCatSheet도 카테고리 이름에 '&amp;'가 들어간 케이스로 동일 검증. 수정 전 코드로 git stash해 새 테스트가 FAIL하는지 먼저 확인한 뒤 복원. 마지막으로 replace(/\"/g, 패턴이 남아있지 않은지 grep으로 재확인(index.html:9335 등 CSV용 로컬 esc 변수는 다른 목적이라 제외)."
+  },
   "history": [
-    {
-      "cycle": 369,
-      "phase": "critique",
-      "timestamp": "2026-11-18T07:00:00.000Z",
-      "summary": "Explore 서브에이전트에게 cycle340-369에서 이미 다룬 모든 주제를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: FAB '+' 팝업(#fabPop, buildFabPop·fabTap·closeFabPop·fabPick)이 #sheet/#dpModal/#dpWheel 세 오버레이가 공유하는 통합 접근성 시스템(overlayEscapeTarget/syncOverlayInert/onSheetKeydown)에 전혀 등록돼 있지 않았다 — role/aria 부재, Escape로 안 닫힘, closeFabPop()이 .show만 떼고 display 전환이 없어 팝업을 한 번이라도 연 세션부터 숨겨진 .fp-item 2개가 영구적으로 탭 순서에 남는 실제 결함도 확인. pending_advance_plan에 overlayEscapeTarget/syncOverlayInert 확장 + aria 속성 추가 + DOM 순서/tabindex 수정 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 369,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-19T03:07:33.000Z",
       "summary": "develop(cycle374, 81e2cc3: doExport()의 공유 경로가 canShareFiles()와 동일한 backupFile(name,text)를 쓰도록 수정)을 검토했다. backupFile()/canShareFiles() 구현(index.html:9320-9324)과 doExport() 공유 분기(약 9801행)를 직접 대조: canShareFiles()가 떠보는 입력(backupFile(\"t.json\",...))과 실제 공유 시 만드는 File이 이제 둘 다 backupFile()을 거쳐 iOS 여부에 따라 동일한 이름/MIME 치환 규칙(.json->.txt, application/json->text/plain)을 따름을 확인했고, CSV 분기는 isCsv 삼항으로 그대로 분리돼 영향 없음을 확인했다. exportPin으로 암호화된 JSON도 backupFile이 내용이 아니라 파일명/MIME만 바꾸므로 안전함을 확인. 새 테스트 4건(backupFile 비iOS/iOS 치환, canShareFiles와 동일 입력 일치, doExport 소스 패턴)이 구현과 정확히 일치. node test/run.js 3638/3638 재실행 통과, node --check sw.js/logic.js/test/run.js/test/domstub.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 374,
+      "phase": "critique",
+      "timestamp": "2026-11-19T04:20:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-374에서 이미 다룬 모든 주제(반복거래, 정산, goalBehind/costBasis, 클라우드동기화/fx폴백, 팔레트, PIN/생체인증, 사진페이로드/가구공유, SRI/CSP/쿼터, CSV/csvDedupeKey, 전역검색, role=button 중첩, assetQtyLog, openSheet/closeSheet/load() 실행형 테스트, duplicateRec/duplicateAsset/duplicateGoal 포커스, acctSafety, netlify 가격조회, SVG 차트 접근성, FAB 팝업 오버레이 접근성, reloadForUpdate/SW배너, kakaoReady, 온보딩 튜토리얼, notifyAlertInfo dedupe 버킷팅, openTxSheet/openRecSheet/snapDraft/renderRecSheet 실행형 테스트, scanCorruptBackupKeys/scanWipeBackupKeys 실행형 테스트, 부채 상환 계획 UI 실행형 테스트+multiDebtPlan name 버그, doExport 공유경로 File 드리프트)를 배제 목록으로 주고 새 영역을 조사시켰다. migrate/sanitizeBackup, logic.js 전체 함수 커버리지, sw.js, 오버레이 포커스트랩 접근성, amortizationPayoffMonths, nwHistory 엣지케이스를 훑었으나 새로운 고심각도 버그는 못 찾음(300+ 사이클을 거치며 명백한 문제는 이미 드러난 상태). 대신 cross-cutting 이스케이핑 불일치를 발견: logic.js:665의 esc() 헬퍼는 &<>\"'를 함께 이스케이프(특히 & 포함)해 안전한데, 7개 어트리뷰트 보간부(index.html:7015 rMemo, 8040/8041 Supabase URL/key, 8076/13893 카카오 키, 8612 catAddDraft.name, 8677 catRenameDraft.name)는 .replace(/\"/g,'&quot;')만 써서 \"는 막지만 &는 그대로 둬, 저장된 텍스트에 이미 &amp;/&quot; 같은 실제 HTML 엔티티 시퀀스가 들어있으면(복붙 등으로) 재렌더링마다 브라우저가 그걸 디코드해 사용자 텍스트를 영구 변형시키는 데이터 정합성 드리프트를 확인(grep으로 7곳 line 번호 직접 검증, txMemo:6458/splitMemo:6506이 esc()를 올바르게 쓰는 대조군도 확인). XSS/속성 breakout은 아님(HTML5 토크나이저상 디코드된 엔티티가 어트리뷰트 값 내부에 머묾). 러너업: (1) DB.nwHistory가 다른 모든 엔티티(txns/assets/recs/goals/qtyLog/cats/inquiries)와 달리 trash+GC max-age pruning이 전혀 없어 매일 1건씩 무한 누적 — 성장 속도가 느려 낮은 우선순위, (2) openSortSheet/openOwnerSheet/날짜휠 피커 등 ~100+ 미테스트 DOM/rAF 함수 — 분기 얕아 낮은 우선순위. pending_advance_plan에 7개 호출부를 esc()로 교체 + renderRecSheet/renameCatSheet 왕복 회귀 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
