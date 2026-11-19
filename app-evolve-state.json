@@ -1,11 +1,7 @@
 {
-  "cycle": 376,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "카테고리 분할(split) 거래/반복거래 입력 경로에 실행형 테스트 추가 (tx*/rec* 쌍 드리프트 가드 포함)",
-    "why": "txSplitAdd/txSplitRemove/txSplitOpenCat/txSplitAmt/txSplitMemo/txToggleSplit(index.html:6529-6562)와 그 쌍둥이인 recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo/recToggleSplit(index.html:6943-6974), 그리고 splitFieldHTML/splitHintUpdate(index.html:6499-6519)가 FUNCTIONS 목록 밖에 있어 실행형 테스트가 전혀 없다. 이 레이어는 단순 UI가 아니라 실제 금융 정합성 로직이다: txSplitRemove/recSplitRemove는 최소 2개 행 유지를 강제하고(6548, 6962), splitHintUpdate가 계산하는 합계-총액 차이는 saveTx(6706-6711)/saveRec(7075-7080)의 저장 차단 게이트에 직결된다. category-level 예산/지출 분석(spendByCategory, budgetForMonthWithCarry)이 바로 이 d.category/d.splits 값을 소비하므로 회귀가 나면 카테고리별 숫자가 조용히 틀어진다. 게다가 index.html:6927 주석이 명시하듯 tx*/rec*는 손으로 동기화하는 쌍둥이 코드라 한쪽만 고치는 drift 위험이 상시 존재한다(= multiDebtPlan name 필드 버그 같은 과거 사례와 같은 유형).",
-    "approach": "test/run.js의 FUNCTIONS에 splitFieldHTML, splitHintUpdate, txToggleSplit, txSplitAdd, txSplitRemove, txSplitOpenCat, txSplitAmt, txSplitMemo, recToggleSplit, recSplitAdd, recSplitRemove, recSplitOpenCat, recSplitAmt, recSplitMemo를 추가(saveTx/commitTx/txDraft, saveRec/commitRec/recDraft와 같은 샌드박스 그룹, renderTxSheet/renderRecSheet용 domstub 필요). 실행형 테스트로: (a) txToggleSplit on→off 시 category/amount가 top-level로 round-trip되는지, (b) txSplitAdd가 이미 쓰인 카테고리를 건너뛰고 다음 미사용 카테고리를(없으면 해당 타입의 첫 카테고리로 폴백) 고르는지, (c) txSplitRemove가 splits.length<=2일 때 no-op인지, (d) txSplitAmt/recSplitAmt가 draft를 갱신하고 splitHintUpdate가 반환하는 합계-총액 부호/텍스트가 일치하는지, (e) saveTx/saveRec에서 합계 불일치 시 올바른 toast로 차단되고 일치 시 category=splits[0].category로 저장되는지, (f) 동일한 입력 시퀀스를 tx*/rec* 양쪽에 똑같이 실행해 결과 상태가 일치하는지 검증하는 패리티 테스트(향후 한쪽만 고치는 drift를 잡아내는 안전망). 전부 추가한 뒤 node our-assets-v1.14.1/our-assets/test/run.js로 통과 확인. 이 사이클은 테스트 커버리지 보강이 목적이므로 실제 버그가 나오지 않으면 test/run.js만 수정해 APP_VERSION/sw.js CACHE는 올리지 않는다(과거 커버리지 전용 사이클 관행과 동일); 과정에서 실제 동작 버그를 발견해 index.html/logic.js를 고치면 그때는 APP_VERSION/CACHE를 함께 올린다."
-  },
+  "cycle": 377,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 371,
@@ -145,6 +141,13 @@
       "phase": "critique",
       "timestamp": "2026-11-19T12:10:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-376에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: 카테고리 분할(split) 거래 입력 경로 전체 — txSplitAdd/txSplitRemove/txSplitOpenCat/txSplitAmt/txSplitMemo/txToggleSplit(index.html:6529-6562), 쌍둥이 코드인 recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo/recToggleSplit(6943-6974), splitFieldHTML/splitHintUpdate(6499-6519) — 가 FUNCTIONS 목록 밖에 있어 실행형 테스트가 전혀 없다. 단순 UI가 아니라 saveTx/saveRec의 저장 차단 게이트(합계-총액 불일치 검증)에 직결되는 금융 정합성 로직이며, index.html:6927 주석이 명시하듯 tx*/rec*는 손으로 동기화하는 쌍둥이라 drift 위험이 상시 존재(과거 multiDebtPlan name 필드 버그와 같은 유형). pending_advance_plan에 14개 함수 FUNCTIONS 등록 + toggle round-trip/다음 미사용 카테고리 선택/최소 2행 유지/합계-총액 가드/tx↔rec 패리티 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 376,
+      "phase": "advance",
+      "timestamp": "2026-11-19T13:20:00.000Z",
+      "summary": "critique(cycle376)의 계획대로 착수했으나, 실제로 test/run.js를 읽어보니 계획의 전제('실행형 테스트가 전혀 없다')는 낡은 것이었다 — txSplitAdd/txSplitRemove/txSplitMemo/splitFieldHTML과 recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo/splitHintUpdate는 이미 각자 격리된 ad-hoc vm 컨텍스트로 개별 실행형 테스트가 있었고, saveTx/saveRec의 합계-총액 불일치 저장 차단 게이트도 이미 테스트돼 있었다. 실제 공백은 더 좁았다: recToggleSplit/recSplitOpenCat은 직접 실행 테스트가 있는데 그 쌍둥이인 txToggleSplit/txSplitOpenCat만 splitFieldHTML이 onclick 문자열을 그려내는지만 확인됐을 뿐 함수 자체가 한 번도 직접 실행된 적이 없었다(tx/rec 비대칭 공백). 이 둘을 recToggleSplit/recSplitOpenCat과 동일한 패턴으로 직접 실행하는 테스트 3건(on/off/openCat)을 추가하고, 계획이 요구한 'tx↔rec 패리티' 테스트도 추가했다: 동일한 연산 시퀀스(토글→추가→카테고리 변경→금액/메모 입력→삭제)를 txDraft/recDraft 양쪽에 실행해 최종 splits/category/amount/힌트 문구가 일치하는지 검증(향후 한쪽만 고치는 drift를 잡는 안전망). 과정에서 별도 vm 컨텍스트(realm)로 만든 객체끼리 assert.deepStrictEqual을 쓰면 Object.prototype이 달라 거짓 FAIL이 나는 기존에 알려진 함정(cycle364/372)에 다시 걸려, 관례대로 JSON.stringify 비교로 바꿔 해결했다. 실제 버그는 발견되지 않음(순수 커버리지 보강 + 계획 전제 재검증). node our-assets-v1.14.1/our-assets/test/run.js 3657->3661/3661 통과. test/run.js만 수정해 APP_VERSION/CACHE는 올리지 않음. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

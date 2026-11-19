@@ -24856,6 +24856,132 @@ test('saveTx: 메모를 비워두면 분할이어도 첫 항목의 카테고리�
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.txns[0].memo, '식비');
 });
+/* ---------- txToggleSplit/txSplitOpenCat: recToggleSplit/recSplitOpenCat은 이미 실행형으로
+ * 직접 호출해 검증돼 있었지만(위 recToggleSplit-on-real/off-real/recSplitOpenCat-real), 그
+ * 쌍둥이인 tx* 쪽은 splitFieldHTML이 onclick="txToggleSplit()"/"txSplitOpenCat(i)"를 그려내는지만
+ * 문자열로 확인했을 뿐 함수 자체를 한 번도 실제로 실행해 본 적이 없었다(app-evolve cycle376
+ * critique/advance가 짚은 tx 쪽과 rec 쪽의 커버리지 비대칭 공백). */
+test('[실행형] txToggleSplit: 분할을 켜면 현재 카테고리·금액을 첫 항목으로, 아직 안 쓴 카테고리를 두 번째 항목으로 삼아 최소 2개로 시작한다', () => {
+  const ctx = {
+    $: () => null,
+    txDraft: { type: 'expense', category: '통신', amount: 30000 },
+    DB: { categories: { expense: ['통신', 'OTT', '교통'] } },
+    renderTxSheet: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncTxInputs'), extractFunction('catListOf'), extractFunction('txToggleSplit')].join('\n'),
+    ctx, { filename: 'txToggleSplit-on-real' }
+  );
+  ctx.txToggleSplit();
+  assert.strictEqual(ctx.txDraft.splits.length, 2);
+  assert.strictEqual(ctx.txDraft.splits[0].category, '통신');
+  assert.strictEqual(ctx.txDraft.splits[0].amount, 30000);
+  assert.strictEqual(ctx.txDraft.splits[1].category, 'OTT', '아직 안 쓴 카테고리를 두 번째 항목으로 삼아야 함');
+  assert.strictEqual(ctx.txDraft.splits[1].amount, 0);
+});
+test('[실행형] txToggleSplit: 분할이 켜진 상태에서 다시 부르면 첫 항목의 카테고리를 최상위로 되돌리고 splits를 지운다', () => {
+  const ctx = {
+    $: () => null,
+    txDraft: { type: 'expense', category: '통신', amount: 50000, splits: [{ category: 'OTT', amount: 30000 }, { category: '교통', amount: 20000 }] },
+    DB: { categories: { expense: ['통신', 'OTT', '교통'] } },
+    renderTxSheet: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncTxInputs'), extractFunction('catListOf'), extractFunction('txToggleSplit')].join('\n'),
+    ctx, { filename: 'txToggleSplit-off-real' }
+  );
+  ctx.txToggleSplit();
+  assert.strictEqual(ctx.txDraft.category, 'OTT', '최상위 category는 첫 분할 항목으로 되돌아가야 함');
+  assert.strictEqual(ctx.txDraft.splits, undefined, 'splits는 지워져야 함');
+});
+test('[실행형] txSplitOpenCat: 지정한 분할 항목의 카테고리를 피커로 바꿀 수 있게 openCatPicker를 배선한다', () => {
+  const ctx = {
+    $: () => null,
+    txDraft: { type: 'expense', splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] },
+    renderTxSheet: () => {},
+    openCatPicker: (opts) => { ctx._pickerOpts = opts; },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('syncTxInputs'), extractFunction('num'), extractFunction('txSplitOpenCat')].join('\n'),
+    ctx, { filename: 'txSplitOpenCat-real' }
+  );
+  ctx.txSplitOpenCat(1);
+  assert.strictEqual(ctx._pickerOpts.kind, 'expense');
+  assert.strictEqual(ctx._pickerOpts.current, 'OTT');
+  ctx._pickerOpts.onPick('넷플릭스');
+  assert.strictEqual(ctx.txDraft.splits[1].category, '넷플릭스', 'onPick이 지정한 분할 항목의 category를 바꿔야 함');
+});
+/* ---------- tx 쪽/rec 쪽 분할 핸들러 패리티: index.html:6940 주석이 명시하듯 txToggleSplit/txSplitAdd/
+ * txSplitRemove/txSplitOpenCat/txSplitAmt/txSplitMemo와 recToggleSplit/recSplitAdd/recSplitRemove/
+ * recSplitOpenCat/recSplitAmt/recSplitMemo는 손으로 동기화하는 쌍둥이 코드다(과거 multiDebtPlan의
+ * name 필드 누락 버그와 같은 유형의 drift가 날 수 있는 자리). 위의 개별 테스트들은 각 함수를
+ * 따로따로 검증하지만, "같은 입력 시퀀스를 양쪽에 똑같이 실행하면 결과도 똑같은가"는 아무도
+ * 보장하지 않았다 — 이 테스트가 그 안전망이다(app-evolve cycle376 critique/advance). */
+test('[실행형] tx*/rec* 분할 핸들러 패리티: 동일한 입력 시퀀스를 txDraft/recDraft 양쪽에 실행하면 결과 상태가 일치한다', () => {
+  const CATS = ['통신', 'OTT', '교통', '기타'];
+  function makeTxCtx() {
+    const ctx = {
+      $: (id) => ctx._els[id] || null, _els: {},
+      _formScroll: 0,
+      comma: (n) => Math.round(n || 0).toLocaleString('ko-KR'),
+      MEMO_MAX: sandbox.MEMO_MAX,
+      txDraft: { type: 'expense', category: '통신', amount: 30000, memo: '' },
+      DB: { categories: { expense: CATS } },
+      renderTxSheet: () => {},
+      openCatPicker: (opts) => opts.onPick('기타'),
+    };
+    vm.createContext(ctx);
+    vm.runInContext(
+      [extractFunction('num'), extractConst('AMOUNT_MAX'), extractFunction('fmtAmt'), extractFunction('syncTxInputs'), extractFunction('catListOf'),
+        extractFunction('splitHintUpdate'), extractFunction('txToggleSplit'), extractFunction('txSplitAdd'), extractFunction('txSplitRemove'),
+        extractFunction('txSplitOpenCat'), extractFunction('txSplitAmt'), extractFunction('txSplitMemo')].join('\n'),
+      ctx, { filename: 'tx-split-parity-real' }
+    );
+    return ctx;
+  }
+  function makeRecCtx() {
+    const ctx = {
+      $: (id) => ctx._els[id] || null, _els: {},
+      comma: (n) => Math.round(n || 0).toLocaleString('ko-KR'),
+      MEMO_MAX: sandbox.MEMO_MAX,
+      recDraft: { type: 'expense', category: '통신', amount: 30000, memo: '' },
+      DB: { categories: { expense: CATS } },
+      renderRecSheet: () => {},
+      openCatPicker: (opts) => opts.onPick('기타'),
+    };
+    vm.createContext(ctx);
+    vm.runInContext(
+      [extractFunction('num'), extractConst('AMOUNT_MAX'), extractFunction('fmtAmt'), extractFunction('syncRecInputs'), extractFunction('catListOf'),
+        extractFunction('splitHintUpdate'), extractFunction('recToggleSplit'), extractFunction('recSplitAdd'), extractFunction('recSplitRemove'),
+        extractFunction('recSplitOpenCat'), extractFunction('recSplitAmt'), extractFunction('recSplitMemo')].join('\n'),
+      ctx, { filename: 'rec-split-parity-real' }
+    );
+    return ctx;
+  }
+  const tx = makeTxCtx(), rec = makeRecCtx();
+  // 동일한 시퀀스: 분할 켜기 → 항목 추가(3번째) → 2번째 항목 카테고리를 피커로 변경('기타') →
+  // 각 항목 금액/메모 입력 → 첫 항목 삭제.
+  tx.txToggleSplit(); rec.recToggleSplit();
+  tx.txSplitAdd(); rec.recSplitAdd();
+  tx.txSplitOpenCat(1); rec.recSplitOpenCat(1);
+  tx._els.splitHint = { textContent: '', style: { color: '' } };
+  rec._els.splitHint = { textContent: '', style: { color: '' } };
+  tx.txSplitAmt(0, { value: '10,000' }); rec.recSplitAmt(0, { value: '10,000' });
+  tx.txSplitAmt(1, { value: '15,000' }); rec.recSplitAmt(1, { value: '15,000' });
+  tx.txSplitAmt(2, { value: '5,000' }); rec.recSplitAmt(2, { value: '5,000' });
+  tx.txSplitMemo(0, { value: '기본료' }); rec.recSplitMemo(0, { value: '기본료' });
+  tx.txSplitRemove(0); rec.recSplitRemove(0);
+  // tx.txDraft.splits의 각 원소는 tx쪽 vm 컨텍스트(별도 realm)에서 만들어진 객체라 Object.prototype이
+  // rec쪽 realm의 것과 달라, assert.deepStrictEqual이 프로토타입까지 비교하며 거짓 FAIL을 낸다
+  // (app-evolve cycle364/372 등에서 쓴 것과 동일한 관례로 JSON.stringify 비교로 피해간다).
+  assert.strictEqual(JSON.stringify(tx.txDraft.splits), JSON.stringify(rec.recDraft.splits), 'splits 배열이 tx*/rec* 양쪽에서 동일해야 함');
+  assert.strictEqual(tx.txDraft.category, rec.recDraft.category, '최상위 category 폴백이 tx*/rec* 양쪽에서 동일해야 함');
+  assert.strictEqual(tx.txDraft.amount, rec.recDraft.amount, '전체 amount가 tx*/rec* 양쪽에서 동일해야 함');
+  assert.strictEqual(tx._els.splitHint.textContent, rec._els.splitHint.textContent, '합계 힌트 문구가 tx*/rec* 양쪽에서 동일해야 함');
+});
 /* ---------- txSplitAdd/txSplitRemove: syncTxInputs() 누락으로 방금 타이핑한 전체 금액/메모가
  * 재렌더 때 되돌아가던 버그 (app-evolve cycle254 develop) — txType/txToggleRepeat/txSplitOpenCat 등
  * txDraft를 바꾸고 renderTxSheet()로 재렌더하는 다른 모든 핸들러는 재렌더 전에 반드시 syncTxInputs()로
