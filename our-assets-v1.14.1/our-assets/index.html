@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.489';
+const APP_VERSION='1.47.490';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4058,7 +4058,15 @@ function goalRowHTML(g){
  const assetBroken=goalLinkedAssetBroken(g);
  const hasUnknown=goalHasUnknown(g);
  const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY); /* homeAlerts()의 goalBehind 알림은 hist.length>=2·!hasUnknown을 요구해 안 뜰 때가 있어도, 목표 화면 자체엔 지남 표시가 있어야 함(app-evolve cycle195 develop) */
- return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="ackGoalAchieved('${g.id}')" onkeydown="rowKeydown(event,()=>ackGoalAchieved('${g.id}'))">
+ /* assetGone/assetBroken/hasUnknown·달성(p.achieved)은 전부 시각적으로만(배지·경고 텍스트) 보여주고
+  * 위 role="button" 컨테이너의 aria-label은 진행률%·지남 여부만 담고 있었다 — calCellsFor의 dayLabel이
+  * 저축/예정/이체 인디케이터를 시각 표시와 별도로 aria-label에도 담게 고친 것(app-evolve cycle377
+  * critique/advance)과 같은 버그 클래스: 스크린리더 사용자는 "연결된 자산이 삭제됐어요"처럼 되돌릴
+  * 수 없는 행동이 필요한 경고나 '달성' 상태를 전혀 들을 수 없었다. role="button" 엘리먼트에 aria-label이
+  * 있으면 그 하위 텍스트는 접근성 트리에서 무시되므로(aria-label이 accessible name을 완전히 대체),
+  * 시각 배지와 같은 조건을 그대로 재사용해 aria-label에도 빠짐없이 붙인다. */
+ const ariaWarn=assetGone?' 연결된 자산이 삭제됐어요':assetBroken?' 연결된 자산을 추적할 수 없어요':hasUnknown?' 일부 미확인':'';
+ return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${p.achieved?' 달성':''}${ariaWarn}${overdue?' 목표일 지남':''}" onclick="ackGoalAchieved('${g.id}')" onkeydown="rowKeydown(event,()=>ackGoalAchieved('${g.id}'))">
    <div class="pg-head"><span class="pg-k">${esc(g.name)}${assetGone?' <span class="mini warn">연결된 자산이 삭제됐어요</span>':assetBroken?' <span class="mini warn">연결된 자산을 추적할 수 없어요</span>':hasUnknown?' <span class="mini warn">일부 미확인</span>':''}${overdue?' <span class="mini warn">목표일 지남</span>':''}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
      <span class="pg-nums"><b class="num">${comma(p.cur)}</b><span class="pg-of num"> / ${comma(p.target)}원</span></span></div>
    <div class="pg-bar"><i style="width:${p.pct}%;background:${color}"></i></div>
@@ -4131,7 +4139,13 @@ function goalsManageBody(qRaw){
      <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%${ownerBadge}</div>
      ${assetGone?'<div class="mini warn" style="margin-top:2px">연결된 자산이 삭제됐어요</div>':assetBroken?'<div class="mini warn" style="margin-top:2px">연결된 자산을 추적할 수 없어요</div>':hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}
      ${g.targetDate?`<div class="msub2">목표일 ${fmtDateFull(g.targetDate)}${overdue?' <span class="mini warn">지남</span>':''}</div>`:''}</div>`;
-   const ariaBase=`${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}`;
+   /* goalRowHTML()과 동일한 접근성 공백 — textHTML은 assetGone/assetBroken/hasUnknown 경고와 '달성'
+    * 배지를 시각적으로 보여주지만, 이 행 전체를 감싸는 role="button"의 aria-label(ariaBase)은 진행률%·
+    * 지남 여부만 담아 그 경고/배지가 스크린리더엔 전혀 전달되지 않았다(role="button" aria-label이
+    * 하위 텍스트를 접근성 트리에서 대체하므로) — goalRowHTML()과 같은 조건을 그대로 재사용해 메운다
+    * (app-evolve cycle379 develop, calCellsFor dayLabel 공백을 메운 cycle377과 동일한 버그 클래스). */
+   const ariaWarn=assetGone?' 연결된 자산이 삭제됐어요':assetBroken?' 연결된 자산을 추적할 수 없어요':hasUnknown?' 일부 미확인':'';
+   const ariaBase=`${esc(g.name)} 목표 진행률 ${p.pct}%${p.achieved?' 달성':''}${ariaWarn}${overdue?' 목표일 지남':''}`;
    /* 선택모드(ST.goalSel) — recManageBody의 선택모드(index.html:7460 부근)와 동일한 패턴으로, 건당
     * 액션 버튼(복제/삭제) 자리를 체크박스로 바꾼다(app-evolve cycle305 critique → advance). */
    if(ST.goalSel.mode){const on=ST.goalSel.ids.has(g.id);

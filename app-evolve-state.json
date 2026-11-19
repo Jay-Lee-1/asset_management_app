@@ -1,15 +1,8 @@
 {
   "cycle": 379,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 374,
-      "phase": "develop",
-      "timestamp": "2026-11-19T02:21:08.628Z",
-      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 발견: doExport()의 \"바로 저장 (공유)\" JSON 경로가 canShareFiles()가 probe하는 것과 다른 File 객체(backupFile() 미사용)를 공유해 iOS에서 판정↔실행 드리프트로 조용히 클립보드 폴백하던 버그. non-CSV 공유 분기가 backupFile(name,text)를 쓰도록 수정. 테스트 4건 추가. node test/run.js 3634->3638/3638 통과. APP_VERSION 1.47.481->1.47.482, sw.js CACHE v748->v749.",
-      "commit": "81e2cc3"
-    },
     {
       "cycle": 374,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-19T21:16:09.571Z",
       "summary": "critique(cycle378)의 계획대로 반복 내역 관리 선택모드(ST.recSel)에 거래/전체내역/자산 목록과 동일한 일괄 카테고리 변경·계좌 이동을 추가했다. logic.js에 bulkRecCatTargets/bulkRecAssetMoveTargets 추가(bulkCatTargets/bulkAssetMoveTargets와 동일 규칙 — transfer 제외, type 혼합 거부). 계획의 전제(\"반복 거래엔 split 개념이 없다\")는 실제로 확인해보니 틀렸다 — recDraft.splits가 이미 존재해(txSplitAdd의 쌍둥이 recSplitAdd 등) bulkCatTargets처럼 분할(splits.length>1)이면 reason:\"split\"으로 거부하는 가드를 추가했다(계좌 이동은 bulkAssetMoveTargets와 동일하게 분할도 허용). index.html에 doBulkRecCat/doBulkRecAssetMove(doBulkCat/doBulkAssetMove와 동일한 touchSave+undoToast 패턴), bulkRecCatPickFor/bulkRecAssetMovePickFor(openCatPicker/openAssetPicker 재사용), recCatSel/recAssetMoveSel을 추가했다. 다만 피커의 onPick이 부르는 closeSheet()가 ST.recSel을 비우는 부수효과에 의존하지 않도록, ledgerCatSel/histCatSel과 동일하게 afterApply에서 ST.recSel.mode/ids를 직접 비우도록 설계해 recActiveSel/recDelSel과 같은 기준으로 테스트 가능하게 했다. updateSelBottom()의 바닥바 마크업(s.cat/s.move 렌더링)이 이미 lSel/hist/recSel에 공통이라 activeSel()의 ST.recSel 분기에 cat/move 키만 추가하면 됐다(마크업 자체는 수정 불필요). 테스트 26건 추가(targets 판정 11건, doBulk 되돌리기/twGuard/안전망 8건, pickFor 피커 연동 4건, recCatSel/recAssetMoveSel 선택모드 종료 2건, activeSel 바닥바 버튼 와이어링 1건). node test/run.js 3670->3696/3696 통과. node --check logic.js 통과. index.html/logic.js를 수정했으므로 APP_VERSION 1.47.488->1.47.489, sw.js CACHE v755->v756. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 379,
+      "phase": "develop",
+      "timestamp": "2026-11-19T22:10:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle374-378에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 반복/날짜 순수함수, bulk 선택모드, undoToast 커버리지, CSV 가드, SRI, 빌드 스텝 등 여러 후보를 살폈으나 대부분 이미 매우 잘 커버돼 있거나(SRI/빌드 스텝은 네트워크 확장·CI/CD 불가침 규칙 위반으로 기각) 새로울 게 없었다. cycle377의 calCellsFor dayLabel 접근성 수정과 같은 버그 클래스를 목표 관리 화면에서 발견: goalRowHTML()(index.html:4054)/goalsManageBody()(4139)가 role=\"button\" 컨테이너의 aria-label에 진행률%·지남 여부만 담아, role=\"button\" aria-label이 하위 텍스트를 접근성 트리에서 완전히 대체하는 특성상 시각적으로는 보이는 '달성' 배지와 '연결된 자산이 삭제됐어요'/'연결된 자산을 추적할 수 없어요'/'일부 미확인' 경고 캡션이 스크린리더 사용자에게 전혀 전달되지 않던 공백(마지막 경고는 실제 행동이 필요한 상태인데도 안내되지 않음). 두 함수 모두 시각 캡션과 동일한 조건(assetGone/assetBroken/hasUnknown/p.achieved)을 재사용해 aria-label에 보강(ariaWarn 변수). 기존 테스트 3건에 aria-label 어서션을 확장하고 '달성' 배지 aria-label 보강을 확인하는 신규 테스트 1건 추가. node test/run.js 3696->3697/3697 통과, node --check logic.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.489->1.47.490, sw.js CACHE v756->v757.",
+      "commit": "pending"
     }
   ]
 }

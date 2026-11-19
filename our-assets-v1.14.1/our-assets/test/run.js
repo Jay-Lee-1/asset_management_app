@@ -6263,10 +6263,14 @@ test('goalRowHTML: 목표 귀속에 시세 미확인(rateUnknown) 자산이 있�
   sandbox.TODAY = '2026-01-01';
   let html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
   assert.ok(html.includes('일부 미확인'), '시세 미확인 자산이 섞여 있으면 캡션이 보여야 함');
+  // role="button"의 aria-label이 하위 텍스트(캡션 span)를 접근성 트리에서 대체하므로, 캡션과 별개로
+  // aria-label 자체에도 같은 문구가 들어가야 스크린리더 사용자가 알 수 있다(app-evolve cycle379 develop).
+  assert.ok(/aria-label="[^"]*일부 미확인[^"]*"/.test(html), 'aria-label에 "일부 미확인"이 보강되지 않음');
 
   sandbox.DB.rates.fx.USD = 1300;
   html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
   assert.ok(!html.includes('일부 미확인'), '시세가 확인되면 캡션이 사라져야 함');
+  assert.ok(!/aria-label="[^"]*일부 미확인/.test(html), '시세가 확인되면 aria-label에서도 사라져야 함');
 });
 test('goalRowHTML: 목표 귀속 밖의 시세 미확인 자산은 캡션에 영향을 주지 않는다(귀속별 스코프 확인)', () => {
   sandbox.DB = {
@@ -6325,6 +6329,31 @@ test('goalRowHTML: 목표일이 지났어도 이미 달성(achieved)했으면 "�
   sandbox.TODAY = '2026-06-01';
   const html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
   assert.ok(!html.includes('목표일 지남'), '달성한 목표는 목표일이 지났어도 배지가 없어야 함');
+});
+/* goalRowHTML/goalsManageBody(openGoalsList)의 "달성" 배지(<span class="pg-done">/<span class="mini">)도
+ * 위 "일부 미확인"/"연결된 자산..." 캡션들과 똑같이 시각적으로만 보이고 role="button"의 aria-label엔
+ * 전혀 반영되지 않던 공백이었다 — 달성 여부는 홈/메뉴에서 목표 알림이 꺼지는 등 실제 의미가 있는
+ * 상태라 스크린리더 사용자도 들을 수 있어야 한다(app-evolve cycle379 develop). */
+test('goalRowHTML/openGoalsList: 목표를 달성하면 "달성" 배지와 함께 aria-label에도 "달성"이 보강된다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = {
+    goals: [{ id: 'g1', name: '내 집 마련', targetAmount: 1000000, targetDate: null, owner: 'all' }],
+    nwHistory: [{ date: '2026-01-01', nw: 500000 }], // 미달성
+  };
+  sandbox.TODAY = '2026-01-01';
+  let html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(!html.includes('>달성<'), '아직 미달성이면 배지가 없어야 함');
+  assert.ok(!/aria-label="[^"]*달성/.test(html), '아직 미달성이면 aria-label에도 없어야 함');
+
+  sandbox.DB.nwHistory = [{ date: '2026-01-01', nw: 1000000 }]; // cur===target → 달성
+  html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(html.includes('>달성<'), '달성하면 배지가 보여야 함');
+  assert.ok(/aria-label="[^"]*달성[^"]*"/.test(html), 'goalRowHTML aria-label에 "달성"이 보강되지 않음');
+
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  assert.ok(sandbox.lastSheetHtml.includes('>달성<'), 'openGoalsList도 같은 배지를 보여줘야 함');
+  assert.ok(/aria-label="[^"]*달성[^"]*"/.test(sandbox.lastSheetHtml), 'openGoalsList의 행 aria-label에도 "달성"이 보강되지 않음');
 });
 test('goalRowHTML: 목표일이 오늘이거나 미래면(아직 안 지남) 미달성이어도 배지가 안 붙는다', () => {
   sandbox.DB = {
@@ -6735,10 +6764,14 @@ test('goalRowHTML/openGoalsList: asset형 목표는 연결 자산의 잔액을 �
   html = sandbox.goalRowHTML(g);
   assert.ok(html.includes('연결된 자산이 삭제됐어요'), '자산이 사라지면 중립 안내 캡션이 붙어야 함');
   assert.ok(html.includes('목표 진행률 0%'), '자산이 사라지면 cur를 추측하지 않고 0%로 중립 처리해야 함');
+  // 캡션은 시각적으로만 보여주고 role="button"의 aria-label엔 안 담겨 있던 공백(app-evolve cycle379
+  // develop, calCellsFor dayLabel 공백을 메운 cycle377과 동일한 버그 클래스) — aria-label에도 있어야 함.
+  assert.ok(/aria-label="[^"]*연결된 자산이 삭제됐어요[^"]*"/.test(html), 'aria-label에 "연결된 자산이 삭제됐어요"가 보강되지 않음');
 
   sandbox.lastSheetHtml = null;
   sandbox.openGoalsList();
   assert.ok(sandbox.lastSheetHtml.includes('연결된 자산이 삭제됐어요'), 'openGoalsList도 같은 캡션을 보여줘야 함');
+  assert.ok(/aria-label="[^"]*연결된 자산이 삭제됐어요[^"]*"/.test(sandbox.lastSheetHtml), 'openGoalsList의 행 aria-label에도 보강되지 않음');
 });
 test('goalRowHTML/openGoalsList: 연결 자산이 삭제되진 않았지만 종류가 바뀌어 더 이상 추적 불가능하면 "연결된 자산을 추적할 수 없어요" 캡션이 붙고 cur를 0으로 중립 처리한다', () => {
   sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
@@ -6764,10 +6797,14 @@ test('goalRowHTML/openGoalsList: 연결 자산이 삭제되진 않았지만 종�
   assert.ok(html.includes('연결된 자산을 추적할 수 없어요'), '삭제되지 않았으므로 "삭제됐어요"가 아니라 별도 캡션이 붙어야 함');
   assert.ok(!html.includes('연결된 자산이 삭제됐어요'));
   assert.ok(html.includes('목표 진행률 0%'), 'cur를 추측하지 않고 0%로 중립 처리해야 함');
+  // goalRowHTML()의 또 다른 접근성 공백 — "연결된 자산이 삭제됐어요" 캡션과 동일한 이유로 이 캡션도
+  // aria-label에 보강돼야 한다(app-evolve cycle379 develop).
+  assert.ok(/aria-label="[^"]*연결된 자산을 추적할 수 없어요[^"]*"/.test(html), 'aria-label에 "연결된 자산을 추적할 수 없어요"가 보강되지 않음');
 
   sandbox.lastSheetHtml = null;
   sandbox.openGoalsList();
   assert.ok(sandbox.lastSheetHtml.includes('연결된 자산을 추적할 수 없어요'), 'openGoalsList도 같은 캡션을 보여줘야 함');
+  assert.ok(/aria-label="[^"]*연결된 자산을 추적할 수 없어요[^"]*"/.test(sandbox.lastSheetHtml), 'openGoalsList의 행 aria-label에도 보강되지 않음');
 });
 test('homeAlerts: 연결 자산이 삭제된 asset형 목표는 goalBehind 알림에서 제외된다(cur 0 오탐 방지)', () => {
   setupHomeAlertsDB();
