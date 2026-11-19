@@ -1,22 +1,8 @@
 {
   "cycle": 377,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 371,
-      "phase": "advance",
-      "timestamp": "2026-11-18T17:15:07.132Z",
-      "summary": "critique(cycle371)의 계획대로 온보딩 튜토리얼(TW/twScreen/twActive/twGuard/twNext/twPrev/twEnd/openTutorial/maybeTutorial)을 실행형으로 테스트했다. twCtx() ad hoc vm 컨텍스트를 신설, TW 배열·twScreen()과 twActive/twGuard/twNext/twPrev/twEnd/openTutorial/maybeTutorial은 실제 로직을 돌렸다. 테스트 11건 추가(TW[].sel↔twScreen() 페어링 회귀, .fab-pop 분기 미트리거 증거, twGuard/twEnd/twPrev 경계, maybeTutorial 예약 등). 검증 후 twNext()의 도달 불가능한 \".fab-pop\" 분기를 실제로 제거했다(동작 변화 없음). node test/run.js 3595->3606/3606 통과. index.html을 수정했으므로 APP_VERSION 1.47.478->1.47.479, sw.js CACHE v745->v746. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 372,
-      "phase": "develop",
-      "timestamp": "2026-11-18T18:30:00.000Z",
-      "summary": "Explore 서브에이전트에게 cycle340-371에서 이미 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: notifyAlertInfo()(index.html)의 budgetOver/goalBehind/debtBehind 세 OS 푸시 dedupe 키가 월(또는 goalId/assetId) 단위로만 묶여 있어, settleDue/allocationDrift와 같은 결함을 그대로 갖고 있었다. 수정: budgetOver는 20%p 단위, goalBehind는 30일 단위, debtBehind는 10만원 단위로 버킷팅해 key에 추가. 신규 테스트 3건 추가. node test/run.js 3606->3609/3609 통과. APP_VERSION 1.47.479->1.47.480, sw.js CACHE v746->v747.",
-      "commit": "09553f5"
-    },
     {
       "cycle": 372,
       "phase": "review",
@@ -148,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-19T13:20:00.000Z",
       "summary": "critique(cycle376)의 계획대로 착수했으나, 실제로 test/run.js를 읽어보니 계획의 전제('실행형 테스트가 전혀 없다')는 낡은 것이었다 — txSplitAdd/txSplitRemove/txSplitMemo/splitFieldHTML과 recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo/splitHintUpdate는 이미 각자 격리된 ad-hoc vm 컨텍스트로 개별 실행형 테스트가 있었고, saveTx/saveRec의 합계-총액 불일치 저장 차단 게이트도 이미 테스트돼 있었다. 실제 공백은 더 좁았다: recToggleSplit/recSplitOpenCat은 직접 실행 테스트가 있는데 그 쌍둥이인 txToggleSplit/txSplitOpenCat만 splitFieldHTML이 onclick 문자열을 그려내는지만 확인됐을 뿐 함수 자체가 한 번도 직접 실행된 적이 없었다(tx/rec 비대칭 공백). 이 둘을 recToggleSplit/recSplitOpenCat과 동일한 패턴으로 직접 실행하는 테스트 3건(on/off/openCat)을 추가하고, 계획이 요구한 'tx↔rec 패리티' 테스트도 추가했다: 동일한 연산 시퀀스(토글→추가→카테고리 변경→금액/메모 입력→삭제)를 txDraft/recDraft 양쪽에 실행해 최종 splits/category/amount/힌트 문구가 일치하는지 검증(향후 한쪽만 고치는 drift를 잡는 안전망). 과정에서 별도 vm 컨텍스트(realm)로 만든 객체끼리 assert.deepStrictEqual을 쓰면 Object.prototype이 달라 거짓 FAIL이 나는 기존에 알려진 함정(cycle364/372)에 다시 걸려, 관례대로 JSON.stringify 비교로 바꿔 해결했다. 실제 버그는 발견되지 않음(순수 커버리지 보강 + 계획 전제 재검증). node our-assets-v1.14.1/our-assets/test/run.js 3657->3661/3661 통과. test/run.js만 수정해 APP_VERSION/CACHE는 올리지 않음. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 377,
+      "phase": "develop",
+      "timestamp": "2026-11-19T14:10:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-376에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: goLedgerTo()(index.html:4497, 가계부 날짜 행 탭 → 전체내역 드릴다운)가 sumTap/openAssetHistory/openCatHistory와 달리 History 탭 필터(ST.hist.cat/q/assetId/catExact/owner/selMode)를 리셋하지 않고 histEnsureRange()만 불러 화면을 연다. 재현: 전체내역에서 owner/category/검색어/자산 필터를 걸어둔 채 홈/플랜의 '이번 달 나갈 돈' 등 필터 없는 카드에서 그 필터와 안 맞는 행을 탭하면, 화면은 열리지만 대상 행이 필터에 걸러져 안 보여 거래가 조용히 사라진 것처럼 보인다. 수정: list 모드 분기에서 histEnsureRange() 호출 전에 다른 세 함수와 동일하게 cat='전체'/q=''/assetId=null/catExact=null/catExactType=null/owner='전체'/selMode=false/sel.clear()를 리셋하고 histInvalidate()를 호출하도록 추가. goLedgerTo/histEnsureRange를 FUNCTIONS에 등록하고 flashRow를 go()와 같은 화면 전용 no-op 스텁으로 추가해 실행형 테스트 3건 추가(list 모드 필터 전체 리셋+이동, calendar 모드는 ST.hist 무관, histEnsureRange로 범위 밖 날짜도 보이게 확장). node test/run.js 3661->3664/3664 통과. index.html을 수정했으므로 APP_VERSION 1.47.485->1.47.486, sw.js CACHE v752->v753.",
       "commit": null
     }
   ]

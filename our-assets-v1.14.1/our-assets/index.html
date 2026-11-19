@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.485';
+const APP_VERSION='1.47.486';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4498,6 +4498,10 @@ function goLedgerTo(date,id,rec){ /* 가계부의 마지막 모드로 이동 + �
  const dm=ym(date);
  const rowSel=id?`.swipe[data-id="${id}"]`:(rec?`.swipe[data-rec="${rec}"][data-date="${date}"]`:'');
  if(ST.ledgerMode==='list'){
+  /* sumTap/openAssetHistory/openCatHistory처럼 필터를 리셋하지 않으면, 홈/플랜 화면의 "이번 달
+   * 나갈 돈" 등에서 History 탭에 남아있던 이전 owner/category/검색어/자산 필터와 안 맞는 항목을
+   * 탭했을 때 화면은 열리지만 대상 행이 필터에 걸러져 안 보여 조용히 사라진 것처럼 보인다. */
+  ST.hist.cat='전체';ST.hist.q='';ST.hist.assetId=null;ST.hist.catExact=null;ST.hist.catExactType=null;ST.hist.owner='전체';ST.hist.selMode=false;ST.hist.sel.clear();histInvalidate();
   histEnsureRange(date);go('history');
   flashRow('page-history',rowSel,`.hist-day[data-d="${date}"]`,320);
  }else{

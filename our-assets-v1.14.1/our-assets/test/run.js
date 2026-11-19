@@ -253,6 +253,10 @@ const FUNCTIONS = [
   // 재사용하므로 바로 위 줄과 같은 sandbox에 올려야 한다.
   'debtPlanDebts', 'debtPlanBodyHTML', 'openDebtPlan', 'debtPlanStrategySel', 'debtPlanUpdate',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  // histEnsureRange/goLedgerTo는 가계부(ledger)의 날짜 행을 탭해 전체내역으로 드릴다운하는
+  // 경로 — openCatHistory/openAssetHistory와 같은 "필터 리셋 후 화면 전환" 계열인데 여태
+  // FUNCTIONS 밖이라 실행형 테스트가 전혀 없었다(app-evolve cycle377 develop).
+  'histEnsureRange', 'goLedgerTo',
   'genSalt', 'pbkdf2Hash', 'dbEncryptKey', 'encryptDbBlob', 'decryptDbBlob', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   // proceedWithBackupObj/openImportPinSheet는 PIN으로 암호화된 JSON 백업 복원(app-evolve
   // cycle289 advance)이 추가한 분기 — importFile 'change' 최상위 statement(아래 extractStatement로
@@ -920,6 +924,9 @@ const sandbox = {
   // 흉내낸다.
   goCalls: [],
   go: (tab) => { sandbox.goCalls.push(tab); },
+  // goLedgerTo()가 필터 세팅 후 부르는 행 강조 스크롤/애니메이션 — go()와 같은 이유(화면 전용,
+  // goLedgerTo의 테스트 대상은 ST.hist 필터 리셋과 histEnsureRange 호출뿐)로 no-op 스텁을 쓴다.
+  flashRow: () => {},
   // doLogout()이 로그아웃 후 부르는 로그인 화면 전환 — closeSheet/go와 같은 이유(화면 전용)로
   // 호출 여부만 기록하는 스파이로 흉내낸다(app-evolve cycle152 advance).
   showAuthCalls: 0,
@@ -10931,6 +10938,57 @@ test('openAssetHistory: 이전에 다른 debt 자산을 보며 입력해둔 what
   sandbox.ST.hist.debtWhatIfExtra = 300000;
   sandbox.openAssetHistory('a1');
   assert.strictEqual(sandbox.ST.hist.debtWhatIfExtra, 0);
+});
+/* ---------- goLedgerTo: 가계부(ledgerMode==='list')의 날짜 행을 탭해 전체내역 탭으로 드릴다운
+ * — openCatHistory/openAssetHistory와 같은 "필터 리셋 후 화면 전환" 계열이지만 리셋이 빠져 있던
+ * 버그였다. 홈/플랜 화면의 "이번 달 나갈 돈" 등 owner/category 필터 없이 모든 거래를 나열하는
+ * 카드에서 History 탭에 남아있던 이전 owner/category/검색어/자산 필터와 안 맞는 거래를 탭하면,
+ * 화면은 열리지만 대상 행이 그 필터에 걸러져 안 보여 조용히 사라진 것처럼 보였다
+ * (app-evolve cycle377 develop). ---------- */
+test('goLedgerTo: ledgerMode가 list면 History 탭에 남아있던 cat/q/assetId/catExact/owner/selMode 필터를 모두 리셋한 뒤 이동한다', () => {
+  setupHistoryDB();
+  sandbox.goCalls = [];
+  sandbox.ST.ledgerMode = 'list';
+  sandbox.ST.ledger = { y: 2026, m: 6, sel: null };
+  sandbox.ST.hist.cat = '지출'; sandbox.ST.hist.q = 'abc'; sandbox.ST.hist.assetId = 'a1';
+  sandbox.ST.hist.catExact = '식비'; sandbox.ST.hist.catExactType = 'expense'; sandbox.ST.hist.owner = '나';
+  sandbox.ST.hist.selMode = true; sandbox.ST.hist.sel = new Set(['t1']);
+  sandbox.goLedgerTo('2026-06-10', 't2');
+  assert.strictEqual(sandbox.ST.hist.cat, '전체');
+  assert.strictEqual(sandbox.ST.hist.q, '');
+  assert.strictEqual(sandbox.ST.hist.assetId, null);
+  assert.strictEqual(sandbox.ST.hist.catExact, null);
+  assert.strictEqual(sandbox.ST.hist.catExactType, null);
+  assert.strictEqual(sandbox.ST.hist.owner, '전체');
+  assert.strictEqual(sandbox.ST.hist.selMode, false);
+  assert.strictEqual(sandbox.ST.hist.sel.size, 0);
+  assert.deepStrictEqual(sandbox.goCalls, ['history'], "화면만 전체내역 탭으로 전환해야 함(go('history'))");
+});
+test('goLedgerTo: ledgerMode가 list가 아니면(달력 모드) ST.hist를 건드리지 않고 ST.ledger로만 이동한다', () => {
+  setupHistoryDB();
+  sandbox.goCalls = [];
+  sandbox.ST.ledgerMode = 'calendar';
+  sandbox.ST.ledger = { y: 2026, m: 1, sel: null };
+  sandbox.ST.hist.cat = '지출'; sandbox.ST.hist.owner = '나';
+  sandbox.goLedgerTo('2026-06-10', 't2');
+  assert.strictEqual(sandbox.ST.hist.cat, '지출', '달력 모드는 History 필터와 무관해야 함');
+  assert.strictEqual(sandbox.ST.hist.owner, '나');
+  assert.strictEqual(sandbox.ST.ledger.y, 2026);
+  assert.strictEqual(sandbox.ST.ledger.m, 6, 'ST.ledger는 탭한 날짜의 달로 옮겨져야 함');
+  assert.strictEqual(sandbox.ST.ledger.sel, '2026-06-10');
+  assert.deepStrictEqual(sandbox.goCalls, ['ledger']);
+});
+test('goLedgerTo: histEnsureRange()로 범위를 넓혀 탭한 날짜가 전체내역 범위 밖이어도 보이게 한다', () => {
+  setupHistoryDB();
+  sandbox.goCalls = [];
+  sandbox.ST.ledgerMode = 'list';
+  sandbox.ST.ledger = { y: 2026, m: 6, sel: null };
+  sandbox.ST.hist.range = { from: '2026-06-01', to: '2026-06-30' };
+  sandbox.ST.hist.preset = 'custom';
+  sandbox.goLedgerTo('2025-01-10', null);
+  assert.strictEqual(sandbox.ST.hist.range.from, '2025-01-01', '범위 밖 날짜가 보이도록 range가 넓어져야 함');
+  assert.strictEqual(sandbox.ST.hist.range.to, '2026-06-30', '이미 범위 안인 to는 건드리지 않아야 함');
+  assert.deepStrictEqual(sandbox.goCalls, ['history']);
 });
 /* ---------- debtWhatIfUpdate: 부채 상환 추가 납입 시뮬레이터의 경량 업데이트 핸들러 (app-evolve
  * cycle262 advance) — 카드를 통째로 다시 그리지 않고 입력값만 읽어 ST.hist에 반영하고 결과
