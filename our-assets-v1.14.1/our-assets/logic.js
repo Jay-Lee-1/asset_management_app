@@ -2087,6 +2087,21 @@ function shouldWarnClockSkew(severity,dismissed){
  if(severity==='warn')return!dismissed;
  return false;
 }
+
+/* ================= 시세 소스별 지속 실패 판정 (순수) ================= */
+/* syncRates()(index.html)의 R.failStreak는 fx/stock/crypto 중 하나라도 성공(ok>0)하면 즉시 0으로
+ * 리셋되는 전역 합산 카운터라, 주식+코인처럼 두 종류 이상을 보유한 가구가 코인 API만 지속
+ * 실패해도(주식이 매번 성공) failStreak가 0을 유지해 homeAlerts()의 staleRates 카드가 영원히
+ * 뜨지 않았다. R.fxFailStreak/stockFailStreak/cryptoFailStreak(각 소스가 성공 또는 애초에
+ * 불필요(fetchFxGold 등이 null을 돌려줘 fulfilled로 떨어짐)하면 0, 실패하면 +1)를 독립적으로
+ * 보고, 그중 하나라도 threshold 이상이면 지속 실패로 본다 — 전역 failStreak 조건(셋 다 동시에
+ * threshold에 도달해야 함)의 상위집합이라 기존 "전부 실패" 케이스도 그대로 잡는다
+ * (app-evolve cycle382 critique/advance). */
+function anyRateSourceStale(streaks,threshold){
+ const t=threshold==null?3:threshold;
+ const s=streaks||{};
+ return (s.fx||0)>=t||(s.stock||0)>=t||(s.crypto||0)>=t;
+}
 /* ================= 테마/강조색 첫 페인트 캐시 (순수) ================= */
 /* head 최상단 동기 인라인 스크립트(index.html)가 localStorage의 'asset_app_theme_cache' 키를
  * 읽어 JS 실행 전에도 <html data-theme>/data-accent를 맞춰 그리는데, 쓰는 쪽(migrate/setTheme/

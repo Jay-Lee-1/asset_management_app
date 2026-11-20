@@ -1,19 +1,8 @@
 {
-  "cycle": 382,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "혼합 포트폴리오에서 시세 소스 하나만 지속 실패하면 홈 경고가 영원히 안 뜨는 공백",
-    "why": "syncRates()(index.html:4457-4490)의 R.failStreak는 fx/stock/crypto 중 단 하나라도 성공(ok>0)하면 즉시 0으로 리셋되는 전역 카운터다(4485행). 주식+코인처럼 두 종류 이상을 보유한 가구가 코인 API만 지속적으로 실패(R.cryptoFail=true가 매번 찍혀도)해도 주식 소스가 성공하는 한 failStreak는 0을 유지해, homeAlerts()의 staleRates 카드(12123행, failStreak>=3)가 평생 뜨지 않는다. rateUnknown()(3202-3208행)도 실패 이전 캐시값이 남아있으면 null이 아니므로 개별 자산의 '가격 미확인' 배지도 안 붙어, 그 코인 자산은 아무 경고 없이 계속 낡은 가격으로 총자산에 반영된다. 반대로 rateStatusText()(4514행)는 이미 R.fxFail||R.stockFail||R.cryptoFail를 OR로 봐서 시세 시트를 직접 열면 '최신 아님'이 보이는데, 이 신호가 홈 알림까지는 전달되지 않는 비대칭이다. test/run.js(6874-6900행)의 관련 테스트도 전부 단일 자산유형(코인만/주식만) 픽스처만 다뤄 혼합 보유 시나리오가 검증돼 있지 않다. 코드로 직접 대조해 재확인했다.",
-    "approach": "logic.js에 순수 함수 anyRateSourceStale(flags, needs, threshold)를 추가해 fx/stock/crypto 각각의 개별 fail streak과 해당 소스가 실제로 필요한지(needFx/needStock/needCrypto)를 받아 하나라도 threshold(3) 이상이면 true를 반환하게 한다. index.html의 syncRates()에서 기존 전역 R.failStreak(rateStatusText 호환 유지)과 별도로 R.fxFailStreak/R.stockFailStreak/R.cryptoFailStreak을 각 소스가 성공(또는 애초에 불필요)하면 0, 실패하면 +1로 독립 추적하도록 수정한다. homeAlerts()의 staleRates 조건(12123행)을 이 새 헬퍼로 교체해 '전역 전체실패'와 '혼합 보유 중 단일 소스 지속실패' 둘 다 커버하게 한다(기존 조건의 상위집합이라 회귀 없음). migrate()/sanitizeBackup에 새 필드 기본값 0을 추가한다. mergeRates()는 rates 객체 전체를 통째로 교체하는 방식이라 추가 병합 로직 불필요. 테스트는 cycle269 패턴(test/run.js 6874-6900)을 재사용해 ①주식 성공+코인 3연속 실패 혼합 픽스처에서 staleRates가 뜨는지 ②코인만 보유 시 기존처럼 뜨는지(회귀 가드) ③두 소스 모두 보유 중 하나가 1~2회만 간헐 실패하면 안 뜨는지 ④logic.js 헬퍼 자체의 유닛 테스트를 추가한다."
-  },
+  "cycle": 383,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 377,
-      "phase": "advance",
-      "timestamp": "2026-11-19T17:10:00.000Z",
-      "summary": "critique(cycle377)의 계획대로 calCellsFor()의 dayLabel(index.html:6075)에 저축 금액(sv)과 예정/이체 인디케이터를 추가했다. 시각 순서(수입→지출→저축→점표시)와 맞춰 `${sv?' 저축 '+abbr(sv):''}${hasSch?' 예정 거래 있음':''}${hasTr?' 내부이체 있음':''}`를 ex 뒤·선택됨/오늘 앞에 삽입. calCellsFor는 이미 FUNCTIONS에 등록돼 있었으나 직접 실행하는 테스트가 전혀 없어(렌더 스모크 테스트만 간접 커버) 4건 추가: 저축만 있는 날, 예정 거래(미래 날짜)만 있는 날, 지출+저축+예정+이체가 모두 겹친 날의 dayLabel 전체 문자열이 시각 순서와 정확히 일치하는지, 수입만 있는 날엔 새 조각이 전혀 안 붙는지(회귀 방지). abbr(10000)이 '10,000'이 아니라 '1만'으로 포맷됨을 테스트 작성 중 확인해 기대값을 맞췄다. 실제 버그는 발견되지 않음(순수 접근성 보강). node test/run.js 3664->3668/3668 통과. index.html을 수정했으므로 APP_VERSION 1.47.486->1.47.487, sw.js CACHE v753->v754. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 378,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-20T12:14:00.000Z",
       "summary": "role=button aria-label 패턴(5건), goalHistoryFor 캐싱, N인 정산 재시도, saveBudget undo, recSel 일괄작업, debtPayoffStatuses 통합, SRI/빌드 스텝 기각 등 cycle340-382에서 다룬 주제를 배제 목록으로 준 general-purpose 서브에이전트가 시세 동기화(syncRates/homeAlerts) 경로에서 새 버그를 찾았다: syncRates()(index.html:4457-4490)의 R.failStreak는 fx/stock/crypto 중 하나라도 성공하면 즉시 0으로 리셋되는 전역 카운터라, 주식+코인을 함께 보유한 가구가 코인 API만 지속 실패해도 주식이 성공하는 한 failStreak가 0을 유지해 homeAlerts()의 staleRates 카드(12123행, failStreak>=3)가 영원히 뜨지 않는다. rateUnknown()(3202-3208행)도 과거 캐시값이 남아있으면 null이 아니라 개별 자산 배지도 안 붙어, 그 코인 자산은 경고 없이 낡은 가격으로 계속 총자산에 반영된다. rateStatusText()(4514행)는 이미 fxFail||stockFail||cryptoFail OR로 봐서 시세 시트를 직접 열면 '최신 아님'이 보이는데 홈 알림까지는 전달되지 않는 비대칭임을 직접 코드 대조로 확인(syncRates 4457-4490, rateUnknown 3202-3208, rateStatusText 4514, homeAlerts staleRates 12123, mergeRates logic.js 612-618, test/run.js 6874-6900). pending_advance_plan에 R.fxFailStreak/stockFailStreak/cryptoFailStreak 개별 추적 + logic.js의 anyRateSourceStale() 순수 함수로 homeAlerts의 staleRates 조건 교체 + 혼합 보유 시나리오 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 382,
+      "phase": "advance",
+      "timestamp": "2026-11-20T13:14:00.000Z",
+      "summary": "critique(cycle382)의 계획대로 혼합 포트폴리오에서 시세 소스 하나만 지속 실패해도 홈 경고가 안 뜨던 공백을 고쳤다. syncRates()(index.html)에서 기존 전역 R.failStreak(rateStatusText() 호환 유지)와 별도로 R.fxFailStreak/stockFailStreak/cryptoFailStreak을 각 소스가 성공(또는 fetchFxGold 등이 null을 돌려줘 애초에 불필요)하면 0, 실패하면 +1로 독립 추적하도록 추가했다. logic.js에 순수 함수 anyRateSourceStale(streaks,threshold=3)을 추가해 fx/stock/crypto 중 하나라도 threshold 이상이면 true를 돌려주게 하고, homeAlerts()의 staleRates 조건(기존 hasRateAssets()&&failStreak>=3)을 이 헬퍼로 교체했다 — 전역 조건(셋 다 동시에 threshold 도달해야 함)의 상위집합이라 회귀 없음. sanitizeBackup()의 숫자 클램프 목록에 새 필드 3개를 추가(복원/클라우드 풀 경로로 손상된 값이 들어올 수 있으므로 failStreak와 동일하게 처리). mergeRates()는 rates 객체를 통째로 교체하는 방식이라 추가 병합 로직 불필요했다. 기존 cycle269 staleRates 테스트 2건이 failStreak만 보고 있어 깨졌던 것을 stockFailStreak도 함께 채우도록 수정하고, 새 테스트 6건 추가: anyRateSourceStale() 유닛 테스트(8개 단언), 주식 성공+코인 3연속 실패 혼합 fixture에서 staleRates가 뜨는지(수정 전 공백의 직접 재현), 코인만 보유 시 기존처럼 뜨는지(회귀 가드), 두 소스 모두 보유 중 코인이 1~2회만 간헐 실패하면 안 뜨는지. node test/run.js 3715->3719/3719 통과. node --check logic.js, node --check sw.js 통과. index.html/logic.js/sw.js를 수정했으므로 APP_VERSION 1.47.496->1.47.497, sw.js CACHE v763->v764. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

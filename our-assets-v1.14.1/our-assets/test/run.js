@@ -6875,29 +6875,74 @@ test('homeAlerts: 연결 자산 종류가 바뀌어 추적 불가능해진 asset
 test('homeAlerts: 시세 동기화가 연속 3회 이상 실패하면 staleRates 카드가 뜨고, 2회까지는 안 뜬다(app-evolve cycle269 advance)', () => {
   setupHomeAlertsDB();
   sandbox.DB.assets = [{ id: 'a1', type: 'stock', stockCode: '005930', owner: '나', includeInTotal: true, stockQty: 1 }];
-  sandbox.DB.rates = { fx: {}, stocks: { '005930': 79800 }, crypto: {}, syncedAt: Date.now(), failStreak: 2 };
+  // failStreak(전역 합산 카운터)는 rateStatusText() 호환용으로 여전히 같이 채워두지만, homeAlerts()는
+  // 이제 소스별 streak(stockFailStreak)로 anyRateSourceStale()을 판정한다(app-evolve cycle382 advance).
+  sandbox.DB.rates = { fx: {}, stocks: { '005930': 79800 }, crypto: {}, syncedAt: Date.now(), failStreak: 2, stockFailStreak: 2 };
   let alerts = sandbox.homeAlerts([]);
   assert.ok(!alerts.some((a) => a.kind === 'staleRates'), '연속 실패 2회는 일시적 블립일 수 있어 아직 뜨면 안 됨');
 
-  sandbox.DB.rates.failStreak = 3;
+  sandbox.DB.rates.failStreak = 3; sandbox.DB.rates.stockFailStreak = 3;
   alerts = sandbox.homeAlerts([]);
   assert.ok(alerts.some((a) => a.kind === 'staleRates'), '연속 실패 3회(약 30분+)부터는 카드로 알려야 함');
 });
-test('homeAlerts: staleRates는 다음 syncRates() 성공으로 failStreak가 0이 되면 자연 소멸하고, 시세 연동 자산이 없으면 실패 중이어도 안 뜬다', () => {
+test('homeAlerts: staleRates는 다음 syncRates() 성공으로 streak가 0이 되면 자연 소멸하고, 시세 연동 자산이 없으면 실패 중이어도 안 뜬다', () => {
   setupHomeAlertsDB();
   sandbox.DB.assets = [{ id: 'a1', type: 'stock', stockCode: '005930', owner: '나', includeInTotal: true, stockQty: 1 }];
-  sandbox.DB.rates = { fx: {}, stocks: { '005930': 79800 }, crypto: {}, syncedAt: Date.now(), failStreak: 5 };
+  sandbox.DB.rates = { fx: {}, stocks: { '005930': 79800 }, crypto: {}, syncedAt: Date.now(), failStreak: 5, stockFailStreak: 5 };
   let alerts = sandbox.homeAlerts([]);
   assert.ok(alerts.some((a) => a.kind === 'staleRates'));
 
-  sandbox.DB.rates.failStreak = 0; // 다음 동기화 성공
+  sandbox.DB.rates.failStreak = 0; sandbox.DB.rates.stockFailStreak = 0; // 다음 동기화 성공
   alerts = sandbox.homeAlerts([]);
-  assert.ok(!alerts.some((a) => a.kind === 'staleRates'), '성공해서 failStreak가 0으로 리셋되면 사라져야 함');
+  assert.ok(!alerts.some((a) => a.kind === 'staleRates'), '성공해서 streak가 0으로 리셋되면 사라져야 함');
 
   sandbox.DB.assets = []; // 시세 연동이 필요한 자산 자체가 없음(hasRateAssets()=false)
-  sandbox.DB.rates.failStreak = 5;
+  sandbox.DB.rates.failStreak = 5; sandbox.DB.rates.stockFailStreak = 5;
   alerts = sandbox.homeAlerts([]);
   assert.ok(!alerts.some((a) => a.kind === 'staleRates'), '시세 연동 대상 자산이 없으면 failStreak와 무관하게 뜨면 안 됨');
+});
+test('anyRateSourceStale(logic.js): fx/stock/crypto 중 하나라도 threshold 이상이면 true, 셋 다 미달이면 false', () => {
+  assert.strictEqual(sandbox.anyRateSourceStale({ fx: 0, stock: 0, crypto: 0 }), false);
+  assert.strictEqual(sandbox.anyRateSourceStale({ fx: 2, stock: 2, crypto: 2 }), false, '기본 threshold는 3 — 2는 미달');
+  assert.strictEqual(sandbox.anyRateSourceStale({ fx: 0, stock: 0, crypto: 3 }), true, 'crypto 하나만 3이어도 true');
+  assert.strictEqual(sandbox.anyRateSourceStale({ fx: 3, stock: 0, crypto: 0 }), true, 'fx 하나만 3이어도 true');
+  assert.strictEqual(sandbox.anyRateSourceStale({}), false, '빈 입력은 모든 소스가 0인 것과 동일');
+  assert.strictEqual(sandbox.anyRateSourceStale(null), false, 'null 입력도 안 터지고 false');
+  assert.strictEqual(sandbox.anyRateSourceStale({ stock: 5 }, 5), true, 'threshold를 직접 넘기면 그 값을 쓴다');
+  assert.strictEqual(sandbox.anyRateSourceStale({ stock: 4 }, 5), false);
+});
+test('homeAlerts: 주식+코인 혼합 보유 중 코인 소스만 3회 이상 지속 실패하면 staleRates가 뜬다(주식은 매번 성공해 전역 failStreak는 0인 상황, app-evolve cycle382 critique→advance)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', type: 'stock', stockCode: '005930', owner: '나', includeInTotal: true, stockQty: 1 },
+    { id: 'a2', type: 'crypto', cryptoCode: 'BTC', owner: '나', includeInTotal: true, cryptoQty: 1 },
+  ];
+  // 주식은 매번 성공(syncRates가 ok++를 찍어 전역 failStreak를 0으로 유지)하지만 코인 API만
+  // 3회 연속 실패한, 고친 버그의 재현 상황 그대로.
+  sandbox.DB.rates = { fx: {}, stocks: { '005930': 79800 }, crypto: { BTC: 90000000 }, syncedAt: Date.now(), failStreak: 0, stockFailStreak: 0, cryptoFailStreak: 3 };
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(alerts.some((a) => a.kind === 'staleRates'), '전역 failStreak가 0이어도 코인만 3회 지속 실패하면 떠야 함(수정 전 공백)');
+});
+test('homeAlerts: 코인만 보유 중인 경우(혼합 아님)도 cryptoFailStreak 3회부터 staleRates가 뜬다(단일 자산유형 회귀 가드)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets = [{ id: 'a1', type: 'crypto', cryptoCode: 'BTC', owner: '나', includeInTotal: true, cryptoQty: 1 }];
+  sandbox.DB.rates = { fx: {}, stocks: {}, crypto: { BTC: 90000000 }, syncedAt: Date.now(), failStreak: 2, cryptoFailStreak: 2 };
+  let alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'staleRates'), '2회까지는 안 떠야 함');
+
+  sandbox.DB.rates.failStreak = 3; sandbox.DB.rates.cryptoFailStreak = 3;
+  alerts = sandbox.homeAlerts([]);
+  assert.ok(alerts.some((a) => a.kind === 'staleRates'), '코인만 보유해도 기존처럼 3회부터는 떠야 함');
+});
+test('homeAlerts: 주식+코인 모두 보유 중 코인이 1~2회만 간헐적으로 실패하면(threshold 미달) staleRates가 뜨지 않는다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', type: 'stock', stockCode: '005930', owner: '나', includeInTotal: true, stockQty: 1 },
+    { id: 'a2', type: 'crypto', cryptoCode: 'BTC', owner: '나', includeInTotal: true, cryptoQty: 1 },
+  ];
+  sandbox.DB.rates = { fx: {}, stocks: { '005930': 79800 }, crypto: { BTC: 90000000 }, syncedAt: Date.now(), failStreak: 0, stockFailStreak: 0, cryptoFailStreak: 2 };
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'staleRates'), '간헐적 블립(2회 이하)은 아직 지속 실패가 아니므로 뜨면 안 됨');
 });
 test('notifyAlertInfo: staleRates는 OS 푸시 대상이 아니다(backup/persist처럼 홈 카드로만 충분)', () => {
   sandbox.TODAY = '2026-06-15';

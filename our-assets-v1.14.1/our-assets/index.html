@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.496';
+const APP_VERSION='1.47.497';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4471,17 +4471,29 @@ async function syncRates(silent){
    }
    R.fxFail=false;
   }else{R.fxFail=true;fail++}
+  R.fxFailStreak=R.fxFail?(R.fxFailStreak||0)+1:0;
 
   if(st.status==='fulfilled'){
    if(st.value){Object.entries(st.value).forEach(([code,p])=>{if(code!=='_debug'&&p>0)R.stocks[code]=p});ok++}
    R.stockFail=false;
   }else{R.stockFail=true;fail++}
+  R.stockFailStreak=R.stockFail?(R.stockFailStreak||0)+1:0;
 
   if(ct.status==='fulfilled'){
    if(ct.value){Object.entries(ct.value).forEach(([code,p])=>{if(code!=='_debug'&&p>0)R.crypto[code]=p});ok++}
    R.cryptoFail=false;
   }else{R.cryptoFail=true;fail++}
+  R.cryptoFailStreak=R.cryptoFail?(R.cryptoFailStreak||0)+1:0;
 
+  /* fx/stock/crypto는 각자 fetchFxGold()/fetchStocks()/fetchCrypto()가 보유 자산이 없으면 null을
+   * 돌려줄 뿐 거부(reject)하지 않으므로, 위 *Fail 플래그는 "그 소스가 필요한데 실패"와 "원래
+   * 필요 없음"을 이미 구분해준다 — 보유하지 않은 소스는 매번 fulfilled(null)로 Fail=false,
+   * 그래서 *FailStreak도 계속 0을 유지한다. 전역 failStreak(바로 아래, rateStatusText() 호환
+   * 유지용)는 하나라도 성공(ok>0)하면 0으로 리셋되는 합산 카운터라, 주식+코인을 함께 보유한
+   * 가구가 코인 API만 지속 실패해도 주식이 성공하는 한 절대 3에 도달하지 못해 homeAlerts()의
+   * staleRates 카드가 영원히 안 뜨는 공백이 있었다(app-evolve cycle382 critique). 소스별로
+   * 독립 추적하는 *FailStreak를 homeAlerts()가 anyRateSourceStale()(logic.js)로 보게 바꿔
+   * 혼합 보유 중 단일 소스 지속 실패도 잡는다. */
   if(ok){R.syncedAt=Date.now();R.ratesUpdatedAt=R.syncedAt;R.failStreak=0}else R.failStreak=(R.failStreak||0)+1;
   save();renderCurrent();
   if(!silent)toast(ok?(fail?'일부 시세만 반영했어요':'시세를 반영했어요'):'시세를 가져오지 못했어요');
@@ -10608,7 +10620,9 @@ function sanitizeBackup(obj){
   return {};
  };
  const rates={fx:sanitizeRateMap(srcRates.fx),stocks:sanitizeRateMap(srcRates.stocks),crypto:sanitizeRateMap(srcRates.crypto)};
- ['goldPerG','syncedAt','ratesUpdatedAt','failStreak'].forEach(f=>{
+ /* fxFailStreak/stockFailStreak/cryptoFailStreak(app-evolve cycle382 advance, anyRateSourceStale의
+  * 입력)도 failStreak와 똑같이 fmtSynced류 숫자 비교에 쓰이므로 같은 방식으로 클램프한다. */
+ ['goldPerG','syncedAt','ratesUpdatedAt','failStreak','fxFailStreak','stockFailStreak','cryptoFailStreak'].forEach(f=>{
   if(f in srcRates){const n=sanitizeAmount(srcRates[f],0);if(n!==srcRates[f])fixedCount++;rates[f]=n}
  });
  ['fxFail','stockFail','cryptoFail'].forEach(f=>{if(f in srcRates)rates[f]=!!srcRates[f]});
@@ -12119,8 +12133,11 @@ function homeAlerts(neg){
   * 일시적 네트워크 블립 오탐을 피한다)이면 cloudSyncError와 동일하게 수동 dismiss 없이 카드로
   * 알리고, 다음 syncRates() 성공으로 failStreak가 0으로 리셋되면 자연 소멸한다. OS 푸시
   * (notifyAlertInfo) 대상엔 넣지 않음 — backup/persist/storageSize와 같은 성격의 카드로 충분
-  * (app-evolve cycle269 critique/advance) */
- if(hasRateAssets()&&(DB.rates&&DB.rates.failStreak||0)>=3)arr.push({kind:'staleRates'});
+  * (app-evolve cycle269 critique/advance). 전역 failStreak(하나라도 성공하면 0으로 리셋)만
+  * 보면 주식+코인을 함께 보유한 가구가 코인 API만 지속 실패해도 주식이 성공하는 한 이 카드가
+  * 영원히 안 떠, anyRateSourceStale()(logic.js)로 fx/stock/crypto 각자의 독립 fail streak도
+  * 함께 본다(app-evolve cycle382 critique/advance) */
+ if(hasRateAssets()&&anyRateSourceStale({fx:DB.rates&&DB.rates.fxFailStreak,stock:DB.rates&&DB.rates.stockFailStreak,crypto:DB.rates&&DB.rates.cryptoFailStreak}))arr.push({kind:'staleRates'});
  if(backupDue()&&DB.txns.length)arr.push({kind:'backup'});
  if(shouldWarnUnpersisted(STORAGE_PERSISTED,!!CLOUD_UID)&&!DB.settings.persistWarnDismissed)arr.push({kind:'persist'});
  if(shouldWarnStorageSize(DB_JSON_LEN,DB.settings.storageSizeWarnDismissed,STORAGE_SIZE_WARN_LEN,STORAGE_SIZE_CRIT_LEN))arr.push({kind:'storageSize'});
