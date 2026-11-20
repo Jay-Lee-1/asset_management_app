@@ -1,15 +1,8 @@
 {
   "cycle": 381,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 376,
-      "phase": "review",
-      "timestamp": "2026-11-19T11:08:13.095Z",
-      "summary": "develop(cycle376, d3878df: delTx/openAdjustEdit/delAdjust/recEditScope 실행형 테스트 6건 추가)을 검토했다. 네 함수의 실제 구현(index.html 6798-6823행)을 직접 대조: openAdjustEdit의 sign/comma 포맷과 토글 on/off 클래스, delTx의 recId 분기 위임(confirmSheet 미호출), recEditScope의 r 못 찾으면 조용히 종료 및 memo 없으면 category로 esc() 이스케이프, delAdjust의 confirmSheet 확인 후 deleteTxnsUndo 호출이 테스트 기대값과 정확히 일치함을 확인. node test/run.js 3657/3657 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 376,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-20T06:12:42.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle376-380에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: assetBodyHTML()의 자산관리 탭 자산 행(role=\"button\", 일반 모드 .row-tap과 일괄선택 모드 asset-item 둘 다)이 '총자산 미포함' 칩과 '가격 미확인' 경고를 시각적으로만 보여주고 aria-label에는 이름·금액만 담아, cycle377(calCellsFor)/cycle379,380(goalRowHTML/goalsManageBody/globalSearchBody)에서 이미 고친 것과 같은 버그 클래스의 네 번째 미발견 인스턴스였다. includeInTotal===false 또는 시세평가 자산의 rateUnknown()이 true일 때 두 경고 문구를 aria-label에도 추가. 실행형 테스트 4건 추가(미포함 칩 일반/선택모드, 가격 미확인 있음/없음 회귀). node test/run.js 3705->3709/3709 통과. index.html을 수정했으므로 APP_VERSION 1.47.493->1.47.494, sw.js CACHE v760->v761.",
       "commit": "0121cb9"
+    },
+    {
+      "cycle": 381,
+      "phase": "review",
+      "timestamp": "2026-11-20T07:07:57.000Z",
+      "summary": "develop(cycle381, 0121cb9: assetBodyHTML() 자산 행 aria-label에 총자산 미포함/가격 미확인 경고 보강)을 검토했다. ariaWarn 계산식 `(a.includeInTotal?'':' 총자산 미포함')+(showEval&&rateUnknown(a)?' 가격 미확인':'')`이 같은 함수 안의 시각 캡션(미포함 칩 line 4813/4829, '가격 미확인' line 4830 `showEval?(rateUnknown(a)?'<div class=\"mini warn\">가격 미확인</div>':...)`)과 동일한 변수(a.includeInTotal/showEval/rateUnknown(a))를 그대로 재사용함을 직접 대조해 확인 — cycle377(calCellsFor)/379,380(goalRowHTML/goalsManageBody/globalSearchBody)과 같은 패턴. row-tap과 일괄선택 모드 asset-item 양쪽 aria-label에 동일하게 반영됐음도 확인. 새 테스트 4건(미포함 일반/선택모드, 가격미확인 있음/없음 회귀)이 구현과 정확히 일치. node --check logic.js 통과, node test/run.js 3709/3709 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
     }
   ]
 }
