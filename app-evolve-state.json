@@ -1,8 +1,15 @@
 {
   "cycle": 384,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 384,
+      "phase": "review",
+      "timestamp": "2026-11-20T21:00:00.000Z",
+      "summary": "develop(cycle384)의 목표 정렬(DB.settings.goalSort/openGoalSortSheet/goalsManageBody) 변경을 검토. targetDate 정렬의 null-last 비교, progress 정렬의 goalPct(0~100 클램프, NaN 불가) 기반 안정성, name 정렬, .slice()로 DB.goals 원본 보존 모두 올바름을 확인했고 g.id 기반 렌더링이라 정렬 순서 변경이 선택모드/복제/삭제 등 다른 로직에 영향 없음을 확인. openGoalSortSheet()가 이미 열린 목표 관리 시트 위의 '서브 시트'인데 openPicker()류와 달리 window._pkBack을 설정하지 않아 엣지 스와이프 뒤로가기 시 목표 목록으로 안 돌아가고 시트 전체가 닫히는 점, openGoalsList() 재호출 시 검색어가 항상 빈 문자열로 리셋되는 점을 발견했으나 둘 다 이 커밋이 새로 만든 문제가 아니라 openGoalsList()의 기존 설계(선택모드 토글·롱프레스 콜백 등 다른 모든 재호출 경로도 동일하게 동작)와 100% 동일해 회귀가 아님을 확인(수정하지 않음). node test/run.js 3731/3731 통과, node --check logic.js/sw.js 통과. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
     {
       "cycle": 384,
       "phase": "develop",
