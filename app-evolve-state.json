@@ -1,15 +1,12 @@
 {
   "cycle": 382,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "혼합 포트폴리오에서 시세 소스 하나만 지속 실패하면 홈 경고가 영원히 안 뜨는 공백",
+    "why": "syncRates()(index.html:4457-4490)의 R.failStreak는 fx/stock/crypto 중 단 하나라도 성공(ok>0)하면 즉시 0으로 리셋되는 전역 카운터다(4485행). 주식+코인처럼 두 종류 이상을 보유한 가구가 코인 API만 지속적으로 실패(R.cryptoFail=true가 매번 찍혀도)해도 주식 소스가 성공하는 한 failStreak는 0을 유지해, homeAlerts()의 staleRates 카드(12123행, failStreak>=3)가 평생 뜨지 않는다. rateUnknown()(3202-3208행)도 실패 이전 캐시값이 남아있으면 null이 아니므로 개별 자산의 '가격 미확인' 배지도 안 붙어, 그 코인 자산은 아무 경고 없이 계속 낡은 가격으로 총자산에 반영된다. 반대로 rateStatusText()(4514행)는 이미 R.fxFail||R.stockFail||R.cryptoFail를 OR로 봐서 시세 시트를 직접 열면 '최신 아님'이 보이는데, 이 신호가 홈 알림까지는 전달되지 않는 비대칭이다. test/run.js(6874-6900행)의 관련 테스트도 전부 단일 자산유형(코인만/주식만) 픽스처만 다뤄 혼합 보유 시나리오가 검증돼 있지 않다. 코드로 직접 대조해 재확인했다.",
+    "approach": "logic.js에 순수 함수 anyRateSourceStale(flags, needs, threshold)를 추가해 fx/stock/crypto 각각의 개별 fail streak과 해당 소스가 실제로 필요한지(needFx/needStock/needCrypto)를 받아 하나라도 threshold(3) 이상이면 true를 반환하게 한다. index.html의 syncRates()에서 기존 전역 R.failStreak(rateStatusText 호환 유지)과 별도로 R.fxFailStreak/R.stockFailStreak/R.cryptoFailStreak을 각 소스가 성공(또는 애초에 불필요)하면 0, 실패하면 +1로 독립 추적하도록 수정한다. homeAlerts()의 staleRates 조건(12123행)을 이 새 헬퍼로 교체해 '전역 전체실패'와 '혼합 보유 중 단일 소스 지속실패' 둘 다 커버하게 한다(기존 조건의 상위집합이라 회귀 없음). migrate()/sanitizeBackup에 새 필드 기본값 0을 추가한다. mergeRates()는 rates 객체 전체를 통째로 교체하는 방식이라 추가 병합 로직 불필요. 테스트는 cycle269 패턴(test/run.js 6874-6900)을 재사용해 ①주식 성공+코인 3연속 실패 혼합 픽스처에서 staleRates가 뜨는지 ②코인만 보유 시 기존처럼 뜨는지(회귀 가드) ③두 소스 모두 보유 중 하나가 1~2회만 간헐 실패하면 안 뜨는지 ④logic.js 헬퍼 자체의 유닛 테스트를 추가한다."
+  },
   "history": [
-    {
-      "cycle": 377,
-      "phase": "critique",
-      "timestamp": "2026-11-19T16:10:00.000Z",
-      "summary": "최근 15~20사이클 동안 critique가 매번 '실행형 테스트 공백 찾기'로 수렴해 효용이 떨어지고 있어, 이번엔 general-purpose 서브에이전트에게 테스트 커버리지가 아니라 실제 UX/접근성/제품 관점에서 index.html의 화면·로직 코드(테스트 코드 제외)를 읽고 critique하도록 명시적으로 지시했다. 발견: calCellsFor()(index.html:6059-6078, 가계부 달력 셀 렌더)가 시각적으로는 수입/지출/저축 금액과 예정거래 점(dotp)·내부이체 점(dott)을 보여주지만, 스크린리더용 dayLabel(6075행)은 수입/지출/선택됨/오늘만 조립하고 저축 금액과 예정/이체 여부는 빠뜨려, 보이스오버/톡백 사용자가 저축 위주 날이나 예정·이체가 있는 날을 구분할 수 없는 접근성 누락. pending_advance_plan에 dayLabel에 저축 금액(sv)과 예정/이체 문구를 추가 + calCellsFor 실행형 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 377,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-20T11:09:49.261Z",
       "summary": "develop(cycle382, d95b6ba: globalSearchBody() 자산 결과 aria-label에 총자산 미포함/가격 미확인 경고 보강)을 검토했다. 추가된 ariaWarn 계산식이 assetBodyHTML()(index.html:4806)의 (a.includeInTotal?...:...)+(showEval&&rateUnknown(a)?...:...)과 바이트 단위로 동일함을 직접 대조해 확인 — cycle377/379-381과 같은 role=\"button\" aria-label 보강 패턴의 다섯 번째 인스턴스. 시각 칩(\"미포함\")·경고(\"가격 미확인\")도 assetBodyHTML의 마크업을 그대로 재사용함을 확인. 새 테스트 3건(미포함 칩+aria-label, 가격 미확인+aria-label, 정상 자산 회귀 가드)이 구현과 정확히 일치. node test/run.js 3715/3715 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 382,
+      "phase": "critique",
+      "timestamp": "2026-11-20T12:14:00.000Z",
+      "summary": "role=button aria-label 패턴(5건), goalHistoryFor 캐싱, N인 정산 재시도, saveBudget undo, recSel 일괄작업, debtPayoffStatuses 통합, SRI/빌드 스텝 기각 등 cycle340-382에서 다룬 주제를 배제 목록으로 준 general-purpose 서브에이전트가 시세 동기화(syncRates/homeAlerts) 경로에서 새 버그를 찾았다: syncRates()(index.html:4457-4490)의 R.failStreak는 fx/stock/crypto 중 하나라도 성공하면 즉시 0으로 리셋되는 전역 카운터라, 주식+코인을 함께 보유한 가구가 코인 API만 지속 실패해도 주식이 성공하는 한 failStreak가 0을 유지해 homeAlerts()의 staleRates 카드(12123행, failStreak>=3)가 영원히 뜨지 않는다. rateUnknown()(3202-3208행)도 과거 캐시값이 남아있으면 null이 아니라 개별 자산 배지도 안 붙어, 그 코인 자산은 경고 없이 낡은 가격으로 계속 총자산에 반영된다. rateStatusText()(4514행)는 이미 fxFail||stockFail||cryptoFail OR로 봐서 시세 시트를 직접 열면 '최신 아님'이 보이는데 홈 알림까지는 전달되지 않는 비대칭임을 직접 코드 대조로 확인(syncRates 4457-4490, rateUnknown 3202-3208, rateStatusText 4514, homeAlerts staleRates 12123, mergeRates logic.js 612-618, test/run.js 6874-6900). pending_advance_plan에 R.fxFailStreak/stockFailStreak/cryptoFailStreak 개별 추적 + logic.js의 anyRateSourceStale() 순수 함수로 homeAlerts의 staleRates 조건 교체 + 혼합 보유 시나리오 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
