@@ -35161,6 +35161,61 @@ test('assetBodyHTML: 일괄선택 모드(ST.aSel.mode)는 원래부터 role="but
   assert.ok(!inner.includes('<button'), '선택 모드 행에는 애초에 row-acts(act-btn)가 없어야 함');
 });
 
+/* ---------- assetBodyHTML: '총자산 미포함'·'가격 미확인' 경고는 시각적으로만(칩·경고 텍스트)
+ * 보여주고 role="button" 행의 aria-label은 이름·금액만 담고 있었다 — goalRowHTML(app-evolve
+ * cycle376)/calCellsFor(cycle377)가 이미 고친 것과 같은 버그 클래스: role="button" 엘리먼트에
+ * aria-label이 있으면 하위 텍스트는 접근성 트리에서 완전히 무시되므로, 스크린리더 사용자는 이
+ * 자산이 총자산에서 빠져 있거나 시세를 못 가져온 상태를 전혀 들을 수 없었다(app-evolve cycle381
+ * develop). ---------- */
+test('assetBodyHTML: 총자산 미포함 자산은 일반 모드에서 .row-tap의 aria-label에 "총자산 미포함"이 시각 칩(미포함)과 함께 들어간다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '용돈통장', owner: '나', type: 'cash', order: 0, includeInTotal: false, baseAmount: 10000 }];
+  const html = sandbox.assetBodyHTML();
+  assert.ok(html.includes('>미포함</span>'), '시각 칩(미포함)이 렌더돼야 함(이 테스트가 의미 있으려면)');
+  const rtIdx = html.indexOf('class="row-tap"');
+  assert.ok(rtIdx !== -1);
+  const divOpenIdx = html.lastIndexOf('<div', rtIdx);
+  const openTagEnd = html.indexOf('>', divOpenIdx);
+  const openTag = html.slice(divOpenIdx, openTagEnd);
+  assert.ok(/aria-label="[^"]*총자산 미포함/.test(openTag), 'row-tap의 aria-label에 "총자산 미포함"이 없음 — 스크린리더가 제외 상태를 못 들음');
+});
+test('assetBodyHTML: 총자산 미포함 자산은 일괄선택 모드(ST.aSel.mode)에서도 asset-item의 aria-label에 "총자산 미포함"이 들어간다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '용돈통장', owner: '나', type: 'cash', order: 0, includeInTotal: false, baseAmount: 10000 }];
+  sandbox.ST.aSel.mode = true;
+  const html = sandbox.assetBodyHTML();
+  const itemIdx = html.indexOf('class="asset-item');
+  assert.ok(itemIdx !== -1);
+  const openTagEnd = html.indexOf('>', itemIdx);
+  const openTag = html.slice(itemIdx, openTagEnd);
+  assert.ok(/aria-label="[^"]*총자산 미포함/.test(openTag), '일괄선택 모드 asset-item의 aria-label에 "총자산 미포함"이 없음');
+});
+test('assetBodyHTML: 시세를 못 가져온(rateUnknown) 시세평가 자산은 .row-tap의 aria-label에 "가격 미확인"이 시각 경고(가격 미확인)와 함께 들어간다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '삼성전자', owner: '나', type: 'stock', stockCode: '005930', stockQty: 10, order: 0, includeInTotal: true }];
+  // setupAssetsDB의 DB.rates.stocks는 빈 객체라 R.stocks['005930']==null → rateUnknown()이 true
+  const html = sandbox.assetBodyHTML();
+  assert.ok(html.includes('가격 미확인</div>'), '시각 경고(가격 미확인)가 렌더돼야 함(이 테스트가 의미 있으려면)');
+  const rtIdx = html.indexOf('class="row-tap"');
+  assert.ok(rtIdx !== -1);
+  const divOpenIdx = html.lastIndexOf('<div', rtIdx);
+  const openTagEnd = html.indexOf('>', divOpenIdx);
+  const openTag = html.slice(divOpenIdx, openTagEnd);
+  assert.ok(/aria-label="[^"]*가격 미확인/.test(openTag), 'row-tap의 aria-label에 "가격 미확인"이 없음 — 스크린리더가 시세 미확인 상태를 못 들음');
+});
+test('assetBodyHTML: 시세가 있는(rateUnknown 아님) 시세평가 자산은 aria-label에 "가격 미확인"을 붙이지 않는다(회귀 없음 확인)', () => {
+  setupAssetsDB();
+  sandbox.DB.rates.stocks['005930'] = 70000;
+  sandbox.DB.assets = [{ id: 'a1', name: '삼성전자', owner: '나', type: 'stock', stockCode: '005930', stockQty: 10, order: 0, includeInTotal: true }];
+  const html = sandbox.assetBodyHTML();
+  const rtIdx = html.indexOf('class="row-tap"');
+  assert.ok(rtIdx !== -1);
+  const divOpenIdx = html.lastIndexOf('<div', rtIdx);
+  const openTagEnd = html.indexOf('>', divOpenIdx);
+  const openTag = html.slice(divOpenIdx, openTagEnd);
+  assert.ok(!/가격 미확인/.test(openTag), '시세를 아는 자산인데 aria-label에 "가격 미확인"이 잘못 붙음');
+});
+
 test('renderAssets: 편집 모드(ST.editAssets)에서는 드래그용 그룹 목록이 렌더되고, assetSort가 custom이면 그룹 헤더 아래 개별 자산 위/아래 버튼도 함께 렌더된다(app-evolve cycle134 advance 전에는 그룹만 나왔음)', () => {
   setupAssetsDB(); // setupAssetsDB()는 assetSort:'custom'
   sandbox.DB.assets = [

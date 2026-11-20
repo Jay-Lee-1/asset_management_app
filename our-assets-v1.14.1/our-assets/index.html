@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.493';
+const APP_VERSION='1.47.494';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4797,8 +4797,15 @@ function assetBodyHTML(){
      body+=`<div class="grp-title"><span class="g">${ASSET_TYPES[t].label}${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}</span><span class="gt num ${t==='debt'?'minus':''}">${won(sum)}</span></div><div class="card">`;
      body+=items.map(a=>{const ty=ASSET_TYPES[a.type];const val=a.type==='debt'?-assetEval(a):assetEval(a);
        const showEval=isMarketValued(a);
+       /* '미포함' 칩(총자산 제외)과 '가격 미확인' 경고는 시각적으로만(칩·경고 텍스트) 보여주고
+        * 아래 두 role="button" 행의 aria-label은 이름·금액만 담고 있었다 — goalRowHTML/calCellsFor가
+        * 이미 고친 것과 같은 버그 클래스(app-evolve cycle376/377 critique/advance): role="button"
+        * 엘리먼트에 aria-label이 있으면 하위 텍스트는 접근성 트리에서 완전히 무시되므로, 스크린리더
+        * 사용자는 이 자산이 총자산에서 빠져 있거나 시세를 못 가져온 상태를 전혀 들을 수 없었다
+        * (app-evolve cycle381 develop). */
+       const ariaWarn=(a.includeInTotal?'':' 총자산 미포함')+(showEval&&rateUnknown(a)?' 가격 미확인':'');
        if(ST.aSel.mode){const on=ST.aSel.ids.has(a.id);
-         return `<div class="asset-item${on?' sel-on':''}" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(a.name)} ${won(val)}" onclick="assetToggleSel('${a.id}')" onkeydown="rowKeydown(event,()=>assetToggleSel('${a.id}'))">
+         return `<div class="asset-item${on?' sel-on':''}" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(a.name)} ${won(val)}${ariaWarn}" onclick="assetToggleSel('${a.id}')" onkeydown="rowKeydown(event,()=>assetToggleSel('${a.id}'))">
            <div class="sel-check ${on?'on':''}">${svg('check')}</div>
            <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
            <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
@@ -4815,7 +4822,7 @@ function assetBodyHTML(){
         * 여전히 버블링으로 openAssetSheet를 열도록 유지한다(val의 기존 클릭 동작 보존) — row-tap은
         * 키보드(Enter/Space)·스크린리더 포커스 전용이라 onclick 없이 onkeydown만 둔다. */
        return `<div class="asset-item ${a.includeInTotal?'':'excl'}" data-id="${a.id}" data-lp="1" onclick="openAssetSheet('${a.id}')">
-         <div class="row-tap" tabindex="0" role="button" aria-label="${esc(a.name)} ${won(val)}" onkeydown="rowKeydown(event,()=>openAssetSheet('${a.id}'))">
+         <div class="row-tap" tabindex="0" role="button" aria-label="${esc(a.name)} ${won(val)}${ariaWarn}" onkeydown="rowKeydown(event,()=>openAssetSheet('${a.id}'))">
          <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
          <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
            <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div></div>
