@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.492';
+const APP_VERSION='1.47.493';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5909,6 +5909,7 @@ function openSettlement(){
  /* 3명 이상은 "A가 B에게 얼마" 한 줄로 못 줄이므로(app-evolve cycle364 advance), 참가자별
   * 순부담(net=낸 돈-몫) 목록과 settleUpTransfers(logic.js)가 계산한 최소 송금 목록을 보여준다. */
  const sn=settlementSummaryN(txns,DB.assets,cfg.participants);
+ sn.byOwner=netOutSettledTransfers(sn.byOwner,existingSettleTransfersN(from));
  const transfers=settleUpTransfers(sn.byOwner);
  const ownersLabel=cfg.participants.map(p=>`${esc(p.owner)} ${p.ratio}%`).join(' · ');
  const netRows=sn.byOwner.map(b=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>${esc(b.owner)}</span><span class="num">${comma(b.paid)}원 냄 / ${comma(b.expected)}원 몫</span></div>`).join('');
@@ -5982,6 +5983,16 @@ function doSettle(payer,receiver,amount){
   save({recsChanged:false});invalidateBalances(null,{recsChanged:false});renderCurrent();toast('되돌렸어요');
  });
 }
+/* N인 정산이 부분 실패(현금성 자산 없는 참가자에서 멈춤)한 뒤 재시도할 때, settlementSummaryN이
+ * byOwner를 [from,TODAY] 구간 지출만으로 처음부터 다시 계산해 doSettleN이 이미 만들어 둔
+ * settleTransfer 거래(아래)를 전혀 모르는 채로 같은 송금을 또 만드는 버그가 있었다(app-evolve
+ * cycle380 critique → advance). 같은 구간에서 이미 만들어진 settleTransfer 거래를 owner 기준으로
+ * 모아 netOutSettledTransfers(logic.js)에 넘길 수 있는 {from,to,amount} 형태로 변환한다. */
+function existingSettleTransfersN(from){
+ const ownerOf=id=>{if(!id)return null;const a=DB.assets.find(x=>x.id===id);return a?a.owner:null};
+ return DB.txns.filter(t=>t.type==='transfer'&&t.settleTransfer&&t.date>=from&&t.date<=TODAY)
+  .map(t=>({from:ownerOf(t.fromAssetId),to:ownerOf(t.toAssetId),amount:t.amount}));
+}
 /* confirmSettlement/doSettle(2명 전용)을 N명으로 일반화(app-evolve cycle364 advance) — settleUpTransfers
  * (logic.js)가 계산한 여러 건의 송금을 각각 이체 거래로 남기고, settledThrough는 전체가 끝난 뒤 한
  * 번만 오늘로 당긴다. 중간에 현금 자산이 없는 참가자가 있으면 그 전까지 만든 거래는 그대로 둔 채
@@ -5992,6 +6003,7 @@ function confirmSettlementN(){
  const from=DB.settings.settledThrough?addDays(DB.settings.settledThrough,1):RANGE_FROM;
  const txns=allTxns(from,TODAY).filter(t=>t.type==='expense'&&t.shared&&!(t.adjust&&!t.inSurplus));
  const sn=settlementSummaryN(txns,DB.assets,cfg.participants);
+ sn.byOwner=netOutSettledTransfers(sn.byOwner,existingSettleTransfersN(from));
  const transfers=settleUpTransfers(sn.byOwner);
  if(!transfers.length)return;
  const lines=transfers.map(t=>`${esc(t.from)}님이 ${esc(t.to)}님에게 ${comma(t.amount)}원`).join('<br>');
@@ -6005,7 +6017,7 @@ function doSettleN(transfers){
  for(const t of transfers){
   const fromId=firstCashForOwner(t.from),toId=firstCashForOwner(t.to);
   if(!fromId||!toId){toast(`${fromId?t.to:t.from}의 현금성 자산이 없어요`);failed=true;break}
-  const tx=touch({id:uid(),type:'transfer',category:'이체',memo:'정산',amount:t.amount,fromAssetId:fromId,toAssetId:toId,date:TODAY,confirmed:true});
+  const tx=touch({id:uid(),type:'transfer',category:'이체',memo:'정산',amount:t.amount,fromAssetId:fromId,toAssetId:toId,date:TODAY,confirmed:true,settleTransfer:true});
   DB.txns.push(tx);created.push(tx.id);
  }
  if(!created.length)return;

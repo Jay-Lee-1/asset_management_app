@@ -239,7 +239,7 @@ const FUNCTIONS = [
   // 정산(settlement, app-evolve cycle314 critique/advance): settlementSummary(logic.js)를 둘러싼
   // 설정 폼/화면/완료처리. firstCashForOwner/settleConfigured는 doSettle/renderTxSheet/renderMenu가
   // 공유하는 작은 헬퍼라 그 호출부들과 같은 sandbox에 항상 함께 올라가야 한다.
-  'firstCashForOwner', 'settleConfigured', 'settleDraftRows', 'openSettleConfigForm', 'settleConfigPick', 'settleConfigAddRow', 'settleConfigRemoveRow', 'settleConfigRatioInput', 'settleConfigEqualSplit', 'renderSettleConfigForm', 'saveSettleConfig', 'clearSettleConfig', 'openSettlement', 'settlementBreakdownHTML', 'settlementBreakdownHTMLN', 'confirmSettlement', 'doSettle', 'confirmSettlementN', 'doSettleN',
+  'firstCashForOwner', 'settleConfigured', 'settleDraftRows', 'openSettleConfigForm', 'settleConfigPick', 'settleConfigAddRow', 'settleConfigRemoveRow', 'settleConfigRatioInput', 'settleConfigEqualSplit', 'renderSettleConfigForm', 'saveSettleConfig', 'clearSettleConfig', 'openSettlement', 'settlementBreakdownHTML', 'settlementBreakdownHTMLN', 'confirmSettlement', 'doSettle', 'existingSettleTransfersN', 'confirmSettlementN', 'doSettleN',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
@@ -21625,6 +21625,45 @@ test('settleUpTransfers: 금액이 딱 맞게 상계되지 않아도(3명 이상
   const total = t.reduce((a, x) => a + x.amount, 0);
   assert.strictEqual(total, 20000, '받을 돈 합(15000+5000)과 빚진 돈 합(12000+8000) 모두 20000이어야 함');
 });
+/* netOutSettledTransfers: N인 정산 부분 실패 후 재시도 시 이미 만들어진 settleTransfer 거래를
+ * 상쇄하는 순수 함수(app-evolve cycle380 critique → advance). */
+test('netOutSettledTransfers: 이미 보낸 거래가 있으면 보낸 쪽은 net이 그만큼 올라가고(빚 감소) 받은 쪽은 그만큼 내려간다(받을 돈 감소)', () => {
+  const byOwner = [
+    { owner: '나', net: 10000 },
+    { owner: '배우자', net: -5000 },
+    { owner: '아이', net: -5000 },
+  ];
+  const out = sandbox.netOutSettledTransfers(byOwner, [{ from: '배우자', to: '나', amount: 5000 }]);
+  assert.strictEqual(JSON.stringify(out), JSON.stringify([
+    { owner: '나', net: 5000 },
+    { owner: '배우자', net: 0 },
+    { owner: '아이', net: -5000 },
+  ]), '배우자는 이미 다 보냈으니 net 0, 나는 그만큼 덜 받아도 되니 net이 5000 줄어야 함');
+});
+test('netOutSettledTransfers: 이미 만들어진 거래가 하나도 없으면 byOwner를 그대로(값은 동일, 참조는 새 배열) 돌려준다', () => {
+  const byOwner = [{ owner: '나', net: 10000 }, { owner: '배우자', net: -10000 }];
+  const out = sandbox.netOutSettledTransfers(byOwner, []);
+  assert.strictEqual(JSON.stringify(out), JSON.stringify(byOwner));
+  assert.notStrictEqual(out, byOwner, '원본 배열을 변형하지 않고 새 배열을 반환해야 함(순수 함수)');
+});
+test('netOutSettledTransfers: 여러 건이 쌓이면 같은 owner에 누적해서 상쇄한다(부분 실패가 두 번 이상 반복된 경우)', () => {
+  const byOwner = [{ owner: '나', net: 20000 }, { owner: '배우자', net: -20000 }];
+  const out = sandbox.netOutSettledTransfers(byOwner, [
+    { from: '배우자', to: '나', amount: 5000 },
+    { from: '배우자', to: '나', amount: 7000 },
+  ]);
+  const naRow = out.find((b) => b.owner === '나');
+  const spouseRow = out.find((b) => b.owner === '배우자');
+  assert.strictEqual(naRow.net, 8000);
+  assert.strictEqual(spouseRow.net, -8000);
+});
+test('netOutSettledTransfers: byOwner에 없는 owner로 온 거래(참가자 목록이 바뀐 경우 등)는 조용히 무시한다', () => {
+  const byOwner = [{ owner: '나', net: 10000 }, { owner: '배우자', net: -10000 }];
+  const out = sandbox.netOutSettledTransfers(byOwner, [{ from: '아이', to: '나', amount: 3000 }]);
+  const naRow = out.find((b) => b.owner === '나');
+  assert.strictEqual(naRow.net, 7000, '모르는 from이라도 to가 아는 owner면 이미 그만큼 받았으니 그 쪽 net은 줄어야 함');
+  assert.strictEqual(out.length, 2, '새 owner가 추가되진 않음');
+});
 test('settleParticipantsFromSettings: participants 배열이 있으면 그대로(복사해) 돌려준다', () => {
   const r = sandbox.settleParticipantsFromSettings({ participants: [{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 60 }] });
   assert.strictEqual(JSON.stringify(r), JSON.stringify([{ owner: '나', ratio: 40 }, { owner: '배우자', ratio: 60 }]));
@@ -30125,6 +30164,38 @@ test('doSettleN: 중간에 현금성 자산이 없는 참가자가 있으면 그
   assert.ok(sandbox.lastToast.includes('아이') && sandbox.lastToast.includes('현금성 자산이 없어요'));
   assert.strictEqual(sandbox.DB.settings.settledThrough, null, '부분 실패면 미지급 참가자 몫이 다음 정산 범위에서 빠지지 않게 settledThrough를 당기면 안 됨(app-evolve cycle367 develop에서 발견된 회귀)');
   assert.strictEqual(sandbox.lastUndo, null, '부분 실패면 "정산 완료로 표시했어요" 성공 undoToast가 실패 안내 토스트를 덮어쓰면 안 됨');
+});
+/* confirmSettlementN+doSettleN 부분 실패 후 재시도 시 이미 성공한 이체가 중복 생성되던 버그의
+ * end-to-end 회귀 가드(app-evolve cycle380 critique → advance). doSettleN이 만든 transfer에
+ * settleTransfer:true가 붙고, confirmSettlementN이 existingSettleTransfersN+netOutSettledTransfers
+ * (logic.js)로 재계산 전에 이미 완료된 몫을 상쇄해야 재시도가 실패했던 참가자 몫만 새로 만든다. */
+test('confirmSettlementN+doSettleN: 부분 실패 후 현금 자산을 추가해 재시도하면 이미 성공한 이체는 다시 만들지 않고 실패했던 참가자 몫만 새로 만든다', () => {
+  setupSettlement3DB({
+    assets: [{ id: 'a1', type: 'cash', owner: '나' }, { id: 'a2', type: 'cash', owner: '배우자' }], // '아이'의 현금 자산 아직 없음
+    txns: [{ id: 't0', type: 'expense', fromAssetId: 'a1', amount: 30000, shared: true, date: '2026-01-01' }],
+  });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastToast = null;
+  sandbox.confirmSettlementN();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('배우자') && sandbox.confirmSheetCalls[0].msg.includes('아이'), '첫 시도는 둘 다 빚이 남아있어야 함');
+  sandbox.confirmSheetCalls[0].cb(); // doSettleN 실행 — 배우자->나는 성공, 아이->나는 현금 자산 없어 실패
+  assert.strictEqual(sandbox.DB.txns.length, 2, '원래 지출 1건 + 배우자->나 성공분 1건만 있어야 함');
+  assert.ok(sandbox.lastToast.includes('아이') && sandbox.lastToast.includes('현금성 자산이 없어요'));
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null, '부분 실패라 settledThrough는 아직 당겨지면 안 됨');
+
+  // 아이의 현금 자산을 추가하고 재시도
+  sandbox.DB.assets.push({ id: 'a3', type: 'cash', owner: '아이' });
+  sandbox.confirmSheetCalls = [];
+  sandbox.confirmSettlementN();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '아직 아이 몫이 남아있으니 재시도 확인 시트가 다시 떠야 함');
+  assert.ok(!sandbox.confirmSheetCalls[0].msg.includes('배우자'), '배우자는 이미 완료됐으니 재시도 제안 목록에서 빠져야 함(이 수정 전엔 여기서 중복 생성되던 버그)');
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('아이'), '아이 몫은 여전히 남아있어야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.txns.length, 3, '원래 지출 1건 + 배우자->나 1건 + 재시도로 생긴 아이->나 1건, 총 3건이어야 함(배우자->나가 중복 생성되면 4건이 됨)');
+  assert.strictEqual(sandbox.DB.txns.filter((t) => t.type === 'transfer' && t.settleTransfer).length, 2, 'settleTransfer 거래는 배우자->나/아이->나 각 1건씩 총 2건이어야 함');
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-10', '재시도가 모두 성공했으니 이제 settledThrough가 당겨져야 함');
 });
 test('doSettleN: 튜토리얼 모드 중에는 twGuard가 막아서 이체 내역이 생기지 않는다', () => {
   sandbox.TWi = 0;

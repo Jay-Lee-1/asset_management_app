@@ -294,6 +294,25 @@ function settleUpTransfers(byOwner){
  }
  return out;
 }
+/* N인 정산(doSettleN)이 부분 실패(현금성 자산 없는 참가자에서 멈춤)한 뒤, 사용자가 자산을 추가해
+ * 재시도하면 confirmSettlementN이 settlementSummaryN으로 byOwner를 처음부터 다시 계산한다 — 이미
+ * doSettleN이 만들어 둔 settleTransfer 거래(index.html doSettleN)를 전혀 고려하지 않아, 재시도 시
+ * 이미 성공한 이체까지 settleUpTransfers가 다시 송금 목록에 넣어 같은 돈이 두 번 보내진 것으로
+ * 기록되는 버그가 있었다(app-evolve cycle380 critique → advance). settleTxns는 호출부(index.html)가
+ * {from,to,amount} 형태로 이미 owner를 해석해 넘긴다(logic.js는 DB.assets 없이 순수하게 동작) —
+ * 각 거래의 from은 그만큼 더 보낸 것이므로 net을 그만큼 올리고(빚이 줄어듦), to는 그만큼 더 받은
+ * 것이므로 net을 그만큼 내린다(받을 돈이 줄어듦). byOwner에 없는 owner(참가자 목록이 바뀐 경우
+ * 등)는 조용히 무시한다 — 이 거래는 더는 현재 정산 범위와 무관하다고 보는 것. */
+function netOutSettledTransfers(byOwner,settleTxns){
+ const out=(byOwner||[]).map(b=>Object.assign({},b));
+ (settleTxns||[]).forEach(t=>{
+  const from=out.find(b=>b.owner===t.from);
+  const to=out.find(b=>b.owner===t.to);
+  if(from)from.net+=t.amount;
+  if(to)to.net-=t.amount;
+ });
+ return out;
+}
 /* DB.settings.settle의 데이터 모델 마이그레이션(app-evolve cycle364 advance) — 오랫동안
  * {ownerA,ownerB,ratioA} 2귀속 전용 구조였는데, 이제 참가자 수 제한이 없는 {participants:
  * [{owner,ratio}, ...]} 구조로 바뀐다. 기존 사용자의 저장된 옛 구조를 읽을 때마다(저장은 항상 새

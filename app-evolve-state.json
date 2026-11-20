@@ -1,19 +1,8 @@
 {
-  "cycle": 380,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "N인 정산(doSettleN) 부분 실패 후 재시도 시 이미 완료된 이체가 중복 생성됨",
-    "why": "doSettleN()(index.html:6000-6025)이 3인 이상 정산에서 현금성 자산이 없는 참가자를 만나면 이미 만든 이체 거래는 그대로 둔 채(의도적, cycle367) settledThrough는 당기지 않고 멈춘다. 하지만 confirmSettlementN()(index.html:5990-5998)은 재시도 시 settlementSummaryN(logic.js:238)과 settleUpTransfers(logic.js:282)로 from~TODAY 구간의 expense/shared 거래만으로 transfers를 처음부터 다시 계산한다 — 이미 생성된 transfer형 '정산' 거래를 전혀 고려하지 않는다. 즉 막혔던 참가자의 현금 자산을 추가한 뒤 '정산 완료로 표시'를 다시 누르면 이전에 성공한 이체까지 포함해 전부 다시 생성되어 실제 돈이 안 움직였는데도 같은 송금이 두 번 기록된다. 기존 테스트(test/run.js, cycle367 부분 실패 테스트)는 '생성된 거래 유지+settledThrough 미갱신'만 검증하고 그 뒤 재시도는 전혀 다루지 않아 이 경로는 테스트로 전혀 막혀 있지 않다.",
-    "approach": "1) doSettleN에서 생성하는 transfer 거래에 settleTransfer:true 플래그를 추가한다(memo:'정산' 문자열에 의존하지 않고 t.adjust와 같은 방식의 명시적 불리언). 2) logic.js에 순수 함수 netOutSettledTransfers(byOwner, settleTxns)를 추가: settleTxns는 DB.txns 중 type==='transfer'&&settleTransfer===true이며 date가 [from,TODAY] 구간인 것들; 각 거래의 from/to owner에 대해 이미 보낸/받은 금액을 byOwner의 net에서 상쇄한 뒤 새 byOwner를 반환한다(참가자 매칭은 firstCashForOwner가 쓰는 owner 식별 방식과 동일하게 맞춘다). 3) confirmSettlementN()과 openSettlement()의 N명 렌더 분기(index.html 약 5900-5925, 5990-5999) 양쪽에서 settlementSummaryN 호출 직후 sn.byOwner=netOutSettledTransfers(sn.byOwner, 해당 구간의 기존 settleTransfer 거래들)을 적용한 뒤 settleUpTransfers(sn.byOwner)를 호출하도록 수정 — 화면에 보여주는 '남은 정산' 내역과 실제 재시도 생성 내역이 항상 같은 값을 쓰게 한다. 4) 테스트 추가: (a) 3인 이상 참가자 중 1명이 현금 자산 없음 → 부분 생성 후 그 참가자에게 현금 자산 추가 → confirmSettlementN/doSettleN 재호출 시 이미 성공한 이체가 다시 생성되지 않고 실패했던 이체만 생성됨을 end-to-end로 검증, (b) netOutSettledTransfers 유닛 테스트(2인/3인 이상, 상쇄 후 0이 되는 경우 제외 여부), (c) cycle367의 기존 부분 실패 테스트가 그대로 통과하는지 재확인(회귀 없음). 5) index.html/logic.js를 수정하므로 APP_VERSION과 sw.js CACHE를 올리고, node our-assets-v1.14.1/our-assets/test/run.js와 node --check(logic.js, index.html 인라인 스크립트)를 통과시킨다."
-  },
+  "cycle": 381,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 375,
-      "phase": "advance",
-      "timestamp": "2026-11-19T09:40:00.000Z",
-      "summary": "critique(cycle375)의 계획대로 7개 *ToCSV 함수(txnsToCSV/assetsToCSV/nwHistoryToCSV/assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV)에 복제돼 있던 guard()/esc() 헬퍼를 logic.js의 csvInjectGuard()/csvCellEsc() 공유 순수 함수로 통합했다(동작 변경 없는 단순 치환, 각 함수는 const guard=csvInjectGuard,esc=csvCellEsc로 대체). csvInjectGuard/csvCellEsc 자체에 대한 유닛 테스트 8건을 test/run.js에 추가(=,+,-,@,tab,CR 각 트리거, 이미 '로 시작하는 값의 이중 가드, 콤마/CRLF/큰따옴표 이스케이프, null/undefined 처리). 기존 7개 함수별 CSV 인젝션 테스트는 수정 없이 그대로 통과해 리팩터링이 동작을 바꾸지 않았음을 확인. node test/run.js 3651/3651 통과(신규 8건 포함). node --check logic.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.484->1.47.485, sw.js CACHE v751->v752. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 376,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-20T04:12:02.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-380에서 다룬 모든 주제를 배제 목록으로 주고(SRI/빌드 스텝은 재차 범위 밖으로 안내) 새 영역을 조사시켰다. 발견: doSettleN()(index.html:6000-6025)의 N인 정산 부분 실패 처리가 실제 버그를 품고 있다 — 현금성 자산 없는 참가자를 만나면 이미 만든 이체 거래는 유지하고 settledThrough는 당기지 않는 cycle367의 의도된 동작이지만, confirmSettlementN()(index.html:5990-5998)이 재시도 시 settlementSummaryN/settleUpTransfers(logic.js:238,282)로 transfers를 처음부터 다시 계산해 이미 생성된 transfer형 '정산' 거래를 전혀 고려하지 않는다. 막혔던 참가자의 현금 자산을 추가해 재시도하면 이미 성공한 이체까지 포함해 전부 다시 생성되어 실제 돈이 안 움직였는데도 같은 송금이 두 번 기록된다. index.html:6000-6025, logic.js:238-296 직접 대조로 재확인, cycle367 기존 테스트가 재시도 경로를 전혀 다루지 않음을 test/run.js에서 확인. pending_advance_plan에 settleTransfer 플래그 + netOutSettledTransfers(logic.js) 순수 함수로 재계산 시 기존 완료분 상쇄 + end-to-end 재시도 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 380,
+      "phase": "advance",
+      "timestamp": "2026-11-20T05:12:21.957Z",
+      "summary": "critique(cycle380)의 계획대로 N인 정산 부분 실패 후 재시도 시 중복 생성 버그를 고쳤다. doSettleN()이 만드는 transfer 거래에 settleTransfer:true 플래그를 추가(index.html doSettleN). logic.js에 순수 함수 netOutSettledTransfers(byOwner,settleTxns) 추가 — settleTxns({from,to,amount})의 from은 net을 올리고(빚 감소) to는 net을 내린다(받을 돈 감소). index.html에 existingSettleTransfersN(from) 헬퍼를 추가해 DB.txns 중 type==='transfer'&&settleTransfer&&date in [from,TODAY]인 것들을 owner 기준({from,to,amount})으로 변환하고, confirmSettlementN()과 openSettlement()의 N인 분기 양쪽에서 settlementSummaryN 직후 sn.byOwner=netOutSettledTransfers(sn.byOwner,existingSettleTransfersN(from))를 적용한 뒤 settleUpTransfers를 호출하도록 수정 — 화면 표시와 재시도 생성이 항상 같은 값을 쓰게 됐다. 계획이 제안한 'tx/rec 쌍 테스트' 대신(이 버그엔 쌍둥이 코드가 없음) netOutSettledTransfers 유닛 테스트 4건과 confirmSettlementN+doSettleN 부분실패→재시도 end-to-end 테스트 1건을 추가(부분 실패 후 아이의 현금 자산을 추가해 재시도하면 이미 성공한 배우자->나 이체는 다시 안 만들고 아이->나 몫만 새로 생김을 confirmSheet 메시지와 DB.txns 개수로 검증). cycle367의 기존 부분 실패 테스트는 수정 없이 그대로 통과해 회귀 없음을 확인. node test/run.js 3700->3705/3705 통과. node --check logic.js 통과. index.html/logic.js를 수정했으므로 APP_VERSION 1.47.492->1.47.493, sw.js CACHE v759->v760. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
