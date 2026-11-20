@@ -1,15 +1,8 @@
 {
   "cycle": 380,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 375,
-      "phase": "review",
-      "timestamp": "2026-11-19T06:45:00.000Z",
-      "summary": "develop(cycle375, 934d959: 부팅 저축 만기 토스트에 maturityToastMsg(logic.js) 추가해 overdue/soon 구분)을 검토했다. 호출부가 notifyAlertInfo/homeAlertCard와 정확히 같은 overdue 판정식을 재사용함을 확인, 분기도 일치. node test/run.js 3646/3646 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 375,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-20T02:30:00.000Z",
       "summary": "globalSearchBody()(통합검색 결과)의 목표 행이 goalRowHTML()/goalsManageBody()와 똑같이 '연결된 자산이 삭제됐어요'/'연결된 자산을 추적할 수 없어요'/'일부 미확인' 경고와 '달성' 배지를 시각적으로만 보여주고 role=\"button\" aria-label에는 진행률%·지남 여부만 담아 스크린리더엔 전달되지 않던 공백을 발견했다(cycle270이 시각 캡션 드리프트만 고치고 aria-label은 빠뜨린 자리, cycle377/379와 같은 버그 클래스의 세 번째 미발견 사례). goalRowHTML과 동일한 ariaWarn 조건을 재사용해 aria-label을 보강했다. 테스트 2건 추가(경고 캡션/달성 배지 각각 aria-label 반영 검증). node test/run.js 3698->3700/3700 통과. index.html을 수정해 APP_VERSION 1.47.491->1.47.492, sw.js CACHE v758->v759.",
+      "commit": null
+    },
+    {
+      "cycle": 380,
+      "phase": "review",
+      "timestamp": "2026-11-20T03:07:08.707Z",
+      "summary": "develop(cycle380, 00e06e5: globalSearchBody() 목표 행 aria-label에 달성/연결자산 경고 보강)을 검토했다. goalRowHTML()(index.html:4091)의 aria-label 템플릿 리터럴과 바이트 단위로 대조해 완전히 동일함을 확인(p.achieved/ariaWarn/overdue 순서와 조건식 일치), ariaWarn 계산에 쓰는 assetGone/assetBroken/hasUnknown도 바로 위에서 시각 캡션에 쓰는 것과 동일한 변수(재선언 없음, cycle270이 추가한 주석 바로 아래)임을 확인. 새 테스트 2건이 구현과 정확히 일치(연결 자산 삭제 시 aria-label 반영, 달성 배지 aria-label 반영). node --check logic.js 통과, node test/run.js 3700/3700 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
