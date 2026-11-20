@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.495';
+const APP_VERSION='1.47.496';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -7951,11 +7951,17 @@ function globalSearchBody(qRaw){
  if(txnsAll.length)html+=`<div class="menu-cap" style="margin-top:8px">거래 · ${txnsAll.length}건</div><div class="card">${txns.map(t=>txRowCore(t,{mode:false})).join('')}</div>${moreBtn('txns',txnsRemain)}`;
  if(assetsAll.length)html+=`<div class="menu-cap" style="margin-top:14px">자산 · ${assetsAll.length}개</div><div class="card">${assets.map(a=>{
    const ty=ASSET_TYPES[a.type],val=a.type==='debt'?-assetEval(a):assetEval(a);
-   return `<div class="asset-item" tabindex="0" role="button" aria-label="${esc(a.name)} ${won(val)}" onclick="openAssetSheet('${a.id}')" onkeydown="rowKeydown(event,()=>openAssetSheet('${a.id}'))">
+   const showEval=isMarketValued(a);
+   /* assetBodyHTML()의 '총자산 미포함' 칩·'가격 미확인' 경고(시각 + aria-label, app-evolve cycle381
+    * develop)가 통합검색 결과(globalSearchBody)의 자산 행에만 전혀 없었다 — cycle380 develop이 같은
+    * 함수의 목표 행에 적용한 것과 동일한 버그 클래스의 다섯 번째 자리(목표 쪽만 고치고 자산 쪽을
+    * 깜빡함). assetBodyHTML과 동일한 조건을 그대로 재사용한다(app-evolve cycle382 develop). */
+   const ariaWarn=(a.includeInTotal?'':' 총자산 미포함')+(showEval&&rateUnknown(a)?' 가격 미확인':'');
+   return `<div class="asset-item" tabindex="0" role="button" aria-label="${esc(a.name)} ${won(val)}${ariaWarn}" onclick="openAssetSheet('${a.id}')" onkeydown="rowKeydown(event,()=>openAssetSheet('${a.id}'))">
     <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
-    <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span></div>
+    <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
      <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
-    <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div></div></div>`;
+    <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval&&rateUnknown(a)?'<div class="mini warn">가격 미확인</div>':''}</div></div>`;
   }).join('')}</div>${moreBtn('assets',assetsRemain)}`;
  if(catsAll.length)html+=`<div class="menu-cap" style="margin-top:14px">카테고리 · ${catsAll.length}개</div><div class="card">${catsCapped.map(c=>
    `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(c.name)} ${CAT_LABEL[c.kind]} 카테고리" onclick="openCatManage('${c.kind}')" onkeydown="rowKeydown(event,()=>openCatManage('${c.kind}'))"><div class="avatar ${catAv(c.kind)}" style="width:36px;height:36px;border-radius:11px">${catGlyph(c.kind,c.name,18,'tag')}</div><div class="mn">${esc(c.name)}</div><span class="chipmini">${CAT_LABEL[c.kind]}</span><div class="mc">${svg('chev')}</div></div>`

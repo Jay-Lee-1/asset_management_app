@@ -10680,6 +10680,56 @@ test('globalSearchBody: 목표를 달성하면 "달성" 배지와 함께 aria-la
   assert.ok(/aria-label="[^"]*달성[^"]*"/.test(html), 'aria-label에 "달성"이 보강되지 않음');
 });
 
+/* ---------- globalSearchBody 자산 결과: assetBodyHTML()의 '총자산 미포함' 칩·'가격 미확인' 경고
+ * (시각 + role="button" aria-label, app-evolve cycle381 develop)가 통합검색 결과의 자산 행에만
+ * 전혀 없었다 — 바로 위 목표 결과 쪽은 cycle380 develop이 같은 버그 클래스를 이미 고쳤는데, 같은
+ * 함수(globalSearchBody) 안의 자산 그룹만 깜빡하고 지나쳤던 자리(app-evolve cycle382 develop). */
+function setupGlobalSearchAssetDB(assets) {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2026-12-31';
+  sandbox.GS_EXPAND = {};
+  sandbox.DB = {
+    owners: ['나'],
+    assets,
+    txns: [],
+    recurrences: [],
+    categories: { expense: [], income: [], saving: [] },
+    settings: { confirmTransfers: false },
+    nwHistory: [],
+    goals: [],
+    rates: { fx: {}, stocks: {}, goldPerG: 0, syncedAt: 0 },
+  };
+}
+test('globalSearchBody: 총자산 미포함 자산을 검색하면 시각 칩("미포함")과 함께 role="button"의 aria-label에도 "총자산 미포함"이 보강된다', () => {
+  setupGlobalSearchAssetDB([{ id: 'a1', name: '용돈통장', owner: '나', type: 'cash', includeInTotal: false, baseAmount: 10000 }]);
+  const html = sandbox.globalSearchBody('용돈통장');
+  assert.ok(html.includes('자산 · 1개'));
+  assert.ok(html.includes('>미포함</span>'), '수정 전에는 assetBodyHTML과 달리 이 칩 자체가 통합검색 결과엔 없었음');
+  const itemIdx = html.indexOf('class="asset-item"');
+  assert.ok(itemIdx !== -1);
+  const openTag = html.slice(itemIdx, html.indexOf('>', itemIdx));
+  assert.ok(/aria-label="[^"]*총자산 미포함/.test(openTag), 'asset-item의 aria-label에 "총자산 미포함"이 없음 — 스크린리더가 제외 상태를 못 들음');
+});
+test('globalSearchBody: 시세를 못 가져온(rateUnknown) 시세평가 자산을 검색하면 시각 경고("가격 미확인")와 함께 aria-label에도 보강된다', () => {
+  setupGlobalSearchAssetDB([{ id: 'a1', name: '삼성전자', owner: '나', type: 'stock', stockCode: '005930', stockQty: 10, includeInTotal: true }]);
+  // DB.rates.stocks가 빈 객체라 R.stocks['005930']==null → rateUnknown()이 true
+  const html = sandbox.globalSearchBody('삼성전자');
+  assert.ok(html.includes('가격 미확인</div>'), '수정 전에는 assetBodyHTML과 달리 이 경고 자체가 통합검색 결과엔 없었음');
+  const itemIdx = html.indexOf('class="asset-item"');
+  assert.ok(itemIdx !== -1);
+  const openTag = html.slice(itemIdx, html.indexOf('>', itemIdx));
+  assert.ok(/aria-label="[^"]*가격 미확인/.test(openTag), 'asset-item의 aria-label에 "가격 미확인"이 없음 — 스크린리더가 시세 미확인 상태를 못 들음');
+});
+test('globalSearchBody: 총자산에 포함되고 시세도 아는(정상) 자산은 칩·경고·aria-label 어느 쪽에도 붙지 않는다(회귀 없음 확인)', () => {
+  setupGlobalSearchAssetDB([{ id: 'a1', name: '국민은행', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 500000 }]);
+  const html = sandbox.globalSearchBody('국민은행');
+  const itemIdx = html.indexOf('class="asset-item"');
+  assert.ok(itemIdx !== -1);
+  const openTag = html.slice(itemIdx, html.indexOf('>', itemIdx));
+  assert.ok(!/총자산 미포함|가격 미확인/.test(openTag), '정상 자산인데 경고가 잘못 붙음');
+  assert.ok(!html.includes('>미포함</span>') && !html.includes('가격 미확인</div>'), '정상 자산인데 시각 경고가 잘못 렌더됨');
+});
+
 /* ---------- globalSearchBody 반복 결과: 통합검색이 거래·자산·카테고리·목표까지만 가로질러 찾고
  * 반복 등록 자체(DB.recurrences, openRecManage/editRec로 편집·중지하는 실물)는 빠져 있던 공백을
  * 메운다(app-evolve cycle279 develop) — 매달 전개된 과거 결제 내역(거래 그룹)만으로는 그 구독을
