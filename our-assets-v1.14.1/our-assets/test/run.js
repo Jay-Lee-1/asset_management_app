@@ -242,7 +242,7 @@ const FUNCTIONS = [
   'firstCashForOwner', 'settleConfigured', 'settleDraftRows', 'openSettleConfigForm', 'settleConfigPick', 'settleConfigAddRow', 'settleConfigRemoveRow', 'settleConfigRatioInput', 'settleConfigEqualSplit', 'renderSettleConfigForm', 'saveSettleConfig', 'clearSettleConfig', 'openSettlement', 'settlementBreakdownHTML', 'settlementBreakdownHTMLN', 'confirmSettlement', 'doSettle', 'existingSettleTransfersN', 'confirmSettlementN', 'doSettleN',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
-  'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
+  'debtPayoffStatuses', 'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
   // debtPayoffPtsFor/debtWhatIfText/debtWhatIfUpdate는 부채 상환 추가 납입 시뮬레이터(what-if,
   // app-evolve cycle262 advance) 구현 — assetBalCard가 debtPayoffPtsFor/debtWhatIfText를 직접
   // 호출하므로(debt 분기) 그 둘은 assetBalCard를 쓰는 어떤 sandbox에도 함께 올라가야 한다.
@@ -32727,6 +32727,88 @@ test('homeAlerts: includeInTotal=false인 완납 부채는 debtPaidOff에 포함
   sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 100000 });
   const alerts = sandbox.homeAlerts([]);
   assert.ok(!alerts.some((a) => a.kind === 'debtPaidOff' || a.kind === 'debtPaidOffMulti'), 'includeInTotal=false면 완납 판단에서도 빠져야 함');
+});
+/* ---------- debtPayoffStatuses: debtsBehind()/debtsPaidOff() 중복 스캔 통합 (app-evolve cycle381 critique/advance) ----------
+ * debtsBehind()와 debtsPaidOff()는 기존에 각자 독립적으로 allTxns 전체 스캔 + 자산별
+ * assetBalanceSeries(완납분은 assetBalancePeak도)를 재계산했다 — homeAlerts()가 이 둘을 연달아
+ * 호출해 같은 데이터를 매번 두 번씩 스캔하던 핫패스. debtPayoffStatuses()로 한 번만 계산해 behind/
+ * paidOff로 나누고, debtsBehind/debtsPaidOff는 그 결과를 읽는 thin wrapper가 됐다. 동등성(기존 두
+ * 함수의 출력이 바뀌지 않음)과 중복 제거(assetBalanceSeries 호출 횟수가 실제로 줄었음) 둘 다 검증한다. */
+test('debtPayoffStatuses: 정체/완납/진행중/이력없음이 섞인 mixed fixture에서 debtsBehind()/debtsPaidOff() 기존 출력과 정확히 같은 behind/paidOff를 돌려준다', () => {
+  setupHomeAlertsDB();
+  // 정체: 과거에 한 번 갚은 뒤 최근 활동 없음
+  sandbox.DB.assets.push({ id: 'd1', name: '정체된 빚', owner: '나', type: 'debt', baseAmount: 600000, includeInTotal: true });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 50000 });
+  // 완납: 전액 상환, 아직 ack 안 됨
+  sandbox.DB.assets.push({ id: 'd2', name: '완납한 빚', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.txns.push({ date: '2024-02-10', type: 'income', toAssetId: 'd2', amount: 100000 });
+  // 진행중: TODAY까지 최근 90일 이내도 꾸준히 갚아 완납 예상일이 나옴 → behind/paidOff 둘 다 아님
+  sandbox.DB.assets.push({ id: 'd3', name: '갚는 중인 빚', owner: '나', type: 'debt', baseAmount: 1200000, includeInTotal: true });
+  let d = '2023-02-01';
+  for (let i = 0; i < 40; i++) {
+    sandbox.DB.txns.push({ date: d, type: 'income', toAssetId: 'd3', amount: 20000 });
+    d = sandbox.addMonths(d, 1);
+  }
+  // 이력없음: 거래가 전혀 없어 behind/paidOff 판단 자체에서 제외
+  sandbox.DB.assets.push({ id: 'd4', name: '방금 등록한 빚', owner: '나', type: 'debt', baseAmount: 500000, includeInTotal: true });
+  // 무관: includeInTotal=false라 둘 다에서 제외
+  sandbox.DB.assets.push({ id: 'd5', name: '총계 제외 빚', owner: '나', type: 'debt', baseAmount: 600000, includeInTotal: false });
+  sandbox.DB.txns.push({ date: '2024-03-10', type: 'income', toAssetId: 'd5', amount: 50000 });
+
+  const statuses = sandbox.debtPayoffStatuses();
+  const behind = sandbox.debtsBehind();
+  const paidOff = sandbox.debtsPaidOff();
+  assert.strictEqual(JSON.stringify(statuses.behind), JSON.stringify(behind), 'debtPayoffStatuses().behind가 debtsBehind()와 정확히 같아야 함');
+  assert.strictEqual(JSON.stringify(statuses.paidOff), JSON.stringify(paidOff), 'debtPayoffStatuses().paidOff가 debtsPaidOff()와 정확히 같아야 함');
+  assert.strictEqual(behind.length, 1);
+  assert.strictEqual(behind[0].id, 'd1');
+  assert.strictEqual(paidOff.length, 1);
+  assert.strictEqual(paidOff[0].id, 'd2');
+  assert.strictEqual(paidOff[0].amount, 100000);
+});
+test('debtPayoffStatuses: debtsBehind()+debtsPaidOff()를 따로 부르면 자산당 assetBalanceSeries가 2번씩 재계산되지만, debtPayoffStatuses()는 한 번만 호출한다(중복 제거 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '정체된 빚', owner: '나', type: 'debt', baseAmount: 600000, includeInTotal: true });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 50000 });
+  sandbox.DB.assets.push({ id: 'd2', name: '완납한 빚', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.txns.push({ date: '2024-02-10', type: 'income', toAssetId: 'd2', amount: 100000 });
+
+  const origSeries = sandbox.assetBalanceSeries;
+  let calls = 0;
+  sandbox.assetBalanceSeries = (...args) => { calls++; return origSeries(...args); };
+  try {
+    calls = 0;
+    sandbox.debtsBehind();
+    sandbox.debtsPaidOff();
+    assert.strictEqual(calls, 4, '예전처럼 따로 부르면 부채 자산 2개 x 2번 호출(behind 1회 + paidOff 1회)로 중복 계산됨');
+
+    calls = 0;
+    const statuses = sandbox.debtPayoffStatuses();
+    assert.strictEqual(calls, 2, 'debtPayoffStatuses()는 부채 자산당 정확히 한 번만 assetBalanceSeries를 호출해야 함');
+    assert.strictEqual(statuses.behind.length, 1);
+    assert.strictEqual(statuses.paidOff.length, 1);
+  } finally {
+    sandbox.assetBalanceSeries = origSeries;
+  }
+});
+test('homeAlerts: debtPayoffStatuses()를 한 번만 호출해 debtBehind/debtPaidOff 알림을 함께 만든다(homeAlerts 핫패스 중복 제거 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '정체된 빚', owner: '나', type: 'debt', baseAmount: 600000, includeInTotal: true });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 50000 });
+  sandbox.DB.assets.push({ id: 'd2', name: '완납한 빚', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.txns.push({ date: '2024-02-10', type: 'income', toAssetId: 'd2', amount: 100000 });
+
+  const origStatuses = sandbox.debtPayoffStatuses;
+  let calls = 0;
+  sandbox.debtPayoffStatuses = (...args) => { calls++; return origStatuses(...args); };
+  try {
+    const alerts = sandbox.homeAlerts([]);
+    assert.strictEqual(calls, 1, 'homeAlerts()는 debtPayoffStatuses()를 정확히 한 번만 호출해야 함(behind/paidOff 각자 재계산하면 안 됨)');
+    assert.ok(alerts.some((a) => a.kind === 'debtBehind'));
+    assert.ok(alerts.some((a) => a.kind === 'debtPaidOff'));
+  } finally {
+    sandbox.debtPayoffStatuses = origStatuses;
+  }
 });
 test('notifyAlertInfo: debtPaidOff/debtPaidOffMulti는 월 키 없이 assetId/count만으로 dedupe한다(goalAchieved와 동일하게 ack 전까지 영구 상태, app-evolve cycle257)', () => {
   const info1 = sandbox.notifyAlertInfo({ kind: 'debtPaidOff', assetId: 'd1', name: '다 갚은 빚', amount: 100000 });

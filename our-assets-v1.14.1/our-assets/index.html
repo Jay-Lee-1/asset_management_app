@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.494';
+const APP_VERSION='1.47.495';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -12025,6 +12025,28 @@ function openTidyList(){ /* 다 쓴 자산 여러 건을 한 시트에서 — op
    <button class="txt-btn" style="flex-shrink:0" onclick="tidyListSnooze('${a.id}')">나중에</button></div>`).join('')}`);
 }
 function tidyListSnooze(id){snoozeTidy(id);openTidyList();}
+/* debtsBehind()/debtsPaidOff()가 공유하는 계산 — 둘 다 독립적으로 allTxns 전체 스캔 +
+ * assetBalSampleDates(60) + includeInTotal한 debt 자산마다 assetBalanceSeries(그리고 완납분은
+ * assetBalancePeak)를 각각 재계산해, homeAlerts()(바로 아래쪽에서 이 둘을 연달아 호출하는
+ * 핫패스 — updateAlerts()->renderCurrent() 경로로 거래/자산/목표 저장 거의 전부·탭 전환마다
+ * 불린다)에서 같은 데이터를 매번 두 번씩 중복 스캔하고 있었다. txns/dates/자산별
+ * assetBalanceSeries를 한 번씩만 계산해 behind/paidOff로 함께 분류한다(app-evolve cycle381
+ * critique/advance). assetBalancePeak는 debtNewlyPaidOff로 확정된 자산에만 계산해(기존 구현은
+ * 후보 전체에 계산한 뒤 버렸다) 그만큼도 줄인다. */
+function debtPayoffStatuses(){
+ const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
+ const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
+ const behind=[],paidOff=[];
+ DB.assets.filter(a=>a.includeInTotal&&a.type==='debt'&&txns.some(t=>t.fromAssetId===a.id||t.toAssetId===a.id)).forEach(a=>{
+  const pts=assetBalanceSeries(txns,a.id,assetBase(a),-1,dates);
+  const p=debtPayoffProjection(pts,TODAY);
+  if(!p.achieved&&!p.projectedDate)behind.push(a);
+  if(debtNewlyPaidOff(a,p))paidOff.push({id:a.id,name:a.name,amount:assetBalancePeak(txns,a.id,assetBase(a),-1)});
+ });
+ behind.sort((x,y)=>x.name<y.name?-1:1);
+ paidOff.sort((x,y)=>x.name<y.name?-1:1);
+ return{behind,paidOff};
+}
 /* 상환 추세가 정체/악화된 부채 목록 — assetBalCard()(2676행 부근)가 부채 자산 상세를 열어야만
  * 보여주던 debtPayoffProjection() 투사를 homeAlerts()/openDebtBehindList()가 같이 쓰도록 분리.
  * assetBalCard와 동일한 방식(RANGE_FROM~TODAY 실제 잔액 추이, sign=-1)으로 pts를 만들어 achieved
@@ -12033,16 +12055,10 @@ function tidyListSnooze(id){snoozeTidy(id);openTidyList();}
  * 충분해서(pts.length는 거의 늘 2 이상) 그것만으론 "이력이 아직 없는 신규 부채"를 걸러내지 못한다
  * (baseAmount만 있고 거래가 하나도 없으면 전 구간이 평평한 한 값으로 채워져 rate=0 → 오탐으로
  * behind가 돼버림). 그래서 실제 가드는 "이 자산을 참조하는 거래가 최소 1건이라도 있는가"다 —
- * 등록만 해두고 아직 아무 활동도 없는 부채는 추세를 판단할 근거가 없으므로 제외한다. */
+ * 등록만 해두고 아직 아무 활동도 없는 부채는 추세를 판단할 근거가 없으므로 제외한다.
+ * debtPayoffStatuses()(바로 위)의 thin wrapper — 기존 시그니처·반환 모양 그대로 유지한다. */
 function debtsBehind(){
- const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
- const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
- return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt'&&txns.some(t=>t.fromAssetId===a.id||t.toAssetId===a.id)).map(a=>{
-   const pts=assetBalanceSeries(txns,a.id,assetBase(a),-1,dates);
-   return{a,p:debtPayoffProjection(pts,TODAY)};
-  }).filter(({p})=>!p.achieved&&!p.projectedDate)
-  .map(({a})=>a)
-  .sort((x,y)=>x.name<y.name?-1:1);
+ return debtPayoffStatuses().behind;
 }
 function openDebtBehindList(){ /* openNegList()와 동일 패턴 — 1건이면 바로 그 자산으로, 여러 건이면 시트에서 고른다 */
  const list=debtsBehind();
@@ -12063,16 +12079,10 @@ function openDebtBehindList(){ /* openNegList()와 동일 패턴 — 1건이면 
  * 짧은 기간 안에 반짝 빚이 늘었다가 다 갚이는 경우 피크가 조용히 축소될 수 있었다(app-evolve
  * cycle258 develop이 고침 — p(투사)는 추세용 근사라 샘플링을 그대로 두지만 peak(사실 표시용)만
  * 정확값으로 분리). homeAlerts()와 openDebtPaidOffList() 둘 다 이 공유 헬퍼를 쓴다(debtsBehind/
- * openDebtBehindList와 동일한 공유 구조). */
+ * openDebtBehindList와 동일한 공유 구조). debtPayoffStatuses()(debtsBehind 바로 위)의 thin
+ * wrapper — 기존 시그니처·반환 모양 그대로 유지한다. */
 function debtsPaidOff(){
- const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
- const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
- return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt'&&txns.some(t=>t.fromAssetId===a.id||t.toAssetId===a.id)).map(a=>{
-   const pts=assetBalanceSeries(txns,a.id,assetBase(a),-1,dates);
-   return{a,p:debtPayoffProjection(pts,TODAY),peak:assetBalancePeak(txns,a.id,assetBase(a),-1)};
-  }).filter(({a,p})=>debtNewlyPaidOff(a,p))
-  .map(({a,peak})=>({id:a.id,name:a.name,amount:peak}))
-  .sort((x,y)=>x.name<y.name?-1:1);
+ return debtPayoffStatuses().paidOff;
 }
 function openDebtPaidOffList(){ /* openDebtBehindList()와 동일 패턴 — 1건이면 바로 ack, 여러 건이면 시트에서 고른다 */
  const list=debtsPaidOff();
@@ -12187,17 +12197,22 @@ function homeAlerts(neg){
    .sort((a,b)=>a.g.name<b.g.name?-1:1);
  if(_ga.length===1){const{g,p}=_ga[0];arr.push({kind:'goalAchieved',goalId:g.id,name:g.name,amount:p.cur});}
  else if(_ga.length>1)arr.push({kind:'goalAchievedMulti',count:_ga.length});
- /* 상환 추세가 정체/악화된 부채: debtsBehind()(homeAlerts 바로 앞) 참고. goalBehind와 동일한
-  * 단일/복수 collapsing 패턴(app-evolve cycle174 advance) */
- const _db=debtsBehind();
+ /* 상환 추세가 정체/악화된 부채와 완납: debtsBehind()/debtsPaidOff()(homeAlerts 바로 앞) 참고.
+  * 이 둘은 각자 독립적으로 전체 거래 스캔+자산별 잔액 추이를 재계산해 homeAlerts()(저장/탭 전환
+  * 거의 전부에서 불리는 핫패스) 안에서 매번 같은 데이터를 두 번 스캔하고 있었다. debtPayoffStatuses()
+  * (debtsBehind/debtsPaidOff 공유 헬퍼)를 한 번만 호출해 .behind/.paidOff로 나눠 쓴다
+  * (app-evolve cycle381 critique/advance). goalBehind와 동일한 단일/복수 collapsing 패턴
+  * (app-evolve cycle174 advance) */
+ const _dps=debtPayoffStatuses();
+ const _db=_dps.behind;
  if(_db.length===1){const a=_db[0];arr.push({kind:'debtBehind',assetId:a.id,name:a.name,amount:assetEval(a)});}
  else if(_db.length>1)arr.push({kind:'debtBehindMulti',count:_db.length});
  /* 부채 완납: debtBehind(정체)와 정확히 대칭되는 긍정적 사건 — goalAchieved(cycle256)와 같은
-  * 모양으로, debtsPaidOff()(debtsBehind 바로 아래)가 이미 '거래 이력 1건 이상' 가드와 ack 여부
+  * 모양으로, debtPayoffStatuses()의 paidOff가 이미 '거래 이력 1건 이상' 가드와 ack 여부
   * 판정을 다 끝내 돌려준다. budgetOver/goalAchieved/debtBehind와 동일한 단일/복수 collapsing
   * 패턴. 한 번 뜬 뒤엔 ackDebtPayoff(부채 상세 진입)가 payoffAckAt을 남겨야 사라지므로, debtBehind
   * 처럼 추세가 바뀌어 자연 해소되지 않는다(app-evolve cycle257 advance). */
- const _dp=debtsPaidOff();
+ const _dp=_dps.paidOff;
  if(_dp.length===1){const d=_dp[0];arr.push({kind:'debtPaidOff',assetId:d.id,name:d.name,amount:d.amount});}
  else if(_dp.length>1)arr.push({kind:'debtPaidOffMulti',count:_dp.length});
  /* 목표 자산배분과 실제 비중이 많이 벌어진 유형: targetAllocationCard(3514행대)와 동일한 집계
