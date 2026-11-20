@@ -1,15 +1,12 @@
 {
   "cycle": 379,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "goalHistoryFor() recomputes full transaction history per-goal with no caching, unlike every sibling hot path",
+    "why": "For asset-linked goals, goalHistoryFor() (index.html:4044-4049) calls allTxns(RANGE_FROM,TODAY) plus assetBalanceSeries() fresh on every call, with no memoization. It's invoked per-goal in a loop from at least 8 sites: goalRowHTML (4055), goalsManageBody search (4131), achievedAckAt reset check (4252), another goal row path (4265), openGoalsList (7923), assetsCsv (9470/9778 area), goalsToCSV export (9784) — and, most impactful, twice independently inside a single homeAlerts() call (goalBehind loop at 12126, goalNewlyAchieved loop at 12137), which runs on nearly every save() while the home tab (the app's default tab) is active. So one save with N asset-linked goals does 2N full DB.txns scans + assetBalanceSeries recomputations in that single homeAlerts() call alone, on top of whatever goal-screen renders also recompute it. As a household's transaction history grows over years (RANGE_FROM is a fixed, ever-lengthening floor of 2023-01-01) and as users add more goals (the app's own feature encourages this), this cost grows unboundedly and recurs on almost every interaction — the exact kind of hidden, worsening performance debt the app's own comments show the team has deliberately eliminated elsewhere (_balCache/_recCache at index.html:3090-3113, _bwc Map at 12093, makeMonthCatCache at 8121) but never applied to goals.",
+    "approach": "Add a module-level cache for goalHistoryFor(), mirroring the existing _balCache/_recCache pattern (index.html ~3090-3113) so it plugs into the already-established invalidation machinery: (1) Add `const _goalHistCache=new Map();` near _balCache, with the same LRU-cap style as BAL_CACHE_MAX (e.g. cap 40). (2) In goalHistoryFor(g) (index.html:4044), compute a cache key: for g.type==='asset', key='a:'+g.linkedAssetId; otherwise key='o:'+goalOwnerEff(g). Check _goalHistCache.get(key) first and return it; otherwise compute as today, store, and apply the LRU cap (delete oldest key when size exceeds cap). (3) Clear _goalHistCache inside invalidateBalances() (index.html ~3109-3113) alongside _balCache.clear(), unconditionally (not gated behind opts.recsChanged) since DB.nwHistory is rewritten every save() in _saveCore and the owner-type branch depends on it. (4) No caller-side changes needed — all ~8 call sites call goalHistoryFor(g) already and benefit transparently. (5) Check whether test/run.js's text-extraction harness picks up goalHistoryFor/invalidateBalances by name; if so, declare the new cache variable in the same style _balCache/_recCache already use so extraction keeps working, and add tests verifying cache hits return the same data as an uncached call and that invalidateBalances() clears it (e.g. mutate linked asset's txns, call invalidateBalances, confirm goalHistoryFor reflects the change). Keep the change surgical: do not touch goalProgress()/assetBalanceSeries() in logic.js, only add caching at the goalHistoryFor() call boundary in index.html. Bump APP_VERSION and sw.js CACHE since index.html changes."
+  },
   "history": [
-    {
-      "cycle": 374,
-      "phase": "critique",
-      "timestamp": "2026-11-19T04:20:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 고심각도 새 버그는 못 찾았으나 cross-cutting 이스케이핑 불일치를 발견: logic.js의 esc() 헬퍼는 &<>\"'를 모두 이스케이프하는데 index.html의 7개 어트리뷰트 보간부(rMemo/Supabase URL·key/카카오 키/catAddDraft.name/catRenameDraft.name)는 .replace(/\"/g,'&quot;')만 써서 &를 그대로 둬, 이미 엔티티 시퀀스가 포함된 텍스트가 재렌더링마다 디코드되는 데이터 정합성 드리프트. pending_advance_plan에 7개 호출부를 esc()로 교체 + 왕복 회귀 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 374,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-19T23:07:25.000Z",
       "summary": "develop(cycle379, 4dd287f: goalRowHTML/goalsManageBody의 role=\"button\" aria-label에 달성 배지·연결자산 경고 캡션 보강)을 검토했다. 두 함수 모두 ariaWarn 계산에 쓰는 assetGone/assetBroken/hasUnknown/p.achieved가 바로 위에서 시각 캡션에 쓰는 것과 동일한 변수(재선언 없음)임을 직접 대조해 확인, cycle377 calCellsFor dayLabel과 동일한 패턴. node --check logic.js 통과, node test/run.js 3697/3697 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 379,
+      "phase": "critique",
+      "timestamp": "2026-11-20T00:28:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-379에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: goalHistoryFor()(index.html:4044-4049, 목표의 진행률 계산용 이력 조회)가 자산 연결형 목표에 대해 allTxns(RANGE_FROM,TODAY) 전체 스캔 + assetBalanceSeries()를 매 호출마다 캐싱 없이 재계산함을 확인(index.html ~3090-3113의 _balCache/_recCache, 12093 _bwc Map, 8121 makeMonthCatCache와 같은 패턴이 이미 여러 곳에 있는데도 goals만 빠짐). 8개 이상 호출부(goalRowHTML 4055, goalsManageBody 4131, achievedAckAt 리셋 4252, 4265, openGoalsList 7923, assetsCsv/goalsToCSV 9470/9784) 중 특히 homeAlerts() 내부에서 goalBehind(12126)·goalNewlyAchieved(12137) 루프가 목표마다 각각 독립적으로 호출해, 홈 탭이 기본 탭인 이 앱에서 거의 모든 save()마다 목표 수 N개당 2N번의 전체 거래 스캔이 반복됨을 grep으로 호출부 전부 대조해 재확인. 거래 내역이 해마다 쌓이고(RANGE_FROM 고정, 상한만 늘어남) 목표 수가 늘수록 비용이 무한정 커지는 성능 드리프트. pending_advance_plan에 _goalHistCache(Map, _balCache와 동일한 LRU 캡 패턴)를 추가하고 goalHistoryFor()에서 캐시 적중 시 바로 반환, invalidateBalances()에서 함께 비우는 계획 저장(호출부 변경 불필요). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
