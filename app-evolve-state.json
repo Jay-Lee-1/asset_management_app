@@ -1,15 +1,12 @@
 {
   "cycle": 380,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "N인 정산(doSettleN) 부분 실패 후 재시도 시 이미 완료된 이체가 중복 생성됨",
+    "why": "doSettleN()(index.html:6000-6025)이 3인 이상 정산에서 현금성 자산이 없는 참가자를 만나면 이미 만든 이체 거래는 그대로 둔 채(의도적, cycle367) settledThrough는 당기지 않고 멈춘다. 하지만 confirmSettlementN()(index.html:5990-5998)은 재시도 시 settlementSummaryN(logic.js:238)과 settleUpTransfers(logic.js:282)로 from~TODAY 구간의 expense/shared 거래만으로 transfers를 처음부터 다시 계산한다 — 이미 생성된 transfer형 '정산' 거래를 전혀 고려하지 않는다. 즉 막혔던 참가자의 현금 자산을 추가한 뒤 '정산 완료로 표시'를 다시 누르면 이전에 성공한 이체까지 포함해 전부 다시 생성되어 실제 돈이 안 움직였는데도 같은 송금이 두 번 기록된다. 기존 테스트(test/run.js, cycle367 부분 실패 테스트)는 '생성된 거래 유지+settledThrough 미갱신'만 검증하고 그 뒤 재시도는 전혀 다루지 않아 이 경로는 테스트로 전혀 막혀 있지 않다.",
+    "approach": "1) doSettleN에서 생성하는 transfer 거래에 settleTransfer:true 플래그를 추가한다(memo:'정산' 문자열에 의존하지 않고 t.adjust와 같은 방식의 명시적 불리언). 2) logic.js에 순수 함수 netOutSettledTransfers(byOwner, settleTxns)를 추가: settleTxns는 DB.txns 중 type==='transfer'&&settleTransfer===true이며 date가 [from,TODAY] 구간인 것들; 각 거래의 from/to owner에 대해 이미 보낸/받은 금액을 byOwner의 net에서 상쇄한 뒤 새 byOwner를 반환한다(참가자 매칭은 firstCashForOwner가 쓰는 owner 식별 방식과 동일하게 맞춘다). 3) confirmSettlementN()과 openSettlement()의 N명 렌더 분기(index.html 약 5900-5925, 5990-5999) 양쪽에서 settlementSummaryN 호출 직후 sn.byOwner=netOutSettledTransfers(sn.byOwner, 해당 구간의 기존 settleTransfer 거래들)을 적용한 뒤 settleUpTransfers(sn.byOwner)를 호출하도록 수정 — 화면에 보여주는 '남은 정산' 내역과 실제 재시도 생성 내역이 항상 같은 값을 쓰게 한다. 4) 테스트 추가: (a) 3인 이상 참가자 중 1명이 현금 자산 없음 → 부분 생성 후 그 참가자에게 현금 자산 추가 → confirmSettlementN/doSettleN 재호출 시 이미 성공한 이체가 다시 생성되지 않고 실패했던 이체만 생성됨을 end-to-end로 검증, (b) netOutSettledTransfers 유닛 테스트(2인/3인 이상, 상쇄 후 0이 되는 경우 제외 여부), (c) cycle367의 기존 부분 실패 테스트가 그대로 통과하는지 재확인(회귀 없음). 5) index.html/logic.js를 수정하므로 APP_VERSION과 sw.js CACHE를 올리고, node our-assets-v1.14.1/our-assets/test/run.js와 node --check(logic.js, index.html 인라인 스크립트)를 통과시킨다."
+  },
   "history": [
-    {
-      "cycle": 375,
-      "phase": "critique",
-      "timestamp": "2026-11-19T08:30:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 발견: CSV 인젝션 가드 guard()와 CSV 셀 이스케이프 esc()가 100% 순수 함수인데도 7개 *ToCSV 함수(txnsToCSV/assetsToCSV/nwHistoryToCSV/assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV) 안에 각각 복제돼 있음을 확인(guard 6곳, esc 7곳, byte-for-byte 동일). logic.js 헤더 주석의 순수 함수 추출 원칙 위반이며 cycle374와 같은 동기화 드리프트 위험. pending_advance_plan에 csvInjectGuard/csvCellEsc를 logic.js로 통합하고 7곳 호출부를 치환 + 유닛 테스트 추가하는 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 375,
       "phase": "advance",
@@ -119,14 +116,14 @@
       "cycle": 379,
       "phase": "critique",
       "timestamp": "2026-11-20T00:28:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-379에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: goalHistoryFor()(index.html:4044-4049, 목표의 진행률 계산용 이력 조회)가 자산 연결형 목표에 대해 allTxns(RANGE_FROM,TODAY) 전체 스캔 + assetBalanceSeries()를 매 호출마다 캐싱 없이 재계산함을 확인(index.html ~3090-3113의 _balCache/_recCache, 12093 _bwc Map, 8121 makeMonthCatCache와 같은 패턴이 이미 여러 곳에 있는데도 goals만 빠짐). 8개 이상 호출부(goalRowHTML 4055, goalsManageBody 4131, achievedAckAt 리셋 4252, 4265, openGoalsList 7923, assetsCsv/goalsToCSV 9470/9784) 중 특히 homeAlerts() 내부에서 goalBehind(12126)·goalNewlyAchieved(12137) 루프가 목표마다 각각 독립적으로 호출해, 홈 탭이 기본 탭인 이 앱에서 거의 모든 save()마다 목표 수 N개당 2N번의 전체 거래 스캔이 반복됨을 grep으로 호출부 전부 대조해 재확인. 거래 내역이 해마다 쌓이고(RANGE_FROM 고정, 상한만 늘어남) 목표 수가 늘수록 비용이 무한정 커지는 성능 드리프트. pending_advance_plan에 _goalHistCache(Map, _balCache와 동일한 LRU 캡 패턴)를 추가하고 goalHistoryFor()에서 캐시 적중 시 바로 반환, invalidateBalances()에서 함께 비우는 계획 저장(호출부 변경 불필요). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "general-purpose 서브에이전트에게 cycle340-379에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: goalHistoryFor()(index.html:4044-4049, 목표의 진행률 계산용 이력 조회)가 자산 연결형 목표에 대해 allTxns(RANGE_FROM,TODAY) 전체 스캔 + assetBalanceSeries()를 매 호출마다 캐싱 없이 재계산함을 확인(index.html ~3090-3113의 _balCache/_recCache, 12093 _bwc Map, 8121 makeMonthCatCache와 같은 패턴이 이미 여러 곳에 있는데도 goals만 빠짐). pending_advance_plan에 _goalHistCache(Map, _balCache와 동일한 LRU 캡 패턴)를 추가하고 goalHistoryFor()에서 캐시 적중 시 바로 반환, invalidateBalances()에서 함께 비우는 계획 저장(호출부 변경 불필요). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     },
     {
       "cycle": 379,
       "phase": "advance",
       "timestamp": "2026-11-20T01:30:00.000Z",
-      "summary": "critique(cycle379)의 계획대로 goalHistoryFor()(index.html:4044)에 _balCache/_recCache와 같은 LRU 캡 패턴의 _goalHistCache(Map, GOAL_HIST_CACHE_MAX=40)를 추가했다. 캐시 키는 asset형이면 'a:'+linkedAssetId, 그 외(networth)는 'o:'+goalOwnerEff(g) — 목표 개별이 아니라 '어떤 이력을 보는지'로 묶어 같은 귀속/자산을 보는 여러 목표가 캐시를 공유한다. invalidateBalances()에서 _balCache/_recCache와 함께 무조건 전체 clear(날짜로 부분 보존할 근거가 없음, _saveCore가 DB.nwHistory 갱신보다 먼저 이 함수를 불러 다음 조회 시 항상 최신값을 다시 계산하므로 안전). 구현 중 실제로 테스트를 돌려보니 계획이 놓친 위험이 드러났다 — 테스트들이 save()->invalidateBalances()를 거치지 않고 sandbox.DB를 직접 바꿔치기하는 패턴이 수십 곳에 널려 있어, 캐시를 그대로 추가하자 'a1'/'나'/'all' 같은 흔한 키가 테스트 간·테스트 내에서 충돌해 13개 테스트가 깨졌다. 테스트 러너 루프(test/run.js 실행부)에 매 테스트 시작 전 sandbox._goalHistCache.clear()를 추가해 테스트 간 오염을 없앴고(10개 복구), 같은 테스트 안에서 DB를 바꿔치기한 뒤 바로 재조회하는 3곳(goalRowHTML의 달성 배지/연결 자산 삭제/연결 자산 종류 변경 테스트)에는 그 자리에 수동으로 sandbox._goalHistCache.clear()를 추가해 나머지 3개도 복구했다. CONSTS 목록에 GOAL_HIST_CACHE_MAX/_goalHistCache 추가, invalidateBalances 실제 동작을 isolated vm으로 검증하는 makeInvalidateBalancesCtx 추출 목록에도 _goalHistCache 추가. 캐시 적중(두 번째 호출이 DB 변경을 반영하지 않고 낡은 참조를 그대로 돌려줌)과 invalidateBalances 이후 재계산을 직접 검증하는 테스트 1건, invalidateBalances 기존 테스트 2건에 _goalHistCache 어서션 보강. node test/run.js 3697->3698/3698 통과(과정 중 캐시 충돌로 13개 실패를 거쳐 전부 복구). node --check logic.js 통과, index.html의 4개 인라인 <script> 블록 모두 node --check 통과. index.html을 수정했으므로 APP_VERSION 1.47.490->1.47.491, sw.js CACHE v757->v758. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle379)의 계획대로 goalHistoryFor()(index.html:4044)에 _balCache/_recCache와 같은 LRU 캡 패턴의 _goalHistCache(Map, GOAL_HIST_CACHE_MAX=40)를 추가했다. 캐시 키는 asset형이면 'a:'+linkedAssetId, 그 외(networth)는 'o:'+goalOwnerEff(g). invalidateBalances()에서 _balCache/_recCache와 함께 전체 clear. 테스트 캐시 충돌 13개 발견 후 복구. node test/run.js 3697->3698/3698 통과. node --check logic.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.490->1.47.491, sw.js CACHE v757->v758. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-20T03:07:08.707Z",
       "summary": "develop(cycle380, 00e06e5: globalSearchBody() 목표 행 aria-label에 달성/연결자산 경고 보강)을 검토했다. goalRowHTML()(index.html:4091)의 aria-label 템플릿 리터럴과 바이트 단위로 대조해 완전히 동일함을 확인(p.achieved/ariaWarn/overdue 순서와 조건식 일치), ariaWarn 계산에 쓰는 assetGone/assetBroken/hasUnknown도 바로 위에서 시각 캡션에 쓰는 것과 동일한 변수(재선언 없음, cycle270이 추가한 주석 바로 아래)임을 확인. 새 테스트 2건이 구현과 정확히 일치(연결 자산 삭제 시 aria-label 반영, 달성 배지 aria-label 반영). node --check logic.js 통과, node test/run.js 3700/3700 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 380,
+      "phase": "critique",
+      "timestamp": "2026-11-20T04:12:02.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-380에서 다룬 모든 주제를 배제 목록으로 주고(SRI/빌드 스텝은 재차 범위 밖으로 안내) 새 영역을 조사시켰다. 발견: doSettleN()(index.html:6000-6025)의 N인 정산 부분 실패 처리가 실제 버그를 품고 있다 — 현금성 자산 없는 참가자를 만나면 이미 만든 이체 거래는 유지하고 settledThrough는 당기지 않는 cycle367의 의도된 동작이지만, confirmSettlementN()(index.html:5990-5998)이 재시도 시 settlementSummaryN/settleUpTransfers(logic.js:238,282)로 transfers를 처음부터 다시 계산해 이미 생성된 transfer형 '정산' 거래를 전혀 고려하지 않는다. 막혔던 참가자의 현금 자산을 추가해 재시도하면 이미 성공한 이체까지 포함해 전부 다시 생성되어 실제 돈이 안 움직였는데도 같은 송금이 두 번 기록된다. index.html:6000-6025, logic.js:238-296 직접 대조로 재확인, cycle367 기존 테스트가 재시도 경로를 전혀 다루지 않음을 test/run.js에서 확인. pending_advance_plan에 settleTransfer 플래그 + netOutSettledTransfers(logic.js) 순수 함수로 재계산 시 기존 완료분 상쇄 + end-to-end 재시도 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
