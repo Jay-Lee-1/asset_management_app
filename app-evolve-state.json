@@ -1,15 +1,8 @@
 {
   "cycle": 381,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 376,
-      "phase": "develop",
-      "timestamp": "2026-11-19T10:20:00.000Z",
-      "summary": "Explore 서브에이전트에게 cycle371-375에서 다룬 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: 메인 거래 삭제/편집 경로인 delTx()(거래 삭제 버튼 공통 핸들러)·recEditScope()(반복 내역 삭제/수정 범위 선택: 이 내역만/이후 모두/전체)·openAdjustEdit()/delAdjust()(잔액조정 전용 편집·삭제)가 FUNCTIONS 목록 밖에 있어 실행형 테스트가 전혀 없었다. 4개 함수를 FUNCTIONS에 등록하고 실행형 테스트 6건 추가(recId 분기로 confirmSheet 없이 recEditScope 위임/one·future·all 범위 와이어링, confirmSheet 확인 후 deleteTxnsUndo로 실제 삭제, r 못 찾으면 조용히 종료, memo 없으면 category로 대체돼 esc() 이스케이프, income/expense 부호·콤마 포맷·토글 on/off, 조정 내역 확인 삭제). 실제 버그는 발견되지 않음(순수 커버리지 보강). node test/run.js 3651->3657/3657 통과. test/run.js만 수정해 APP_VERSION/CACHE는 올리지 않음.",
-      "commit": null
-    },
     {
       "cycle": 376,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-20T05:12:21.957Z",
       "summary": "critique(cycle380)의 계획대로 N인 정산 부분 실패 후 재시도 시 중복 생성 버그를 고쳤다. doSettleN()이 만드는 transfer 거래에 settleTransfer:true 플래그를 추가(index.html doSettleN). logic.js에 순수 함수 netOutSettledTransfers(byOwner,settleTxns) 추가 — settleTxns({from,to,amount})의 from은 net을 올리고(빚 감소) to는 net을 내린다(받을 돈 감소). index.html에 existingSettleTransfersN(from) 헬퍼를 추가해 DB.txns 중 type==='transfer'&&settleTransfer&&date in [from,TODAY]인 것들을 owner 기준({from,to,amount})으로 변환하고, confirmSettlementN()과 openSettlement()의 N인 분기 양쪽에서 settlementSummaryN 직후 sn.byOwner=netOutSettledTransfers(sn.byOwner,existingSettleTransfersN(from))를 적용한 뒤 settleUpTransfers를 호출하도록 수정 — 화면 표시와 재시도 생성이 항상 같은 값을 쓰게 됐다. 계획이 제안한 'tx/rec 쌍 테스트' 대신(이 버그엔 쌍둥이 코드가 없음) netOutSettledTransfers 유닛 테스트 4건과 confirmSettlementN+doSettleN 부분실패→재시도 end-to-end 테스트 1건을 추가(부분 실패 후 아이의 현금 자산을 추가해 재시도하면 이미 성공한 배우자->나 이체는 다시 안 만들고 아이->나 몫만 새로 생김을 confirmSheet 메시지와 DB.txns 개수로 검증). cycle367의 기존 부분 실패 테스트는 수정 없이 그대로 통과해 회귀 없음을 확인. node test/run.js 3700->3705/3705 통과. node --check logic.js 통과. index.html/logic.js를 수정했으므로 APP_VERSION 1.47.492->1.47.493, sw.js CACHE v759->v760. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 381,
+      "phase": "develop",
+      "timestamp": "2026-11-20T06:12:42.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle376-380에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: assetBodyHTML()의 자산관리 탭 자산 행(role=\"button\", 일반 모드 .row-tap과 일괄선택 모드 asset-item 둘 다)이 '총자산 미포함' 칩과 '가격 미확인' 경고를 시각적으로만 보여주고 aria-label에는 이름·금액만 담아, cycle377(calCellsFor)/cycle379,380(goalRowHTML/goalsManageBody/globalSearchBody)에서 이미 고친 것과 같은 버그 클래스의 네 번째 미발견 인스턴스였다. includeInTotal===false 또는 시세평가 자산의 rateUnknown()이 true일 때 두 경고 문구를 aria-label에도 추가. 실행형 테스트 4건 추가(미포함 칩 일반/선택모드, 가격 미확인 있음/없음 회귀). node test/run.js 3705->3709/3709 통과. index.html을 수정했으므로 APP_VERSION 1.47.493->1.47.494, sw.js CACHE v760->v761.",
+      "commit": "0121cb9"
     }
   ]
 }
