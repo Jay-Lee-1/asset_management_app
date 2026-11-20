@@ -422,6 +422,9 @@ const FUNCTIONS = [
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // _lastEditCache는 lastActualAmount()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다
 // (app-evolve cycle75 advance: 매번 r.edits 전체를 스캔하지 않도록 추가).
+// _goalHistCache/GOAL_HIST_CACHE_MAX는 goalHistoryFor()가 참조하는 모듈 스코프 캐시 상태라
+// 같은 방식으로 끌어온다(app-evolve cycle379 critique/advance: 목표마다 매번 allTxns 전체 재생을
+// 캐싱 없이 반복하던 성능 드리프트를 _balCache/_recCache와 같은 패턴으로 메움).
 // isPlanAcct는 planNegatives()가 DB.assets.filter(isPlanAcct)로 부르는 "플랜 대상 통장"
 // 판정 상수라 같은 방식(extractConst)으로 끌어온다.
 // _savedDrafts는 saveTx/saveRec의 더블탭 중복 저장 가드(app-evolve cycle79 advance)가 쓰는
@@ -438,7 +441,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET',
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET',
   // WK(주말·공휴일 조정 어휘)는 renderRecSheet가 d.freq==='monthly'일 때 WK[d.weekend||'none'][0]로
   // 직접 참조한다(app-evolve cycle372 advance, openTxSheet/openRecSheet 실행형 테스트 추가 — 이
   // 전까지 renderRecSheet() 자체가 한 번도 실행된 적이 없어 빠져 있었다).
@@ -6346,6 +6349,7 @@ test('goalRowHTML/openGoalsList: 목표를 달성하면 "달성" 배지와 함�
   assert.ok(!/aria-label="[^"]*달성/.test(html), '아직 미달성이면 aria-label에도 없어야 함');
 
   sandbox.DB.nwHistory = [{ date: '2026-01-01', nw: 1000000 }]; // cur===target → 달성
+  sandbox._goalHistCache.clear(); // 실제 앱은 이 변경 전에 항상 save()->invalidateBalances()를 거쳐 비우지만, 여기선 DB.nwHistory를 직접 바꿔치기하므로 수동으로 비운다(app-evolve cycle379 advance)
   html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
   assert.ok(html.includes('>달성<'), '달성하면 배지가 보여야 함');
   assert.ok(/aria-label="[^"]*달성[^"]*"/.test(html), 'goalRowHTML aria-label에 "달성"이 보강되지 않음');
@@ -6713,6 +6717,50 @@ test('goalHistoryFor/goalLinkedAssetGone: asset형 목표는 연결된 자산 �
   const nwGoal = { id: 'g3', type: 'networth', owner: 'all' };
   assert.deepStrictEqual(sandbox.goalHistoryFor(nwGoal), sandbox.DB.nwHistory, 'networth형은 변함없이 nwHistoryForOwner(owner=all) 결과여야 함');
 });
+/* goalHistoryFor()가 8곳 이상(goalRowHTML/goalsManageBody/homeAlerts의 goalBehind·goalNewlyAchieved
+ * 루프 등)에서 목표마다 거듭 불려 allTxns 전체 재생+assetBalanceSeries/nwHistoryForOwner를 매번
+ * 다시 계산하던 성능 드리프트를 _balCache/_recCache와 같은 LRU 캡 Map(_goalHistCache)으로 메웠다
+ * (app-evolve cycle379 critique/advance) — 캐시가 "적중"하는지(두 번째 호출은 DB 변경을 반영하지
+ * 않고 첫 호출 결과를 그대로 돌려줌)와 invalidateBalances()로 비우면 다시 최신 값을 계산하는지를
+ * 직접 확인한다. */
+test('goalHistoryFor: 같은 목표(같은 linkedAssetId/owner)를 두 번 부르면 캐시에 적중해 DB 변경을 반영하지 않다가, invalidateBalances() 뒤에는 다시 최신값을 계산한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    owners: ['나'],
+    assets: [{ id: 'a1', type: 'cash', owner: '나', baseAmount: 100000 }],
+    txns: [],
+    recurrences: [],
+    settings: { confirmTransfers: false },
+    nwHistory: [{ date: '2026-06-15', nw: 0 }],
+    goals: [],
+  };
+  const assetGoal = { id: 'g1', type: 'asset', linkedAssetId: 'a1', targetAmount: 200000 };
+  const first = sandbox.goalHistoryFor(assetGoal);
+  assert.strictEqual(first[first.length - 1].nw, 100000, 'baseAmount 100000 그대로여야 함');
+
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-10', type: 'income', toAssetId: 'a1', amount: 900000 }); // invalidateBalances 없이 DB만 바꿔치기
+  const second = sandbox.goalHistoryFor(assetGoal);
+  assert.strictEqual(second[second.length - 1].nw, 100000, '캐시에 적중해 입금 900000이 반영 안 된 낡은 값을 그대로 돌려줘야 함(캐시가 실제로 동작 중임을 확인)');
+  assert.strictEqual(second, first, '같은 키로 캐시된 동일한 배열 참조를 돌려줘야 함');
+
+  // 메인 sandbox의 invalidateBalances는(880행 근처) save()/renderCurrent 등과 같은 이유로 항상
+  // no-op 스파이로 덮여 있어(실제 동작은 별도 isolated 컨텍스트(makeInvalidateBalancesCtx)에서
+  // 검증) 여기선 그 역할(_goalHistCache.clear())을 직접 호출해 흉내낸다 — 다른 수십 곳의
+  // sandbox._balCache.clear() 테스트와 같은 패턴.
+  sandbox._goalHistCache.clear();
+  const third = sandbox.goalHistoryFor(assetGoal);
+  assert.strictEqual(third[third.length - 1].nw, 1000000, '캐시를 비운 뒤엔 입금 900000이 반영된 최신값(100000+900000)을 다시 계산해야 함');
+
+  const nwGoal = { id: 'g2', type: 'networth', owner: 'all' };
+  const nwFirst = sandbox.goalHistoryFor(nwGoal);
+  assert.deepStrictEqual(nwFirst, sandbox.DB.nwHistory, 'owner===all은 nwHistoryForOwner가 hist를 그대로 돌려줘야 함');
+  sandbox.DB.nwHistory = [{ date: '2026-06-15', nw: 999999 }];
+  const nwSecond = sandbox.goalHistoryFor(nwGoal);
+  assert.strictEqual(nwSecond, nwFirst, 'networth형도 같은 owner 키로 캐시에 적중해 바뀐 DB.nwHistory를 반영하지 않은 낡은 참조를 그대로 돌려줘야 함');
+  sandbox._goalHistCache.clear();
+  const nwThird = sandbox.goalHistoryFor(nwGoal);
+  assert.deepStrictEqual(nwThird, sandbox.DB.nwHistory, '캐시를 비운 뒤엔 바뀐 DB.nwHistory를 다시 반영해야 함');
+});
 test('goalHistoryFor/goalLinkedAssetBroken: 연결 후 자산 종류가 fx/gold/stock(시세평가)나 debt(부호 반대)로 바뀌면 추측하지 않고 빈 이력을 돌려준다(app-evolve cycle214 develop)', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.DB = {
@@ -6761,6 +6809,7 @@ test('goalRowHTML/openGoalsList: asset형 목표는 연결 자산의 잔액을 �
   assert.ok(!html.includes('연결된 자산이 삭제됐어요'));
 
   sandbox.DB.assets = []; // 자산이 삭제됨
+  sandbox._goalHistCache.clear(); // 실제 앱은 자산 삭제도 save()->invalidateBalances()를 거치지만, 여기선 DB.assets를 직접 바꿔치기하므로 수동으로 비운다(app-evolve cycle379 advance)
   html = sandbox.goalRowHTML(g);
   assert.ok(html.includes('연결된 자산이 삭제됐어요'), '자산이 사라지면 중립 안내 캡션이 붙어야 함');
   assert.ok(html.includes('목표 진행률 0%'), '자산이 사라지면 cur를 추측하지 않고 0%로 중립 처리해야 함');
@@ -6793,6 +6842,7 @@ test('goalRowHTML/openGoalsList: 연결 자산이 삭제되진 않았지만 종�
   assert.ok(!html.includes('연결된 자산을 추적할 수 없어요'));
 
   sandbox.DB.assets[0].type = 'stock'; sandbox.DB.assets[0].stockCode = '005930'; // 자산은 안 지워졌지만 종류가 바뀌어 더 이상 원장 잔액으로 추적 불가
+  sandbox._goalHistCache.clear(); // 실제 앱은 자산 종류 변경도 save()->invalidateBalances()를 거치지만, 여기선 DB.assets를 직접 바꿔치기하므로 수동으로 비운다(app-evolve cycle379 advance)
   html = sandbox.goalRowHTML(g);
   assert.ok(html.includes('연결된 자산을 추적할 수 없어요'), '삭제되지 않았으므로 "삭제됐어요"가 아니라 별도 캡션이 붙어야 함');
   assert.ok(!html.includes('연결된 자산이 삭제됐어요'));
@@ -24234,7 +24284,7 @@ function makeInvalidateBalancesCtx() {
   const ctx = {};
   vm.createContext(ctx);
   vm.runInContext(
-    [extractConst('_balCache'), extractConst('_recCache'), extractConst('_lastEditCache'), extractFunction('invalidateBalances')].join('\n'),
+    [extractConst('_balCache'), extractConst('_recCache'), extractConst('_lastEditCache'), extractConst('_goalHistCache'), extractFunction('invalidateBalances')].join('\n'),
     ctx, { filename: 'invalidateBalances-real' }
   );
   return ctx;
@@ -24246,6 +24296,7 @@ test('invalidateBalances(fromDate): fromDate 이전 upto의 _balCache 항목은 
   ctx._balCache.set('2026-06-15|2026-07-01', { a1: 300 });
   ctx._recCache.set('2023-01-01|2027-01-01', [{ id: 'rec_x_2026-06-01' }]);
   ctx._lastEditCache.set({ id: 'r1' }, { date: '2026-05-01' });
+  ctx._goalHistCache.set('o:all', [{ date: '2026-05-01', nw: 100 }]);
   ctx.invalidateBalances('2026-06-10');
   assert.ok(ctx._balCache.has('2026-05-31|2026-05-31'), 'fromDate 이전 upto는 이번 변경으로 바뀔 수 없으니 그대로 남아있어야 함');
   assert.ok(!ctx._balCache.has('2026-06-10|2026-06-10'), 'upto===fromDate는 fromDate 이후 거래가 영향을 줄 수 있어 제거되어야 함');
@@ -24253,16 +24304,19 @@ test('invalidateBalances(fromDate): fromDate 이전 upto의 _balCache 항목은 
   assert.strictEqual(ctx._balCache.size, 1, 'fromDate 이전 upto 1건만 남아야 함');
   assert.strictEqual(ctx._recCache.size, 0, '_recCache는 fromDate 유무와 무관하게 항상 전체 clear되어야 함');
   assert.strictEqual(ctx._lastEditCache.size, 0, '_lastEditCache도 항상 전체 clear되어야 함');
+  assert.strictEqual(ctx._goalHistCache.size, 0, '_goalHistCache는 fromDate로 부분 보존할 근거가 없어 fromDate 유무와 무관하게 항상 전체 clear되어야 함');
 });
 test('invalidateBalances(): fromDate를 생략하면 기존처럼 세 캐시를 전부 비운다(회귀 가드)', () => {
   const ctx = makeInvalidateBalancesCtx();
   ctx._balCache.set('2026-05-31|2026-05-31', { a1: 100 });
   ctx._recCache.set('2023-01-01|2027-01-01', []);
   ctx._lastEditCache.set({ id: 'r1' }, { date: '2026-05-01' });
+  ctx._goalHistCache.set('a:x1', []);
   ctx.invalidateBalances();
   assert.strictEqual(ctx._balCache.size, 0, 'fromDate 없이 부르는 기존 70여 호출부는 _balCache도 전체 clear되어야 함(기존 동작과 100% 동일)');
   assert.strictEqual(ctx._recCache.size, 0);
   assert.strictEqual(ctx._lastEditCache.size, 0);
+  assert.strictEqual(ctx._goalHistCache.size, 0, '_goalHistCache도 항상 전체 clear되어야 함');
 });
 
 /* ---------- renderCurrent: 전역 에러 바운더리 ---------- */
@@ -41756,6 +41810,12 @@ test('[실행형] kakaoReady: cleanup()이 던지면(실제로는 거의 없음)
   let pass = 0, fail = 0;
   for (const { name, fn } of tests) {
     try {
+      // goalHistoryFor()가 이제 _goalHistCache(assetId/owner 키)로 결과를 재사용하는데(app-evolve
+      // cycle379 advance), 테스트들은 실제 앱처럼 save()->invalidateBalances()를 거치지 않고
+      // sandbox.DB를 직접 바꿔치기한다 — 같은 'a1'/'나' 같은 키를 이전 테스트가 이미 캐시해뒀으면
+      // 다음 테스트가 그 낡은 값을 그대로 돌려받는다. 테스트 간 캐시 격리를 위해 매 테스트 시작 전에
+      // 비운다(테스트 "안에서" DB를 다시 바꿔치기하는 경우는 각 테스트가 직접 클리어한다).
+      if (sandbox._goalHistCache) sandbox._goalHistCache.clear();
       await fn();
       pass++;
       console.log(`  ok - ${name}`);

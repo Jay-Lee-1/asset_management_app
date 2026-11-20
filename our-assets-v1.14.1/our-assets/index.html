@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.490';
+const APP_VERSION='1.47.491';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -3089,6 +3089,13 @@ function assetBalance(id){ /* 홈/자산관리: 예정 포함 시 이번 달 말
    Map은 삽입 순서를 유지하므로 크기 초과 시 가장 오래된 항목부터 지우는 단순 LRU 캡을 둔다. */
 const BAL_CACHE_MAX=40;
 const _balCache=new Map();
+/* goalHistoryFor()가 목표마다(특히 homeAlerts()의 goalBehind/goalNewlyAchieved 루프에서 목표당
+ * 두 번씩) allTxns(RANGE_FROM,TODAY) 전체 재생+assetBalanceSeries() 또는 nwHistoryForOwner()를
+ * 캐싱 없이 매번 재계산하던 공백을 _balCache/_recCache와 같은 LRU 캡 Map으로 메운다. 키는 목표
+ * 하나하나가 아니라 "어떤 이력을 보는지"로 묶는다 — asset 목표는 linkedAssetId, 그 외(networth)는
+ * goalOwnerEff(g) 결과 하나로 모든 같은 귀속 목표가 공유한다(app-evolve cycle379 critique/advance). */
+const GOAL_HIST_CACHE_MAX=40;
+const _goalHistCache=new Map();
 /* lastActualAmount()가 매번 r.edits 전체를 스캔하지 않도록 회차별 "가장 최근 edits 날짜"만
    기억해 두는 캐시(값은 객체 참조로 키를 잡아 recurrence별로 독립적). _balCache/_recCache와
    같은 규칙으로 invalidateBalances()에서 함께 비운다. */
@@ -3110,6 +3117,12 @@ function invalidateBalances(fromDate,opts){
  if(fromDate){for(const key of _balCache.keys()){if(key.slice(0,key.indexOf('|'))>=fromDate)_balCache.delete(key)}}
  else{_balCache.clear()}
  if(!opts||opts.recsChanged!==false){_recCache.clear();_lastEditCache.clear()}
+ /* _goalHistCache는 fromDate로 부분 제거할 키가 없다(자산 잔액 추이·순자산 추이 모두 날짜 구간이
+  * 아니라 자산/귀속 단위로 묶여 있어 fromDate 이전 구간만 안전하다고 보장할 수 없다) — _balCache와
+  * 달리 매번 전체를 비운다. _saveCore가 이 함수를 DB.nwHistory 갱신보다 먼저 부르므로, 이번 save로
+  * nwHistory가 바뀌어도 그 다음 goalHistoryFor() 호출(캐시가 비어있음)이 최신 값을 다시 계산해
+  * 들어간다 — 오래된 값이 캐시에 남을 틈이 없다(app-evolve cycle379 critique/advance). */
+ _goalHistCache.clear();
 }
 function balancesUpTo(dateStr){
  const upto=dateStr>RANGE_TO?RANGE_TO:dateStr;
@@ -4042,14 +4055,23 @@ function goalLinkedAssetBroken(g){
  * goalProgress(hist.length 0)가 cur:0·achieved:false로 중립 처리하고, homeAlerts의 goalBehind도 hist.length>=2
  * 요건에 걸려 같이 억제된다. */
 function goalHistoryFor(g){
+ const key=g.type==='asset'?'a:'+g.linkedAssetId:'o:'+goalOwnerEff(g);
+ if(_goalHistCache.has(key))return _goalHistCache.get(key);
+ let out;
  if(g.type==='asset'){
   const a=(DB.assets||[]).find(x=>x.id===g.linkedAssetId);
-  if(!a||isMarketValued(a)||a.type==='debt')return [];
-  const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
-  const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
-  return assetBalanceSeries(txns,a.id,assetBase(a),1,dates).map(p=>({date:p.date,nw:p.bal}));
+  if(!a||isMarketValued(a)||a.type==='debt')out=[];
+  else{
+   const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
+   const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
+   out=assetBalanceSeries(txns,a.id,assetBase(a),1,dates).map(p=>({date:p.date,nw:p.bal}));
+  }
+ }else{
+  out=nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g));
  }
- return nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g));
+ _goalHistCache.set(key,out);
+ if(_goalHistCache.size>GOAL_HIST_CACHE_MAX)_goalHistCache.delete(_goalHistCache.keys().next().value);
+ return out;
 }
 function goalRowHTML(g){
  const p=goalProgress(g,goalHistoryFor(g),TODAY); /* 목표가 귀속별(owner)이면 그 귀속만의 순자산 추이로, 자산 연결 목표면 그 자산 하나의 잔액 추이로 진행률·투사를 계산(goalHistoryFor) */

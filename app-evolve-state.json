@@ -1,19 +1,8 @@
 {
-  "cycle": 379,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "goalHistoryFor() recomputes full transaction history per-goal with no caching, unlike every sibling hot path",
-    "why": "For asset-linked goals, goalHistoryFor() (index.html:4044-4049) calls allTxns(RANGE_FROM,TODAY) plus assetBalanceSeries() fresh on every call, with no memoization. It's invoked per-goal in a loop from at least 8 sites: goalRowHTML (4055), goalsManageBody search (4131), achievedAckAt reset check (4252), another goal row path (4265), openGoalsList (7923), assetsCsv (9470/9778 area), goalsToCSV export (9784) — and, most impactful, twice independently inside a single homeAlerts() call (goalBehind loop at 12126, goalNewlyAchieved loop at 12137), which runs on nearly every save() while the home tab (the app's default tab) is active. So one save with N asset-linked goals does 2N full DB.txns scans + assetBalanceSeries recomputations in that single homeAlerts() call alone, on top of whatever goal-screen renders also recompute it. As a household's transaction history grows over years (RANGE_FROM is a fixed, ever-lengthening floor of 2023-01-01) and as users add more goals (the app's own feature encourages this), this cost grows unboundedly and recurs on almost every interaction — the exact kind of hidden, worsening performance debt the app's own comments show the team has deliberately eliminated elsewhere (_balCache/_recCache at index.html:3090-3113, _bwc Map at 12093, makeMonthCatCache at 8121) but never applied to goals.",
-    "approach": "Add a module-level cache for goalHistoryFor(), mirroring the existing _balCache/_recCache pattern (index.html ~3090-3113) so it plugs into the already-established invalidation machinery: (1) Add `const _goalHistCache=new Map();` near _balCache, with the same LRU-cap style as BAL_CACHE_MAX (e.g. cap 40). (2) In goalHistoryFor(g) (index.html:4044), compute a cache key: for g.type==='asset', key='a:'+g.linkedAssetId; otherwise key='o:'+goalOwnerEff(g). Check _goalHistCache.get(key) first and return it; otherwise compute as today, store, and apply the LRU cap (delete oldest key when size exceeds cap). (3) Clear _goalHistCache inside invalidateBalances() (index.html ~3109-3113) alongside _balCache.clear(), unconditionally (not gated behind opts.recsChanged) since DB.nwHistory is rewritten every save() in _saveCore and the owner-type branch depends on it. (4) No caller-side changes needed — all ~8 call sites call goalHistoryFor(g) already and benefit transparently. (5) Check whether test/run.js's text-extraction harness picks up goalHistoryFor/invalidateBalances by name; if so, declare the new cache variable in the same style _balCache/_recCache already use so extraction keeps working, and add tests verifying cache hits return the same data as an uncached call and that invalidateBalances() clears it (e.g. mutate linked asset's txns, call invalidateBalances, confirm goalHistoryFor reflects the change). Keep the change surgical: do not touch goalProgress()/assetBalanceSeries() in logic.js, only add caching at the goalHistoryFor() call boundary in index.html. Bump APP_VERSION and sw.js CACHE since index.html changes."
-  },
+  "cycle": 380,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 374,
-      "phase": "advance",
-      "timestamp": "2026-11-19T05:14:11.000Z",
-      "summary": "critique(cycle374)의 계획대로 esc() 헬퍼를 우회하던 7곳(rMemo, Supabase URL/key, 카카오 키, catAddDraft.name, catRenameDraft.name)을 모두 esc() 호출로 교체했다. renameCatSheet를 FUNCTIONS에 추가해 실제 실행으로 승격. 회귀 테스트 3건 추가(& / \" 섞인 값 왕복 확인). node test/run.js 3638->3641/3641 통과. APP_VERSION 1.47.482->1.47.483, sw.js CACHE v749->v750.",
-      "commit": "ebed91a"
-    },
     {
       "cycle": 375,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-20T00:28:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-379에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: goalHistoryFor()(index.html:4044-4049, 목표의 진행률 계산용 이력 조회)가 자산 연결형 목표에 대해 allTxns(RANGE_FROM,TODAY) 전체 스캔 + assetBalanceSeries()를 매 호출마다 캐싱 없이 재계산함을 확인(index.html ~3090-3113의 _balCache/_recCache, 12093 _bwc Map, 8121 makeMonthCatCache와 같은 패턴이 이미 여러 곳에 있는데도 goals만 빠짐). 8개 이상 호출부(goalRowHTML 4055, goalsManageBody 4131, achievedAckAt 리셋 4252, 4265, openGoalsList 7923, assetsCsv/goalsToCSV 9470/9784) 중 특히 homeAlerts() 내부에서 goalBehind(12126)·goalNewlyAchieved(12137) 루프가 목표마다 각각 독립적으로 호출해, 홈 탭이 기본 탭인 이 앱에서 거의 모든 save()마다 목표 수 N개당 2N번의 전체 거래 스캔이 반복됨을 grep으로 호출부 전부 대조해 재확인. 거래 내역이 해마다 쌓이고(RANGE_FROM 고정, 상한만 늘어남) 목표 수가 늘수록 비용이 무한정 커지는 성능 드리프트. pending_advance_plan에 _goalHistCache(Map, _balCache와 동일한 LRU 캡 패턴)를 추가하고 goalHistoryFor()에서 캐시 적중 시 바로 반환, invalidateBalances()에서 함께 비우는 계획 저장(호출부 변경 불필요). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 379,
+      "phase": "advance",
+      "timestamp": "2026-11-20T01:30:00.000Z",
+      "summary": "critique(cycle379)의 계획대로 goalHistoryFor()(index.html:4044)에 _balCache/_recCache와 같은 LRU 캡 패턴의 _goalHistCache(Map, GOAL_HIST_CACHE_MAX=40)를 추가했다. 캐시 키는 asset형이면 'a:'+linkedAssetId, 그 외(networth)는 'o:'+goalOwnerEff(g) — 목표 개별이 아니라 '어떤 이력을 보는지'로 묶어 같은 귀속/자산을 보는 여러 목표가 캐시를 공유한다. invalidateBalances()에서 _balCache/_recCache와 함께 무조건 전체 clear(날짜로 부분 보존할 근거가 없음, _saveCore가 DB.nwHistory 갱신보다 먼저 이 함수를 불러 다음 조회 시 항상 최신값을 다시 계산하므로 안전). 구현 중 실제로 테스트를 돌려보니 계획이 놓친 위험이 드러났다 — 테스트들이 save()->invalidateBalances()를 거치지 않고 sandbox.DB를 직접 바꿔치기하는 패턴이 수십 곳에 널려 있어, 캐시를 그대로 추가하자 'a1'/'나'/'all' 같은 흔한 키가 테스트 간·테스트 내에서 충돌해 13개 테스트가 깨졌다. 테스트 러너 루프(test/run.js 실행부)에 매 테스트 시작 전 sandbox._goalHistCache.clear()를 추가해 테스트 간 오염을 없앴고(10개 복구), 같은 테스트 안에서 DB를 바꿔치기한 뒤 바로 재조회하는 3곳(goalRowHTML의 달성 배지/연결 자산 삭제/연결 자산 종류 변경 테스트)에는 그 자리에 수동으로 sandbox._goalHistCache.clear()를 추가해 나머지 3개도 복구했다. CONSTS 목록에 GOAL_HIST_CACHE_MAX/_goalHistCache 추가, invalidateBalances 실제 동작을 isolated vm으로 검증하는 makeInvalidateBalancesCtx 추출 목록에도 _goalHistCache 추가. 캐시 적중(두 번째 호출이 DB 변경을 반영하지 않고 낡은 참조를 그대로 돌려줌)과 invalidateBalances 이후 재계산을 직접 검증하는 테스트 1건, invalidateBalances 기존 테스트 2건에 _goalHistCache 어서션 보강. node test/run.js 3697->3698/3698 통과(과정 중 캐시 충돌로 13개 실패를 거쳐 전부 복구). node --check logic.js 통과, index.html의 4개 인라인 <script> 블록 모두 node --check 통과. index.html을 수정했으므로 APP_VERSION 1.47.490->1.47.491, sw.js CACHE v757->v758. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
