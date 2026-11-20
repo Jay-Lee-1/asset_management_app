@@ -1,15 +1,8 @@
 {
   "cycle": 382,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 377,
-      "phase": "develop",
-      "timestamp": "2026-11-19T14:10:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-376에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: goLedgerTo()(index.html:4497, 가계부 날짜 행 탭 → 전체내역 드릴다운)가 sumTap/openAssetHistory/openCatHistory와 달리 History 탭 필터(ST.hist.cat/q/assetId/catExact/owner/selMode)를 리셋하지 않고 histEnsureRange()만 불러 화면을 연다. 재현: 전체내역에서 owner/category/검색어/자산 필터를 걸어둔 채 홈/플랜의 '이번 달 나갈 돈' 등 필터 없는 카드에서 그 필터와 안 맞는 행을 탭하면, 화면은 열리지만 대상 행이 필터에 걸러져 안 보여 거래가 조용히 사라진 것처럼 보인다. 수정: list 모드 분기에서 histEnsureRange() 호출 전에 다른 세 함수와 동일하게 cat='전체'/q=''/assetId=null/catExact=null/catExactType=null/owner='전체'/selMode=false/sel.clear()를 리셋하고 histInvalidate()를 호출하도록 추가. goLedgerTo/histEnsureRange를 FUNCTIONS에 등록하고 flashRow를 go()와 같은 화면 전용 no-op 스텁으로 추가해 실행형 테스트 3건 추가(list 모드 필터 전체 리셋+이동, calendar 모드는 ST.hist 무관, histEnsureRange로 범위 밖 날짜도 보이게 확장). node test/run.js 3661->3664/3664 통과. index.html을 수정했으므로 APP_VERSION 1.47.485->1.47.486, sw.js CACHE v752->v753.",
-      "commit": "dd94ec1"
-    },
     {
       "cycle": 377,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-20T09:11:14.119Z",
       "summary": "critique(cycle381)의 계획대로 debtsBehind()(index.html, 옛 12037)와 debtsPaidOff()(옛 12067)의 중복 전체 스캔을 debtPayoffStatuses() 공유 함수로 통합했다. txns(allTxns+!isPending)/dates(assetBalSampleDates 60)를 한 번만 계산하고, includeInTotal한 debt 자산을 한 번만 순회하며 assetBalanceSeries를 자산당 정확히 한 번만 호출, debtNewlyPaidOff로 확정된 자산에만 assetBalancePeak을 계산해(기존엔 후보 전체에 계산한 뒤 버렸다) 그만큼도 줄였다. debtsBehind()/debtsPaidOff()는 기존 시그니처·반환 모양을 그대로 유지하는 thin wrapper로 바꿔 openDebtBehindList/openDebtPaidOffList와 test/run.js 호출부는 수정 불필요. homeAlerts()(핫패스 — 저장/탭 전환 거의 전부에서 불림)는 debtPayoffStatuses()를 한 번만 호출해 .behind/.paidOff를 읽도록 수정. test/run.js FUNCTIONS에 debtPayoffStatuses 등록. 테스트 3건 추가: mixed fixture(정체/완납/진행중/이력없음/총계제외 5종)로 debtPayoffStatuses()와 debtsBehind()/debtsPaidOff() 출력이 JSON.stringify 기준 완전히 동일함을 확인, assetBalanceSeries 호출 카운터로 따로 부르면 자산당 2번(behind+paidOff 각 1번=합 4회, 자산 2개)이던 게 debtPayoffStatuses()는 자산당 1번(합 2회)으로 줄었음을 확인, homeAlerts()가 debtPayoffStatuses()를 정확히 1회만 호출함을 확인. node test/run.js 3709->3712/3712 통과. node --check logic.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.494->1.47.495, sw.js CACHE v761->v762. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 382,
+      "phase": "develop",
+      "timestamp": "2026-11-20T10:13:42.920Z",
+      "summary": "general-purpose 서브에이전트에게 cycle377-381에서 다룬 모든 주제(role=button aria-label 패턴, goalHistoryFor 캐싱, N인 정산 재시도, saveBudget undo, recSel 일괄작업, 히스토리 필터 리셋, debtPayoffStatuses 통합 등)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: globalSearchBody()(통합검색)의 자산 결과 행이 cycle380에서 같은 함수의 목표(goal) 행에만 달성/연결자산 경고를 aria-label에 보강했을 뿐, 바로 같은 함수 안의 자산(asset) 결과 행은 assetBodyHTML()(cycle381에서 고친 자산관리 탭)과 달리 \"총자산 미포함\" 칩과 \"가격 미확인\" 경고를 시각적으로도, aria-label로도 전혀 보여주지 않던 공백이었다(role=button 패턴의 다섯 번째 미발견 인스턴스, cycle380이 같은 함수 안의 goal 분기만 고치고 asset 분기를 놓친 자리). assetBodyHTML()과 동일한 showEval/isMarketValued/rateUnknown/includeInTotal 조건을 재사용해 시각 칩/경고와 aria-label을 모두 추가. 테스트 3건 추가(미포함 칩 aria-label 반영, 가격 미확인 경고 aria-label 반영, 정상 자산엔 둘 다 안 붙는 회귀 가드) — 테스트 작성 중 index.html을 임시로 되돌려 2건이 실제로 실패하는 것을 확인해 테스트가 버그를 실제로 잡는지 검증한 뒤 복구. node test/run.js 3712->3715/3715 통과. node --check logic.js, node --check sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.495->1.47.496, sw.js CACHE v762->v763.",
+      "commit": "d95b6ba"
     }
   ]
 }
