@@ -203,6 +203,10 @@ const FUNCTIONS = [
   'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
   'csvMapSetMode', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'openTrashList', 'restoreTrashTxn', 'purgeTrashTxn', 'deleteRecsUndo', 'openRecTrashList', 'restoreTrashRec', 'purgeTrashRec', 'deleteAssetsUndo', 'openAssetTrashList', 'restoreTrashAsset', 'purgeTrashAsset', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
+  // purgeAllTrash: 휴지통 7종(거래/자산/반복/목표/카테고리/수량기록/메모) 공용 '전체 비우기'
+  // (app-evolve cycle383 critique → advance) — 7개 open*TrashList() 모두 이 함수를 호출하므로
+  // 그 sandbox들 전체에 함께 올라가야 한다.
+  'purgeAllTrash',
   'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
   'doBulkRecActive', 'recSelPartial', 'recToggleSel', 'recSelAll', 'recDelSel', 'recActiveSel',
   // doBulkRecCat/bulkRecCatPickFor/recCatSel, doBulkRecAssetMove/bulkRecAssetMovePickFor/
@@ -12671,6 +12675,54 @@ test('purgeTrashTxn: 튜토리얼 모드 중에는 twGuard가 막아 확인 시�
   assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.strictEqual(sandbox.DB.trashTxns.length, 1);
   sandbox.TWi = -1;
+});
+// purgeAllTrash: 휴지통 7종(거래/자산/반복/목표/카테고리/수량기록/메모) 공용 '전체 비우기' —
+// 항목별 영구삭제만 있고 일괄 비우기가 없던 공백을 메운다(app-evolve cycle383 critique → advance).
+// 7개 open*TrashList()가 모두 재사용하는 함수라, 호출부와 분리해 key/reopenFn/label을 직접 넘겨
+// 검증한다. 단건 purgeTrashTxn과 동일하게 DB.deletedIds 톰스톤은 건드리지 않는다.
+test('purgeAllTrash: 비어있으면 확인 시트조차 띄우지 않는다(no-op)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { trashTxns: [] };
+  sandbox.confirmSheetCalls = [];
+  let reopened = 0;
+  sandbox.purgeAllTrash('trashTxns', () => { reopened++; }, '거래');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '빈 트래시는 확인 시트를 띄울 필요가 없음');
+  assert.strictEqual(reopened, 0);
+});
+test('purgeAllTrash: 확인하면 해당 키만 비우고 reopenFn을 호출하고 토스트를 띄운다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { trashTxns: [{ id: 't1' }, { id: 't2' }], trashAssets: [{ id: 'a1' }] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastToast = null;
+  let reopened = 0;
+  sandbox.purgeAllTrash('trashTxns', () => { reopened++; }, '거래');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '바로 지우지 않고 확인 시트를 띄워야 함');
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('2'), '안내문에 개수가 포함돼야 함');
+  assert.strictEqual(sandbox.DB.trashTxns.length, 2, '확인 전에는 지워지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashTxns.length, 0, '확인하면 해당 키가 전부 비워져야 함');
+  assert.strictEqual(sandbox.DB.trashAssets.length, 1, '다른 트래시 키는 건드리면 안 됨');
+  assert.strictEqual(reopened, 1, '비운 뒤 reopenFn을 호출해 목록을 새로 그려야 함');
+  assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
+});
+test('purgeAllTrash: 튜토리얼 모드 중에는 twGuard가 막아 확인 시트조차 띄우지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { trashTxns: [{ id: 't1' }] };
+  sandbox.confirmSheetCalls = [];
+  let reopened = 0;
+  sandbox.purgeAllTrash('trashTxns', () => { reopened++; }, '거래');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.DB.trashTxns.length, 1);
+  assert.strictEqual(reopened, 0);
+  sandbox.TWi = -1;
+});
+test('purgeAllTrash: deletedIds 톰스톤은 건드리지 않는다(단건 purgeTrashTxn과 동일한 원칙, 동기화 전파용)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { trashTxns: [{ id: 't1' }], deletedIds: { t1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeAllTrash('trashTxns', () => {}, '거래');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.deletedIds.t1, 100);
 });
 
 /* ---------- archiveTxnsBefore/archiveMonthPicked/openArchiveOld: '오래된 데이터 정리'
