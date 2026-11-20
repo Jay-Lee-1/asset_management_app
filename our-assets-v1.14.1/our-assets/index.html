@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.500';
+const APP_VERSION='1.47.501';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1953,7 +1953,7 @@ function seed(){
  ];
  return {
   version:5, catsV2:true,
-  settings:{themeMode:'system',includeScheduled:false,assetSort:'custom',groupOrder:[...DEFAULT_GROUP_ORDER]},
+  settings:{themeMode:'system',includeScheduled:false,assetSort:'custom',goalSort:'custom',groupOrder:[...DEFAULT_GROUP_ORDER]},
   owners:['나','배우자','공용'],
   rates:{goldPerG:152000,fx:{USD:1384.5,JPY:8.94,EUR:1498.2},stocks:{'005930':79800},crypto:{}},
   assets, txns, recurrences:rec, inquiries:[],
@@ -1963,7 +1963,7 @@ function seed(){
 
 function emptyDB(){return {
   version:5,catsV2:true,
-  settings:{themeMode:(typeof DB!=='undefined'&&DB&&DB.settings&&DB.settings.themeMode)||'system',includeScheduled:false,assetSort:'custom',groupOrder:[...DEFAULT_GROUP_ORDER]},
+  settings:{themeMode:(typeof DB!=='undefined'&&DB&&DB.settings&&DB.settings.themeMode)||'system',includeScheduled:false,assetSort:'custom',goalSort:'custom',groupOrder:[...DEFAULT_GROUP_ORDER]},
   owners:['나','배우자','공용'],
   rates:{goldPerG:0,fx:{USD:0,JPY:0,EUR:0},stocks:{},crypto:{}},
   assets:[],txns:[],recurrences:[],inquiries:[],goals:[],
@@ -2833,7 +2833,7 @@ function dismissWipeBackup(){
 function writeThemeCache(){try{localStorage.setItem('asset_app_theme_cache',JSON.stringify(themeCachePayload(DB.settings)))}catch(e){}}
 function migrate(){
  DB.rates=DB.rates||{};DB.rates.fx=DB.rates.fx||{};DB.rates.stocks=DB.rates.stocks||{};DB.rates.crypto=DB.rates.crypto||{}; /* crypto 자산 종류 신설(app-evolve cycle219) — 기존 계정엔 rates.crypto 버킷이 없어 assetEval()/rateUnknown()의 R.crypto[code] 접근이 터짐 */
- DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0,mergeDataLossFields:[],notifyMute:{},targetAllocation:{},settle:null,settledThrough:null},DB.settings||{});
+ DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',goalSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0,mergeDataLossFields:[],notifyMute:{},targetAllocation:{},settle:null,settledThrough:null},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
@@ -4121,7 +4121,7 @@ let _goalQT=null;
 function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 전체 목표를 보여준다 — 각 줄의 진행률만 그 목표 자신의 귀속(goalOwnerEff)을 쓴다 */
  const showSearch=!ST.goalSel.mode&&(DB.goals||[]).length>GOAL_LIST_SEARCH_THRESHOLD;
  const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="goalQ" aria-label="목표 검색" placeholder="이름·금액 검색" value="" oninput="goalQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('goalQ')">✕</button></div></div>`:'';
- const toolbar=ST.goalSel.mode?'':`<div class="as-tools"><div class="as-actions"><button class="as-tbtn" onclick="ST.goalSel.mode=true;openGoalsList()">${svg('check')} 선택</button></div></div>`;
+ const toolbar=ST.goalSel.mode?'':`<div class="as-tools"><div class="as-actions"><button class="as-tbtn" onclick="openGoalSortSheet()">${svg('sort')} 정렬</button><button class="as-tbtn" onclick="ST.goalSel.mode=true;openGoalsList()">${svg('check')} 선택</button></div></div>`;
  openSheet(`<h3>목표 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요</div>${searchBar}${toolbar}
   <div id="goalBody">${goalsManageBody('')}</div>
   <div style="height:14px"></div>${ST.goalSel.mode?'':`<button class="btn btn-primary" onclick="openGoalForm()">${svg('plus')} 목표 추가</button>`}`);
@@ -4140,15 +4140,24 @@ function goalQInput(v){
  if(v.trim()===''){const b=$('goalBody');if(b)b.innerHTML=goalsManageBody(v);return}
  _goalQT=setTimeout(()=>{const b=$('goalBody');if(b)b.innerHTML=goalsManageBody(v)},220);
 }
+/* 자산 목록의 openSortSheet()/groupItems()와 동일한 패턴(DB.settings.assetSort) — 목표는
+ * 자산과 달리 드래그 재정렬(a.order) 자체가 없어 'custom'은 그냥 DB.goals의 생성 순서다.
+ * gs를 항상 .slice()한 새 배열로 만들어 정렬해야 한다 — q가 빈 문자열이면 all(=DB.goals)을
+ * 그대로 참조하므로, .slice() 없이 sort()하면 'name'/'progress' 정렬이 DB.goals 자체의
+ * 순서를 영구히 바꿔버려 'custom'으로 되돌려도 원래 생성 순서를 잃는다(app-evolve cycle384). */
 function goalsManageBody(qRaw){
  const q=(qRaw||'').trim();
  const all=DB.goals||[];
- const gs=q?all.filter(g=>matchGoalQuery(g,q)):all;
+ const gs=(q?all.filter(g=>matchGoalQuery(g,q)):all).slice();
  if(!gs.length){
   return all.length
    ?`<div class="empty"><div class="ei">${svg('search')}</div><div class="et">'${esc(q)}'와 일치하는 목표가 없어요</div><div class="es">다른 말로 검색해 보세요</div></div>`
    :`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
  }
+ const goalSort=DB.settings&&DB.settings.goalSort; /* 기존 goalsManageBody 테스트들은 DB.settings 자체를 세팅하지 않는 경우가 많아(검색/선택모드 테스트 등) DB.settings.goalSort로 직접 접근하면 그 테스트들이 깨짐 */
+ if(goalSort==='targetDate')gs.sort((a,b)=>{if(!a.targetDate)return b.targetDate?1:0;if(!b.targetDate)return -1;return a.targetDate<b.targetDate?-1:a.targetDate>b.targetDate?1:0});
+ else if(goalSort==='progress')gs.sort((a,b)=>goalProgress(b,goalHistoryFor(b),TODAY).pct-goalProgress(a,goalHistoryFor(a),TODAY).pct);
+ else if(goalSort==='name')gs.sort((a,b)=>a.name.localeCompare(b.name,'ko'));
  return `<div class="card" style="margin-bottom:6px">${gs.map(g=>{
    const p=goalProgress(g,goalHistoryFor(g),TODAY);
    const ownerBadge=goalOwnerEff(g)!=='all'?` · ${esc(g.owner)}`:'';
@@ -4887,6 +4896,13 @@ function renderAssets(){
 function openSortSheet(){
  const opts=[['custom','사용자 정의순','편집 모드에서 그룹 내 순서를 직접 바꿀 수 있어요'],['amount','금액순',''],['owner','귀속순',''],['name','이름순','']];
  openSheet(`<h3>정렬 기준</h3><div class="desc">각 자산 종류 그룹 안의 정렬 기준이에요</div><div class="opt-list">${opts.map(([v,l,s])=>`<button class="${DB.settings.assetSort===v?'on':''}" onclick="DB.settings.assetSort='${v}';save();closeSheet();renderAssets()"><span class="rd"></span><div><div>${l}</div>${s?`<div class="ol-sub">${s}</div>`:''}</div></button>`).join('')}</div>`);
+}
+/* openSortSheet()와 동일한 패턴 — 목표는 'custom'(생성 순서) 외에 목표일순/진행률순/이름순을 고를 수
+ * 있게 한다(app-evolve cycle384 develop). 목표 관리 시트 위에 떠 있는 하위 시트라 닫을 때 openGoalsList()로
+ * #goalBody만 다시 그리면 되고, 검색/선택모드 상태(ST.goalSel)는 그대로 유지된다. */
+function openGoalSortSheet(){
+ const opts=[['custom','사용자 정의순','등록한 순서 그대로예요'],['targetDate','목표일순',''],['progress','진행률순',''],['name','이름순','']];
+ openSheet(`<h3>정렬 기준</h3><div class="desc">목표 관리 목록의 정렬 기준이에요</div><div class="opt-list">${opts.map(([v,l,s])=>`<button class="${DB.settings.goalSort===v?'on':''}" onclick="DB.settings.goalSort='${v}';save();closeSheet();openGoalsList()"><span class="rd"></span><div><div>${l}</div>${s?`<div class="ol-sub">${s}</div>`:''}</div></button>`).join('')}</div>`);
 }
 /* 삭제될 자산(들)을 참조하는 '활성' 반복거래를 찾는다 — id 하나 또는 Set<id> 둘 다 받는다.
    반복거래는 과거 기록이 아니라 계속 새 항목을 만들어내는 생성기라, 자산 삭제 후에도

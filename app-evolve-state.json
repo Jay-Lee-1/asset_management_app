@@ -1,8 +1,15 @@
 {
   "cycle": 384,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 384,
+      "phase": "develop",
+      "timestamp": "2026-11-20T19:50:00.000Z",
+      "summary": "목표(목표 관리, openGoalsList/goalsManageBody)에만 정렬 옵션이 없던 공백 발견(자산 목록은 openSortSheet()로 금액순/귀속순/이름순을 지원하는데 목표는 항상 DB.goals 생성 순서뿐). DB.settings.goalSort(기본값 'custom'=기존 생성순서) 추가, goalsManageBody()에 targetDate(목표일 가까운순, 날짜없는 목표는 맨뒤)/progress(goalProgress().pct 내림차순)/name(가나다) 정렬 적용, openGoalSortSheet() 추가(openSortSheet()와 동일 패턴), 목표 관리 툴바에 '정렬' 버튼 추가. gs를 항상 .slice()해 DB.goals 원본 순서가 정렬로 영구 오염되지 않게 가드. DB.settings가 없는 기존 테스트가 깨지지 않게 goalSort는 DB.settings&&DB.settings.goalSort로 읽음. 테스트 5건 추가(custom/targetDate/progress/name 정렬 + DB.goals 원본 불변 가드). node test/run.js 3726->3731/3731 통과, node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.500->1.47.501, sw.js CACHE v767->v768.",
+      "commit": null
+    },
     {
       "cycle": 378,
       "phase": "critique",

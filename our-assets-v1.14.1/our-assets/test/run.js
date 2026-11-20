@@ -5397,6 +5397,96 @@ test('[실행형] goalsManageBody: 같은 이름이 아닌 목표 두 건은 삭
   assert.ok(html.includes('aria-label="내 집 마련 삭제"'));
   assert.ok(html.includes('aria-label="비상금 삭제"'));
 });
+/* ---------- goalsManageBody 정렬(DB.settings.goalSort) — 자산 목록의 assetSort(openSortSheet/
+ * groupItems)와 동일한 필요가 목표에도 있었다: 목표가 쌓이면 생성 순서(=기존에 유일했던 순서)
+ * 말고 목표일 가까운 순/진행률 높은 순/이름순으로도 보고 싶을 수 있는데 여태 아무 정렬 옵션이
+ * 없었다(app-evolve cycle384 develop). 'custom'(기본값)은 기존 동작과 100% 동일(DB.goals 순서
+ * 그대로)이어야 하므로, DB.settings 자체가 없는 기존 테스트들이 깨지지 않게 goalSort는
+ * `DB.settings&&DB.settings.goalSort`로 읽는다. */
+test('[실행형] goalsManageBody: DB.settings가 없거나 goalSort가 custom이면 DB.goals 순서 그대로 보여준다(기존 동작과 동일)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '다 자동차', targetAmount: 30000000, targetDate: null },
+      { id: 'g2', name: '가 비상금', targetAmount: 5000000, targetDate: null },
+    ],
+    nwHistory: [],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const htmlNoSettings = sandbox.goalsManageBody('');
+  assert.ok(htmlNoSettings.indexOf('다 자동차') < htmlNoSettings.indexOf('가 비상금'), 'DB.settings가 없으면(goalSort 미정) 생성 순서를 유지해야 함');
+  sandbox.DB.settings = { goalSort: 'custom' };
+  const htmlCustom = sandbox.goalsManageBody('');
+  assert.strictEqual(htmlCustom, htmlNoSettings, "goalSort:'custom'은 DB.settings 없을 때와 동일(생성 순서)해야 함");
+});
+test('[실행형] goalsManageBody: goalSort가 targetDate면 목표일 가까운 순으로, 목표일 없는 목표는 맨 뒤로 보낸다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = {
+    settings: { goalSort: 'targetDate' },
+    goals: [
+      { id: 'g1', name: '먼목표', targetAmount: 1000, targetDate: '2027-06-01' },
+      { id: 'g2', name: '날짜없음', targetAmount: 1000, targetDate: null },
+      { id: 'g3', name: '가까운목표', targetAmount: 1000, targetDate: '2026-03-01' },
+    ],
+    nwHistory: [],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsManageBody('');
+  const iNear = html.indexOf('가까운목표'), iFar = html.indexOf('먼목표'), iNone = html.indexOf('날짜없음');
+  assert.ok(iNear < iFar, '목표일이 더 가까운 쪽이 앞에 나와야 함');
+  assert.ok(iFar < iNone, '목표일이 있는 목표는 모두 목표일 없는 목표보다 앞에 나와야 함');
+});
+test('[실행형] goalsManageBody: goalSort가 progress면 진행률(%) 높은 순으로 보여준다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = {
+    settings: { goalSort: 'progress' },
+    goals: [
+      { id: 'g1', name: '저진행', targetAmount: 1000000, targetDate: null },
+      { id: 'g2', name: '고진행', targetAmount: 1000000, targetDate: null },
+    ],
+    nwHistory: [{ date: '2026-01-01', nw: 900000 }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  // goalProgress는 goal.type!=='asset'이면 전부 같은 nwHistory를 쓰므로(goalHistoryFor), 두 목표의
+  // pct 차이는 targetAmount로만 만든다 — targetAmount가 작을수록(여기선 동일값이라 pct도 동일해
+  // 정렬이 안정적으로 원래 순서를 유지하는지도 함께 확인한다).
+  const htmlEqual = sandbox.goalsManageBody('');
+  assert.ok(htmlEqual.indexOf('저진행') < htmlEqual.indexOf('고진행'), 'pct가 동일하면 정렬이 원래 순서를 흔들지 않아야 함(안정 정렬 확인용 베이스라인)');
+  sandbox.DB.goals[1].targetAmount = 100000; // 고진행의 목표액을 낮춰 pct를 더 높게 만든다(900000/100000=100%, 저진행은 90%)
+  const html = sandbox.goalsManageBody('');
+  assert.ok(html.indexOf('고진행') < html.indexOf('저진행'), '진행률이 더 높은 목표가 앞에 나와야 함');
+});
+test('[실행형] goalsManageBody: goalSort가 name이면 이름(가나다) 순으로 보여준다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = {
+    settings: { goalSort: 'name' },
+    goals: [
+      { id: 'g1', name: '다 자동차', targetAmount: 1000, targetDate: null },
+      { id: 'g2', name: '가 비상금', targetAmount: 1000, targetDate: null },
+      { id: 'g3', name: '나 여행', targetAmount: 1000, targetDate: null },
+    ],
+    nwHistory: [],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsManageBody('');
+  const iGa = html.indexOf('가 비상금'), iNa = html.indexOf('나 여행'), iDa = html.indexOf('다 자동차');
+  assert.ok(iGa < iNa && iNa < iDa, '이름순 정렬은 가→나→다 순서여야 함');
+});
+test('[실행형] goalsManageBody: 정렬 후에도 DB.goals 원본 배열 순서는 바뀌지 않는다(.slice() 없이 sort()하면 빈 검색어일 때 all===DB.goals라 원본이 영구히 섞임)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = {
+    settings: { goalSort: 'name' },
+    goals: [
+      { id: 'g1', name: '다 자동차', targetAmount: 1000, targetDate: null },
+      { id: 'g2', name: '가 비상금', targetAmount: 1000, targetDate: null },
+    ],
+    nwHistory: [],
+  };
+  sandbox.TODAY = '2026-01-01';
+  sandbox.goalsManageBody(''); // 'name' 정렬로 한 번 렌더
+  assert.strictEqual(sandbox.DB.goals[0].id, 'g1', "goalsManageBody가 'name' 정렬을 적용해도 DB.goals[0]은 여전히 생성 순서상 첫 목표(g1)여야 함");
+  assert.strictEqual(sandbox.DB.goals[1].id, 'g2');
+});
 (() => {
   const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout, orig$ = sandbox.$;
   function restore() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; sandbox.$ = orig$; }
