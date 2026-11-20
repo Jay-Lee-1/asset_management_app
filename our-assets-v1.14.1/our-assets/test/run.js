@@ -20948,33 +20948,20 @@ test('saveAsset: 범위 안 만기일은 정상 저장된다(정상 케이스는
   assert.strictEqual(sandbox.DB.assets.length, 1);
   assert.strictEqual(sandbox.DB.assets[0].maturityDate, '2026-06-15');
 });
-/* ---------- saveAsset: 매입일(acquiredAt)도 바로 위 만기일(maturityDate)과 동일한 공백이
- * 있었다 — asAcquiredAt 필드의 openFieldDatePicker 콜백(index.html)은 'ds>TODAY'(미래 금지)만
- * 막고, 날짜피커가 무제한 스크롤이라 만들어내는 비정상적으로 먼 과거 날짜는 saveAsset()에
- * dateBelowRangeFloor 가드가 없어 그대로 저장됐다 — targetDate만 빠져 있던 saveGoal(cycle319)과
- * 같은 클래스의 공백이 saveAsset에도 maturityDate 옆에 남아있었다(app-evolve cycle383 develop).
- * acquiredAt은 allTxns 범위 집계에 직접 쓰이진 않지만(annualizedReturn의 보유기간 계산에만
- * 쓰임), 다른 모든 날짜 필드(date/startDate/endDate/maturityDate/targetDate)와 저장 시점
- * 가드를 대칭으로 맞춰 날짜피커가 만들 수 있는 비정상 날짜(예: 1000년대)가 조용히 저장되는
- * 걸 막는다. ---------- */
-test('saveAsset: RANGE_FROM 이전 매입일은 토스트만 뜨고 저장되지 않는다', () => {
+/* ---------- saveAsset: 매입일(acquiredAt)은 maturityDate/targetDate와 달리 allTxns(RANGE_FROM,
+ * RANGE_TO) 기반 집계에 쓰이지 않고 annualizedReturn()의 보유기간 계산(순수 날짜 차이)에만 쓰인다.
+ * 부동산·오래된 주식처럼 RANGE_FROM(2023-01-01)보다 이전에 실제로 매입한 자산이 흔하고, 매입일
+ * 피커가 과거로 무제한 스크롤되는 것도, CSV/백업 가져오기(csvDateValid)가 acquiredAt에 포맷만
+ * 검사하는 것도 그래서 의도된 동작이다. cycle383 develop이 maturityDate와 같은 RANGE_FROM/
+ * RANGE_TO 가드를 여기 추가했던 것은 사용자의 정상적인 과거 매입일 입력을 막는 회귀였으므로
+ * 되돌렸다(app-evolve cycle383 review) — 아래는 그 회귀가 재발하지 않도록 지키는 테스트다. ---------- */
+test('saveAsset: RANGE_FROM보다 오래된 매입일도 정상 저장된다(부동산·오래된 주식 등 실제 매입일이 RANGE_FROM 이전인 경우)', () => {
   sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
-  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true, name: '지갑', baseAmount: 0, acquiredAt: '2022-12-31' };
+  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true, name: '지갑', baseAmount: 0, acquiredAt: '2010-03-01' };
   sandbox.toastCalls = [];
   sandbox.saveAsset(false);
-  assert.strictEqual(sandbox.DB.assets.length, 0, 'RANGE_FROM 이전 매입일은 저장되면 안 됨');
-  assert.ok(sandbox.toastCalls.some(m => m.includes('2023-01-01')), '하한 날짜를 알려주는 토스트가 떠야 함');
-});
-test('saveAsset: RANGE_TO 이후 매입일은 토스트만 뜨고 저장되지 않는다', () => {
-  sandbox.RANGE_TO = '2028-06-15';
-  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
-  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true, name: '지갑', baseAmount: 0, acquiredAt: '2028-06-16' };
-  sandbox.toastCalls = [];
-  sandbox.saveAsset(false);
-  assert.strictEqual(sandbox.DB.assets.length, 0, 'RANGE_TO 이후 매입일은 저장되면 안 됨');
-  assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
-  sandbox.RANGE_TO = null; /* 뒤이어 돌 다른 테스트가 이 RANGE_TO 덮어쓰기에 취약해지지 않도록 되돌림
-   (saveGoal의 동일 테스트(targetDate RANGE_TO)·saveAsset의 maturityDate RANGE_TO 테스트와 동일 관례) */
+  assert.strictEqual(sandbox.DB.assets.length, 1, 'RANGE_FROM 이전 매입일도 저장되어야 함');
+  assert.strictEqual(sandbox.DB.assets[0].acquiredAt, '2010-03-01');
 });
 test('saveAsset: 범위 안 매입일은 정상 저장된다(정상 케이스는 회귀 없음)', () => {
   sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
@@ -20984,7 +20971,7 @@ test('saveAsset: 범위 안 매입일은 정상 저장된다(정상 케이스는
   assert.strictEqual(sandbox.DB.assets.length, 1);
   assert.strictEqual(sandbox.DB.assets[0].acquiredAt, '2026-06-15');
 });
-test('saveAsset: 매입일이 없으면(선택 안 함) 범위 가드와 무관하게 정상 저장된다(정상 케이스는 회귀 없음)', () => {
+test('saveAsset: 매입일이 없으면(선택 안 함) 정상 저장된다(정상 케이스는 회귀 없음)', () => {
   sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
   sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true, name: '지갑', baseAmount: 0 };
   sandbox.toastCalls = [];

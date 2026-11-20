@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.498';
+const APP_VERSION='1.47.499';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5493,8 +5493,12 @@ function saveAsset(editing){
  if(d.type==='crypto'&&!(d.cryptoQty>0)){toast('보유 수량을 입력해 주세요');return}
  if(d.maturityDate&&dateBelowRangeFloor(d.maturityDate)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
  if(d.maturityDate&&dateAboveRangeCeil(d.maturityDate)){toast(`${RANGE_TO} 이후 날짜는 저장할 수 없어요`);return}
- if(d.acquiredAt&&dateBelowRangeFloor(d.acquiredAt)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return} /* 매입일 피커(무한 스크롤)는 asOpen..'미래 금지'만 막고 과거 하한은 안 걸러 saveGoal(targetDate)/saveAsset(maturityDate)와 같은 '비정상 과거 날짜 저장' 공백이 남아있었다(app-evolve cycle383 develop, cycle319와 동일 클래스) */
- if(d.acquiredAt&&dateAboveRangeCeil(d.acquiredAt)){toast(`${RANGE_TO} 이후 날짜는 저장할 수 없어요`);return} /* 피커가 이미 미래를 막아 실질적으로 걸릴 일은 없지만, 나머지 날짜 필드와 동일한 가드 쌍을 둬 방어적으로 대칭을 맞춘다 */
+ /* acquiredAt(매입일)은 maturityDate/targetDate와 달리 allTxns(RANGE_FROM,RANGE_TO) 기반 집계에 쓰이지 않고
+  * annualizedReturn()의 보유기간 계산(순수 날짜 차이)에만 쓰인다 — 부동산·오래된 주식처럼 실제 매입일이
+  * RANGE_FROM(2023-01-01)보다 이전인 자산이 흔하므로, 매입일 피커가 과거로 무제한 스크롤되는 것도,
+  * CSV/백업 가져오기(csvDateValid)가 acquiredAt에 포맷만 검사하고 범위를 묻지 않는 것도 의도된 동작이다.
+  * cycle383 develop이 maturityDate와 같은 가드를 여기 추가했던 것은 사용자의 정상적인 과거 매입일 입력을
+  * 막는 회귀였으므로 되돌린다(app-evolve cycle383 review). */
  d.name=d.name||ASSET_TYPES[d.type].label;
  const rateWasUnknown=rateUnknown(d); /* stocks[code]를 미리 0으로 채우면 '미확인'과 '실제 0원'을 구분 못 하게 되므로 채우지 않음 — 대신 저장 후 즉시 시세를 당겨온다 */
  const balTypes=['cash','savings','realestate','etc','pension','debt'];

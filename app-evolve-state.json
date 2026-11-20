@@ -1,6 +1,6 @@
 {
   "cycle": 383,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -106,6 +106,13 @@
       "phase": "develop",
       "timestamp": "2026-11-20T14:15:00.000Z",
       "summary": "saveAsset()이 maturityDate(매입일 아님, 만기일)에는 RANGE_FROM/RANGE_TO 가드를 두는데 acquiredAt(매입일, annualizedReturn()의 보유기간 계산에 쓰임)에는 없었음을 발견(saveGoal의 targetDate와 같은 클래스, cycle319에서 고친 버그). 매입일 피커가 무한 스크롤이라 미래만 막고 과거 하한은 안 걸러 비정상적으로 먼 과거 날짜(예: 1000년)가 저장될 수 있었다. saveAsset()에 dateBelowRangeFloor/dateAboveRangeCeil 가드 쌍 추가(index.html, maturityDate 가드 바로 아래). 테스트 4건 추가(하한 미달/상한 초과/정상범위/필드없음 회귀). node test/run.js 3719->3723/3723 통과, node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.497->1.47.498, sw.js CACHE v764->v765.",
+      "commit": "601349d"
+    },
+    {
+      "cycle": 383,
+      "phase": "review",
+      "timestamp": "2026-11-20T15:45:00.000Z",
+      "summary": "develop(cycle383)의 acquiredAt RANGE_FROM/RANGE_TO 가드가 실제로는 회귀였음을 발견: maturityDate/targetDate는 allTxns(RANGE_FROM,RANGE_TO) 기반 집계에 쓰여 범위 밖이면 조용히 빠지지만, acquiredAt은 annualizedReturn()의 순수 날짜 차이 계산에만 쓰이고 allTxns에 들어가지 않는다. 매입일 피커가 '무제한 과거 스크롤'을 의도적으로 지원하고(부동산·오래된 주식 등 RANGE_FROM(2023-01-01) 이전 실제 매입일이 흔함), CSV/백업 가져오기(csvDateValid)도 acquiredAt엔 포맷만 검사해 범위를 안 묻는 것과 모순됨을 확인. saveAsset()에서 d.acquiredAt에 대한 dateBelowRangeFloor/dateAboveRangeCeil 가드 두 줄을 제거하고 이유를 주석으로 남김. RANGE_FROM 이전 매입일을 막던 테스트 2건을 '정상 저장됨'을 보장하는 회귀 방지 테스트로 교체. node test/run.js 3723->3722/3722 통과(테스트 2건을 1건으로 병합), node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.498->1.47.499, sw.js CACHE v765->v766.",
       "commit": null
     }
   ]
