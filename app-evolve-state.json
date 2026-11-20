@@ -1,15 +1,8 @@
 {
   "cycle": 382,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 377,
-      "phase": "review",
-      "timestamp": "2026-11-19T15:00:00.000Z",
-      "summary": "develop(cycle377, dd94ec1: goLedgerTo() list 모드 분기에 History 필터 리셋 추가)을 검토했다. sumTap/openAssetHistory/openCatHistory의 리셋 패턴과 1:1로 대조해 동일함을 확인, histEnsureRange()가 range를 건드리지 않고 필요할 때만 확장하는 것도 함수 목적(특정 날짜로 드릴다운)에 맞게 의도적임을 확인. 유일한 호출부(monthOutflowCard의 '이번 달 나갈 돈' 목록, 필터 없는 카드)가 버그 시나리오와 정확히 일치. 새 테스트 3건이 구현과 일치. node test/run.js 3664/3664 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 377,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-20T10:13:42.920Z",
       "summary": "general-purpose 서브에이전트에게 cycle377-381에서 다룬 모든 주제(role=button aria-label 패턴, goalHistoryFor 캐싱, N인 정산 재시도, saveBudget undo, recSel 일괄작업, 히스토리 필터 리셋, debtPayoffStatuses 통합 등)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: globalSearchBody()(통합검색)의 자산 결과 행이 cycle380에서 같은 함수의 목표(goal) 행에만 달성/연결자산 경고를 aria-label에 보강했을 뿐, 바로 같은 함수 안의 자산(asset) 결과 행은 assetBodyHTML()(cycle381에서 고친 자산관리 탭)과 달리 \"총자산 미포함\" 칩과 \"가격 미확인\" 경고를 시각적으로도, aria-label로도 전혀 보여주지 않던 공백이었다(role=button 패턴의 다섯 번째 미발견 인스턴스, cycle380이 같은 함수 안의 goal 분기만 고치고 asset 분기를 놓친 자리). assetBodyHTML()과 동일한 showEval/isMarketValued/rateUnknown/includeInTotal 조건을 재사용해 시각 칩/경고와 aria-label을 모두 추가. 테스트 3건 추가(미포함 칩 aria-label 반영, 가격 미확인 경고 aria-label 반영, 정상 자산엔 둘 다 안 붙는 회귀 가드) — 테스트 작성 중 index.html을 임시로 되돌려 2건이 실제로 실패하는 것을 확인해 테스트가 버그를 실제로 잡는지 검증한 뒤 복구. node test/run.js 3712->3715/3715 통과. node --check logic.js, node --check sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.495->1.47.496, sw.js CACHE v762->v763.",
       "commit": "d95b6ba"
+    },
+    {
+      "cycle": 382,
+      "phase": "review",
+      "timestamp": "2026-11-20T11:09:49.261Z",
+      "summary": "develop(cycle382, d95b6ba: globalSearchBody() 자산 결과 aria-label에 총자산 미포함/가격 미확인 경고 보강)을 검토했다. 추가된 ariaWarn 계산식이 assetBodyHTML()(index.html:4806)의 (a.includeInTotal?...:...)+(showEval&&rateUnknown(a)?...:...)과 바이트 단위로 동일함을 직접 대조해 확인 — cycle377/379-381과 같은 role=\"button\" aria-label 보강 패턴의 다섯 번째 인스턴스. 시각 칩(\"미포함\")·경고(\"가격 미확인\")도 assetBodyHTML의 마크업을 그대로 재사용함을 확인. 새 테스트 3건(미포함 칩+aria-label, 가격 미확인+aria-label, 정상 자산 회귀 가드)이 구현과 정확히 일치. node test/run.js 3715/3715 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
     }
   ]
 }
