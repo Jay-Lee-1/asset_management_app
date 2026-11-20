@@ -1,27 +1,13 @@
 {
   "cycle": 385,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 384,
-      "phase": "review",
-      "timestamp": "2026-11-20T21:00:00.000Z",
-      "summary": "develop(cycle384)의 목표 정렬(DB.settings.goalSort/openGoalSortSheet/goalsManageBody) 변경을 검토. targetDate 정렬의 null-last 비교, progress 정렬의 goalPct(0~100 클램프, NaN 불가) 기반 안정성, name 정렬, .slice()로 DB.goals 원본 보존 모두 올바름을 확인했고 g.id 기반 렌더링이라 정렬 순서 변경이 선택모드/복제/삭제 등 다른 로직에 영향 없음을 확인. openGoalSortSheet()가 이미 열린 목표 관리 시트 위의 '서브 시트'인데 openPicker()류와 달리 window._pkBack을 설정하지 않아 엣지 스와이프 뒤로가기 시 목표 목록으로 안 돌아가고 시트 전체가 닫히는 점, openGoalsList() 재호출 시 검색어가 항상 빈 문자열로 리셋되는 점을 발견했으나 둘 다 이 커밋이 새로 만든 문제가 아니라 openGoalsList()의 기존 설계(선택모드 토글·롱프레스 콜백 등 다른 모든 재호출 경로도 동일하게 동작)와 100% 동일해 회귀가 아님을 확인(수정하지 않음). node test/run.js 3731/3731 통과, node --check logic.js/sw.js 통과. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 384,
       "phase": "develop",
       "timestamp": "2026-11-20T19:50:00.000Z",
       "summary": "목표(목표 관리, openGoalsList/goalsManageBody)에만 정렬 옵션이 없던 공백 발견(자산 목록은 openSortSheet()로 금액순/귀속순/이름순을 지원하는데 목표는 항상 DB.goals 생성 순서뿐). DB.settings.goalSort(기본값 'custom'=기존 생성순서) 추가, goalsManageBody()에 targetDate(목표일 가까운순, 날짜없는 목표는 맨뒤)/progress(goalProgress().pct 내림차순)/name(가나다) 정렬 적용, openGoalSortSheet() 추가(openSortSheet()와 동일 패턴), 목표 관리 툴바에 '정렬' 버튼 추가. gs를 항상 .slice()해 DB.goals 원본 순서가 정렬로 영구 오염되지 않게 가드. DB.settings가 없는 기존 테스트가 깨지지 않게 goalSort는 DB.settings&&DB.settings.goalSort로 읽음. 테스트 5건 추가(custom/targetDate/progress/name 정렬 + DB.goals 원본 불변 가드). node test/run.js 3726->3731/3731 통과, node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.500->1.47.501, sw.js CACHE v767->v768.",
-      "commit": null
-    },
-    {
-      "cycle": 378,
-      "phase": "advance",
-      "timestamp": "2026-11-19T21:16:09.571Z",
-      "summary": "critique(cycle378)의 계획대로 반복 내역 관리 선택모드(ST.recSel)에 거래/전체내역/자산 목록과 동일한 일괄 카테고리 변경·계좌 이동을 추가했다. logic.js에 bulkRecCatTargets/bulkRecAssetMoveTargets 추가. index.html에 doBulkRecCat/doBulkRecAssetMove, bulkRecCatPickFor/bulkRecAssetMovePickFor, recCatSel/recAssetMoveSel을 추가했다. 테스트 26건 추가. node test/run.js 3670->3696/3696 통과. APP_VERSION 1.47.488->1.47.489, sw.js CACHE v755->v756. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
@@ -141,6 +127,20 @@
       "phase": "advance",
       "timestamp": "2026-11-20T21:13:44.185Z",
       "summary": "critique(cycle384)의 계획대로 카테고리 관리(openCatManage)에 검색 추가. DB.categories[k]가 ID 없는 순수 문자열 배열이고 moveCat/delCat/renameCatSheet/toggleCatVarUI/toggleBudgetRolloverUI/openCatMergePicker가 모두 필터링 전 원본 인덱스를 onclick에 박아 넣는다는 함정을 피하려고, 행 렌더 블록을 catManageBody(k,qRaw)로 분리해 DB.categories[k].map((c,i)=>({c,i}))로 원본 인덱스를 먼저 고정한 뒤 matchCatQuery(c,q)(기존 카테고리 피커가 쓰는 시그니처 그대로)로 필터링하고, 각 행은 그 원본 i를 그대로 쓰게 했다. CAT_LIST_SEARCH_THRESHOLD=10(GOAL_LIST_SEARCH_THRESHOLD 패턴)을 넘을 때만 검색창을 보여주고, catQInput(k,v)는 recQInput/goalQInput과 동일한 220ms 디바운스+빈문자열 즉시클리어 가드로 #catBody만 다시 그린다. 테스트 8건 추가: 임계값 이하/초과 검색창 노출, 빈 검색어=전체, kind 내 필터, 매치없음 빈상태, 그리고 가장 중요한 \"검색으로 좁혀진 행도 delCat/renameCatSheet/moveCat/toggleCatVarUI/toggleBudgetRolloverUI가 전부 원본 인덱스(2)를 가리킨다\"는 인덱스 정합성 회귀 가드, catQInput 디바운스 2건. test/run.js의 FUNCTIONS에 catManageBody/catQInput, LETS에 _catQT, CONSTS에 CAT_LIST_SEARCH_THRESHOLD를 추가해야 기존 doRenameCat/doDeleteCat/mergeCatInto 등 공유 vm 컨텍스트가 깨지지 않음을 확인(처음엔 이 셋을 빼먹어 69건이 ReferenceError로 실패했다가 수정). node test/run.js 3731->3739/3739 통과, node --check(스크립트 블록 추출)/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.501->1.47.502, sw.js CACHE v768->v769. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 384,
+      "phase": "review",
+      "timestamp": "2026-11-20T21:00:00.000Z",
+      "summary": "develop(cycle384)의 목표 정렬(DB.settings.goalSort/openGoalSortSheet/goalsManageBody) 변경을 검토. targetDate 정렬의 null-last 비교, progress 정렬의 goalPct(0~100 클램프, NaN 불가) 기반 안정성, name 정렬, .slice()로 DB.goals 원본 보존 모두 올바름을 확인했고 g.id 기반 렌더링이라 정렬 순서 변경이 선택모드/복제/삭제 등 다른 로직에 영향 없음을 확인. openGoalSortSheet()가 이미 열린 목표 관리 시트 위의 '서브 시트'인데 openPicker()류와 달리 window._pkBack을 설정하지 않아 엣지 스와이프 뒤로가기 시 목표 목록으로 안 돌아가고 시트 전체가 닫히는 점, openGoalsList() 재호출 시 검색어가 항상 빈 문자열로 리셋되는 점을 발견했으나 둘 다 이 커밋이 새로 만든 문제가 아니라 openGoalsList()의 기존 설계(선택모드 토글·롱프레스 콜백 등 다른 모든 재호출 경로도 동일하게 동작)와 100% 동일해 회귀가 아님을 확인(수정하지 않음). node test/run.js 3731/3731 통과, node --check logic.js/sw.js 통과. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 385,
+      "phase": "develop",
+      "timestamp": "2026-11-20T22:10:00.000Z",
+      "summary": "mergeOwnerInto(index.html:5749)가 정산(DB.settings.settle) 두 당사자를 서로 합쳐 ownerA===ownerB가 되면 settle을 null로 꺼버리는데(cycle364), delOwner(cycle347)가 같은 collapse 상황에서 함께 초기화하는 DB.settings.settledThrough는 여기서 빠뜨리고 있었음을 서브에이전트 탐색으로 발견. 죽은 settledThrough가 남으면 나중에 완전히 다른 참가자 쌍으로 정산을 새로 설정해도 그 하한 이전 공유지출이 영구적으로 집계에서 빠진다. settleCollapsed/prevSettledThrough 변수를 추가해 delOwner와 동일한 패턴으로 settle=null과 함께 settledThrough=null로 초기화하고, undoToast 되돌리기에서도 함께 복원하도록 수정. 테스트 3건 추가(collapse 시 초기화/collapse 아닌 단순 이동 시 보존/undo 복원). node test/run.js 3739->3742/3742 통과, node --check(스크립트 블록 추출)/logic.js/test/run.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.502->1.47.503, sw.js CACHE v769->v770.",
       "commit": null
     }
   ]

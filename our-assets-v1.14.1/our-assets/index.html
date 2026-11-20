@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.502';
+const APP_VERSION='1.47.503';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5774,7 +5774,10 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
  const settle=DB.settings&&DB.settings.settle;
  const settleTouched=settleTouchesOwner(settle,from); /* participants 배열(N명)도 함께 판정(app-evolve cycle364 advance) */
  const prevSettle=settleTouched?JSON.parse(JSON.stringify(settle)):null; /* participants가 배열을 품으므로 깊은 복사가 필요(app-evolve cycle364 advance) */
- if(settleTouched)DB.settings.settle=settleReplaceOwner(settle,from,toName); /* settleReplaceOwner(logic.js)가 합쳐져 같은 이름이 두 번 나오면 null(정산 끄기)을 돌려줌 — 기존 ownerA===ownerB collapse 분기와 동일(cycle364 advance) */
+ const newSettle=settleTouched?settleReplaceOwner(settle,from,toName):null; /* settleReplaceOwner(logic.js)가 합쳐져 같은 이름이 두 번 나오면 null(정산 끄기)을 돌려줌 — 기존 ownerA===ownerB collapse 분기와 동일(cycle364 advance) */
+ const settleCollapsed=settleTouched&&!newSettle;
+ const prevSettledThrough=settleCollapsed?DB.settings.settledThrough:undefined; /* delOwner(5674행)와 동일한 이유 — settle이 collapse로 꺼질 때 settledThrough(정산 하한)도 함께 초기화해야 한다. 안 그러면 나중에 완전히 다른 쌍으로 새로 정산을 설정해도 이 죽은 하한이 조용히 남아, 그 새 정산이 하한 이전 공유 지출을 영원히 빼먹는다(app-evolve cycle385 develop) */
+ if(settleTouched){DB.settings.settle=newSettle;if(settleCollapsed)DB.settings.settledThrough=null;}
  const nwChanges=[];
  (DB.nwHistory||[]).forEach(h=>{
   if(h.byOwner&&from in h.byOwner){
@@ -5808,7 +5811,7 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
   if(hadPlanOwner)ST.plan.owner=from;
   if(hadSpendOwner)ST.spendOwner=from;
   if(hadHistOwner)ST.hist.owner=from;
-  if(settleTouched){DB.settings=DB.settings||{};DB.settings.settle=prevSettle}
+  if(settleTouched){DB.settings=DB.settings||{};DB.settings.settle=prevSettle;if(settleCollapsed)DB.settings.settledThrough=prevSettledThrough}
   nwChanges.forEach(({h,fromVal,hadTo,toBefore})=>{h.byOwner=h.byOwner||{};h.byOwner[from]=fromVal;if(hadTo)h.byOwner[toName]=toBefore;else delete h.byOwner[toName]});
   DB.owners.splice(i,0,from);
   delete DB.deletedIds[ownerTombKey(from)];

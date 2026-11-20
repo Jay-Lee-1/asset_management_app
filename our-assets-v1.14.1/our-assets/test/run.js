@@ -29926,6 +29926,29 @@ test('mergeOwnerInto: 정산 당사자를 서로 합쳐 settle이 null로 꺼진
   sandbox.lastUndo.undoFn();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.settings.settle)), { ownerA: '아빠', ownerB: '배우자', ratioA: 50 });
 });
+/* delOwner(3927행)는 settle이 collapse로 꺼질 때 settledThrough(정산 하한)도 함께 초기화하는데,
+ * mergeOwnerInto는 settle=null로 꺼지는 바로 같은 분기(위 "정산 당사자를 서로 합치면..." 테스트)를
+ * 갖고 있으면서도 이 줄만 빠뜨리고 있었다 — 정산 두 당사자를 합치면 settle은 꺼지지만 죽은
+ * settledThrough가 남아, 나중에 완전히 다른 쌍으로 정산을 새로 설정해도 그 쌍의 과거 공유지출이
+ * 하한 이전이라는 이유로 조용히 영구적으로 빠진다(app-evolve cycle385 develop). */
+test('mergeOwnerInto: 정산 당사자를 서로 합쳐 settle이 null로 꺼지면 settledThrough도 null로 초기화된다', () => {
+  sandbox.DB = { owners: ['아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '아빠', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-15' } };
+  sandbox.mergeOwnerInto(0, '배우자');
+  assert.strictEqual(sandbox.DB.settings.settle, null);
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null, 'settle이 collapse로 꺼졌으면 settledThrough도 함께 초기화돼야 함');
+});
+test('mergeOwnerInto: settle이 꺼지지 않고 toName으로 옮겨가는 경우(collapse 아님)에는 settledThrough를 그대로 둔다', () => {
+  sandbox.DB = { owners: ['나', '아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '아빠', ownerB: '배우자', ratioA: 60 }, settledThrough: '2026-01-15' } };
+  sandbox.mergeOwnerInto(1, '나'); // '아빠'를 '나'에 합침 — settle은 {나,배우자}로 옮겨갈 뿐 collapse 아님
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-15', 'collapse가 아니면 기존 하한을 건드리면 안 됨');
+});
+test('mergeOwnerInto: settledThrough가 null로 초기화된 뒤 undoToast로 되돌리면 원래 값으로 복원된다', () => {
+  sandbox.DB = { owners: ['아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '아빠', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-15' } };
+  sandbox.mergeOwnerInto(0, '배우자');
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-15', '되돌리면 settledThrough도 합치기 전 값으로 복원돼야 함');
+});
 
 /* ---------- mergeOwnerInto의 wipe-직전 백업(__preMergeOwner_): mergeAssetInto/mergeCatInto와
  * 동일한 "전체 DB best-effort 스냅샷" 패턴 — 귀속 합치기는 자산·목표의 owner와 nwHistory.byOwner를
