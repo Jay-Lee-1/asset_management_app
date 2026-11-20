@@ -1,7 +1,11 @@
 {
   "cycle": 383,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "휴지통 7종에 '전체 비우기' 일괄 삭제 액션 추가",
+    "why": "openTrashList/openAssetTrashList/openRecTrashList/openGoalTrashList/openCatTrashList(index.html:12742/12978/13038/13098/13144)와 openAssetQtyLogTrashList(7391)/openInquiryTrashList(9137), 총 7개 휴지통 목록이 전부 항목별 복구/영구삭제 버튼만 있고 '전체 비우기'가 없다(index.html 전체에서 '비우기'/'전부'/'emptyTrash' 검색 0건). TRASH_MAX_AGE_DAYS(30일)로 자동 만료되긴 하지만, 기기 양도 전 정리나 DB_JSON_LEN(storageSize 경고 대상) 축소를 원하는 사용자는 수십 개 항목을 한 줄씩 지워야 한다. 거래/전체내역/자산/반복거래 선택모드가 이미 '단건 액션 옆에 일괄 액션을 나란히 제공'하는 일관된 관례를 갖고 있는데(bulk cat/move/delete 전부 구현됨) 휴지통만 이 패턴이 빠져 있다.",
+    "approach": "index.html에 공유 헬퍼 purgeAllTrash(key,reopenFn,label) 추가: DB[key] 빈 배열이면 no-op, 아니면 confirmSheet로 개수 포함 확인 후 DB[key]=[] + save() + reopenFn() + toast. 7개 open*TrashList() 각각에서 items.length>0일 때만 기존 '닫기' 버튼 옆에 '전체 비우기' 버튼을 추가하고 purgeAllTrash('trashTxns'|'trashAssets'|'trashRecs'|'trashGoals'|'trashCats'|'assetQtyLogTrash'|'inquiryTrash', 해당 openFn, 라벨)을 연결(실제 DB 키 이름은 각 open*TrashList() 본문에서 확인 후 맞춰 사용). 기존 purge 단건 테스트 패턴을 본떠 7개 키 각각 '빈 배열 no-op', '비어있지 않으면 DB 비우고 save/reopen 호출' 테스트 추가. index.html을 수정하므로 APP_VERSION과 sw.js CACHE 버전을 함께 올린다. node test/run.js로 전체 통과 확인."
+  },
   "history": [
     {
       "cycle": 378,
@@ -113,6 +117,13 @@
       "phase": "review",
       "timestamp": "2026-11-20T15:45:00.000Z",
       "summary": "develop(cycle383)의 acquiredAt RANGE_FROM/RANGE_TO 가드가 실제로는 회귀였음을 발견: maturityDate/targetDate는 allTxns(RANGE_FROM,RANGE_TO) 기반 집계에 쓰여 범위 밖이면 조용히 빠지지만, acquiredAt은 annualizedReturn()의 순수 날짜 차이 계산에만 쓰이고 allTxns에 들어가지 않는다. 매입일 피커가 '무제한 과거 스크롤'을 의도적으로 지원하고(부동산·오래된 주식 등 RANGE_FROM(2023-01-01) 이전 실제 매입일이 흔함), CSV/백업 가져오기(csvDateValid)도 acquiredAt엔 포맷만 검사해 범위를 안 묻는 것과 모순됨을 확인. saveAsset()에서 d.acquiredAt에 대한 dateBelowRangeFloor/dateAboveRangeCeil 가드 두 줄을 제거하고 이유를 주석으로 남김. RANGE_FROM 이전 매입일을 막던 테스트 2건을 '정상 저장됨'을 보장하는 회귀 방지 테스트로 교체. node test/run.js 3723->3722/3722 통과(테스트 2건을 1건으로 병합), node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.498->1.47.499, sw.js CACHE v765->v766.",
+      "commit": null
+    },
+    {
+      "cycle": 383,
+      "phase": "critique",
+      "timestamp": "2026-11-20T17:30:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-383에서 다룬 모든 주제(aria-label 보강 4건, debtPayoffStatuses 통합, anyRateSourceStale, bulk rec cat/move, goalHistoryFor 캐시, N인 정산 중복 이체 수정, acquiredAt 가드 회귀, SRI/빌드스텝 기각)를 배제 목록으로 주고 조사시킴. openTrashList/openAssetTrashList/openRecTrashList/openGoalTrashList/openCatTrashList(12742/12978/13038/13098/13144)와 openAssetQtyLogTrashList(7391)/openInquiryTrashList(9137), 총 7개 휴지통이 전부 항목별 복구/영구삭제만 지원하고 '전체 비우기'가 없음을 발견(grep으로 '비우기'/'전부'/'emptyTrash' 0건 확인). 거래/전체내역/자산/반복거래 선택모드가 이미 가진 '단건+일괄' 패턴이 휴지통에만 빠진 사례. pending_advance_plan에 purgeAllTrash(key,reopenFn,label) 공유 헬퍼 + 7개 open*TrashList()에 '전체 비우기' 버튼 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
