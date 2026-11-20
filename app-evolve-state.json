@@ -1,28 +1,8 @@
 {
-  "cycle": 384,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "카테고리 관리(openCatManage)에 검색 추가 — 자산/전체내역/반복거래/목표 관리에는 이미 있는 검색이 카테고리 관리에만 빠져 있음",
-    "why": "openCatManage(index.html:8710)는 DB.categories[k] 전체를 검색 없이 flat하게 렌더링하는 마지막 '관리 목록' 화면이다. 자산 목록(assetQ), 전체내역(histQ), 반복거래 관리(recQ, cycle301에서 바로 이 이유로 추가됨), 목표 관리(goalQ, GOAL_LIST_SEARCH_THRESHOLD=8 기준)는 모두 이미 검색을 지원하고, 거래 입력 시 쓰는 카테고리 피커(openCatPicker, 13373)조차 matchCatQuery(logic.js:916)로 검색을 지원한다. 정작 카테고리를 실제로 이름변경/합치기/삭제/순서변경/예산이월 설정하는 관리 화면만 빠져 있어, 하위 카테고리를 15~30개 이상 세분화해 쓰는 사용자(이 앱의 예산 이월·변동 카테고리 기능 자체가 그런 사용 패턴을 가정함)는 스크롤로만 찾아야 한다.",
-    "approach": [
-      "주의: DB.categories[k]는 ID 없는 순수 문자열 배열이고, moveCat/delCat/renameCatSheet/toggleCatVarUI/toggleBudgetRolloverUI가 모두 '필터링 전 원본 배열의 인덱스 i'를 그대로 onclick에 박아 넣는다(recManageBody/goalsManageBody는 r.id/g.id라 필터링에 안전하지만 카테고리는 아니다). 검색으로 목록이 줄어도 각 행의 버튼은 반드시 DB.categories[k] 기준 원래 인덱스를 써야 한다 — 그러지 않으면 검색 중 삭제/이동/수정이 엉뚱한 카테고리를 건드리는 심각한 회귀가 된다.",
-      "openCatManage(kind,keep)의 DB.categories[k].map((c,i)=>...) 행 렌더링 블록을 catManageBody(k,qRaw)로 분리한다(recManageBody/goalsManageBody와 같은 패턴). 내부에서 먼저 DB.categories[k].map((c,i)=>({c,i}))로 {c,i} 쌍을 만든 뒤 matchCatQuery(c를 넣는 가벼운 어댑터 또는 {name:c} 형태로)로 필터링하고, 각 행 렌더링에서 원래 i를 그대로 사용한다.",
-      "qRaw가 비어있지 않을 때만 필터링하고, 비어있으면 전체(기존 동작과 100% 동일)를 그대로 렌더링해 회귀 위험을 낮춘다.",
-      "catQInput(v) 핸들러를 recQInput/goalQInput과 동일한 220ms 디바운스 + 빈 문자열 즉시 클리어 가드로 추가하고, #catBody(id 부여)만 다시 그린다 — 시트 전체를 다시 열지 않는다.",
-      "검색바는 CAT_LIST_SEARCH_THRESHOLD(예: 10, GOAL_LIST_SEARCH_THRESHOLD=8 패턴) 기준으로 DB.categories[k].length가 그 이상일 때만 보여줘 기본 5~6개 카테고리 화면을 복잡하게 만들지 않는다. kind(expense/income/saving) 탭 전환 시 검색어는 비운다(또는 유지 — goalQInput/recQInput의 재호출 시 리셋되는 기존 관례를 따른다).",
-      "logic.js의 matchCatQuery가 문자열 하나를 받는지 {name} 객체를 받는지 먼저 확인하고, 카테고리 피커(13353 q&&items.filter(c=>matchCatQuery(c,q)))가 쓰는 시그니처를 그대로 재사용한다(새 어댑터 함수를 만들지 않는다).",
-      "test/run.js에 recManageBody/goalsManageBody 검색 테스트와 동일한 패턴으로: 빈 쿼리=전체, 쿼리로 kind 내에서만 좁혀짐, 매치 없음=빈 상태, 그리고 가장 중요하게 '검색 중 필터된 행의 delCat/moveCat/renameCatSheet가 올바른 원본 인덱스를 가리키는지'를 검증하는 케이스를 추가한다.",
-      "index.html/sw.js를 수정하므로 APP_VERSION과 sw.js CACHE 버전을 올린다."
-    ]
-  },
+  "cycle": 385,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 384,
-      "phase": "critique",
-      "timestamp": "2026-11-20T22:30:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-384에서 다룬 모든 주제(aria-label 보강 4건, debtPayoffStatuses 통합, anyRateSourceStale, bulk rec cat/move, goalHistoryFor 캐시, N인 정산 중복 이체 수정, acquiredAt 가드 회귀, 휴지통 전체비우기, 목표 정렬, SRI/빌드스텝 기각)를 배제 목록으로 주고 앱 전체를 비판적으로 조사시킴. 자산(assetQ)/전체내역(histQ)/반복거래관리(recQ, cycle301)/목표관리(goalQ)는 모두 검색을 지원하고 거래입력용 카테고리 피커(openCatPicker, matchCatQuery)도 검색을 지원하는데, 정작 카테고리를 실제로 이름변경/합치기/삭제/순서변경하는 openCatManage(8710)만 검색이 없음을 발견. 보고 받은 후 직접 코드를 확인해 DB.categories[k]가 ID 없는 순수 문자열 배열이고 moveCat/delCat/renameCatSheet 등이 '필터링 전 원본 인덱스 i'를 onclick에 그대로 박아 넣는다는, 보고서에는 없던 중요한 함정을 추가로 발견(recManageBody/goalsManageBody는 r.id/g.id 기반이라 이 문제가 없음). pending_advance_plan에 catManageBody({c,i} 쌍으로 필터링 후에도 원본 인덱스 보존) + catQInput + CAT_LIST_SEARCH_THRESHOLD + 인덱스 정합성 회귀 테스트 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 384,
       "phase": "review",
@@ -154,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-20T19:10:00.000Z",
       "summary": "critique(cycle383)의 계획대로 휴지통 7종에 '전체 비우기' 추가. index.html에 공유 헬퍼 purgeAllTrash(key,reopenFn,label)(twGuard→DB[key] 비면 no-op→confirmSheet 개수 확인→DB[key]=[]+save()+reopenFn()+toast) 추가. 실제 DB 키 이름을 각 open*TrashList() 본문에서 확인(계획의 'assetQtyLogTrash'/'inquiryTrash'는 틀린 추정이었고 실제론 trashQtyLog/trashInquiries): openTrashList/openAssetTrashList/openRecTrashList/openGoalTrashList/openCatTrashList/openAssetQtyLogTrashList/openInquiryTrashList 7곳 모두 items.length>0일 때만 기존 '닫기' 옆에 two-btn으로 '전체 비우기'(btn-danger) 버튼을 추가해 연결(trashTxns/trashAssets/trashRecs/trashGoals/trashCats/trashQtyLog/trashInquiries). 단건 purgeTrashTxn과 동일하게 DB.deletedIds 톰스톤은 건드리지 않는다. 테스트 4건 추가(no-op/확인 후 비움+reopen+toast/twGuard/톰스톤 보존). node test/run.js 3722->3726/3726 통과, node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.499->1.47.500, sw.js CACHE v766->v767. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 384,
+      "phase": "advance",
+      "timestamp": "2026-11-20T21:13:44.185Z",
+      "summary": "critique(cycle384)의 계획대로 카테고리 관리(openCatManage)에 검색 추가. DB.categories[k]가 ID 없는 순수 문자열 배열이고 moveCat/delCat/renameCatSheet/toggleCatVarUI/toggleBudgetRolloverUI/openCatMergePicker가 모두 필터링 전 원본 인덱스를 onclick에 박아 넣는다는 함정을 피하려고, 행 렌더 블록을 catManageBody(k,qRaw)로 분리해 DB.categories[k].map((c,i)=>({c,i}))로 원본 인덱스를 먼저 고정한 뒤 matchCatQuery(c,q)(기존 카테고리 피커가 쓰는 시그니처 그대로)로 필터링하고, 각 행은 그 원본 i를 그대로 쓰게 했다. CAT_LIST_SEARCH_THRESHOLD=10(GOAL_LIST_SEARCH_THRESHOLD 패턴)을 넘을 때만 검색창을 보여주고, catQInput(k,v)는 recQInput/goalQInput과 동일한 220ms 디바운스+빈문자열 즉시클리어 가드로 #catBody만 다시 그린다. 테스트 8건 추가: 임계값 이하/초과 검색창 노출, 빈 검색어=전체, kind 내 필터, 매치없음 빈상태, 그리고 가장 중요한 \"검색으로 좁혀진 행도 delCat/renameCatSheet/moveCat/toggleCatVarUI/toggleBudgetRolloverUI가 전부 원본 인덱스(2)를 가리킨다\"는 인덱스 정합성 회귀 가드, catQInput 디바운스 2건. test/run.js의 FUNCTIONS에 catManageBody/catQInput, LETS에 _catQT, CONSTS에 CAT_LIST_SEARCH_THRESHOLD를 추가해야 기존 doRenameCat/doDeleteCat/mergeCatInto 등 공유 vm 컨텍스트가 깨지지 않음을 확인(처음엔 이 셋을 빼먹어 69건이 ReferenceError로 실패했다가 수정). node test/run.js 3731->3739/3739 통과, node --check(스크립트 블록 추출)/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.501->1.47.502, sw.js CACHE v768->v769. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

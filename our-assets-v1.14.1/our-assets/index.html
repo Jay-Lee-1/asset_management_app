@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.501';
+const APP_VERSION='1.47.502';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -8707,15 +8707,47 @@ let catAddDraft={name:'',icon:''};
 let catRenameDraft={name:'',icon:''};
 function pickCatAddIcon(k){openIconPicker(k,catAddDraft.icon||'',ic=>{catAddDraft.icon=ic;openCatManage(k,true)},()=>openCatManage(k,true))}
 function pickCatRenameIcon(k,i){openIconPicker(k,catRenameDraft.icon||'',ic=>{catRenameDraft.icon=ic;renameCatSheet(k,i,true)},()=>renameCatSheet(k,i,true))}
+/* 자산목록(assetQ)/전체내역(histQ)/반복거래관리(recQ)/목표관리(goalQ, GOAL_LIST_SEARCH_THRESHOLD)는
+ * 모두 검색을 지원하는데, 실제로 카테고리를 이름변경/합치기/삭제/순서변경/예산이월 설정하는 이
+ * 관리 화면만 빠져 있었다(app-evolve cycle384 critique → advance). GOAL_LIST_SEARCH_THRESHOLD(8)과
+ * 같은 이유로 기본 5~6개뿐인 화면을 복잡하게 만들지 않도록 개수가 이 문턱을 넘을 때만 보여준다.
+ * DB.categories[k]는 ID 없는 순수 문자열 배열이고 moveCat/delCat/renameCatSheet/toggleCatVarUI/
+ * toggleBudgetRolloverUI/openCatMergePicker가 모두 '필터링 전 원본 배열의 인덱스 i'를 그대로
+ * onclick에 박아 넣으므로(recManageBody/goalsManageBody는 r.id/g.id라 이 문제가 없음), 검색으로
+ * 목록이 줄어도 각 행의 버튼은 반드시 원래 인덱스를 써야 한다 — catManageBody가 {c,i} 쌍을 먼저
+ * 만들어 필터링 전 인덱스를 보존한 뒤 쓰는 이유. */
+const CAT_LIST_SEARCH_THRESHOLD=10;
+let _catQT=null;
 function openCatManage(kind,keep){
  const k=['expense','income','saving'].includes(kind)?kind:'expense';
  if(!keep)catAddDraft={name:'',icon:''};
  const avCls=k==='income'?'a-in':k==='saving'?'a-save':'a-food';
  const trigIcon=catAddDraft.icon||(k==='income'?'arrowUp':k==='saving'?'piggy':'tag');
+ const showSearch=DB.categories[k].length>CAT_LIST_SEARCH_THRESHOLD;
+ const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="catQ" aria-label="카테고리 검색" placeholder="카테고리 이름 검색" value="" oninput="catQInput('${k}',this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('catQ')">✕</button></div></div>`:'';
  openSheet(`<h3>카테고리 관리</h3><div class="desc">${k==='saving'?'아이콘과 이름으로 추가해요.':'‘변동’은 매달 금액이 달라지는 항목이에요.'}</div>
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${['expense','income','saving'].map(x=>`<button class="${k===x?'on':''}" aria-pressed="${k===x}" onclick="openCatManage('${x}')">${CAT_LABEL[x]}</button>`).join('')}</div>
   ${k==='income'?`<div class="section-title" style="margin-top:18px">수입 카테고리<span class="link" role="button" tabindex="0" aria-label="수입 분석 보기" onclick="openIncomeAnalysis()" onkeydown="rowKeydown(event,()=>openIncomeAnalysis())">수입 분석 ${svg('chev')}</span></div>`:''}
-  <div>${DB.categories[k].map((c,i)=>{
+  ${searchBar}
+  <div id="catBody">${catManageBody(k,'')}</div>
+  <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><div class="field-clear"><input id="newCat" maxlength="${NAME_MAX}" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${esc(catAddDraft.name)}" oninput="catAddDraft.name=this.value" onkeydown="if(event.key==='Enter'&&!event.isComposing)addCat('${k}')"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">✕</button></div><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
+  <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
+}
+/* recQInput/goalQInput과 동일한 220ms 디바운스 — #catBody만 다시 그려 시트 전체(검색창 포함)를
+ * 다시 열지 않는다. clrInput('catQ')가 만드는 빈 문자열 입력은 동일하게 디바운스 없이 즉시
+ * 반영한다(cycle317 develop에서 recQInput/goalQInput에 적용된 가드와 같은 이유). */
+function catQInput(k,v){
+ clearTimeout(_catQT);
+ if(v.trim()===''){const b=$('catBody');if(b)b.innerHTML=catManageBody(k,v);return}
+ _catQT=setTimeout(()=>{const b=$('catBody');if(b)b.innerHTML=catManageBody(k,v)},220);
+}
+function catManageBody(k,qRaw){
+ const q=(qRaw||'').trim();
+ const avCls=k==='income'?'a-in':k==='saving'?'a-save':'a-food';
+ const pairs=DB.categories[k].map((c,i)=>({c,i})); /* 필터링 전에 원래 인덱스를 {c,i}로 고정해둔다 — 위 주석 참고 */
+ const list=q?pairs.filter(({c})=>matchCatQuery(c,q)):pairs;
+ if(!list.length)return q?`<div class="empty"><div class="ei">${svg('search')}</div><div class="et">'${esc(q)}'와 일치하는 카테고리가 없어요</div><div class="es">다른 말로 검색해 보세요</div></div>`:'';
+ return list.map(({c,i})=>{
     const isSysAdjust=k==='income'&&c===ADJUST_CAT; /* 거래에서 자동 생성되는 시스템 카테고리 — 이름변경/삭제 못 하게 액션 대신 안내만 보여준다 */
     const varPill=k==='saving'?'':`<button class="varpill ${isVarCat(k,c)?'on':''}" aria-label="${esc(c)} 변동 카테고리 설정" aria-pressed="${isVarCat(k,c)}" onclick="toggleCatVarUI('${k}',${i},this)">${isVarCat(k,c)?'변동':'고정'}</button>`;
     const rollPill=k==='expense'?`<button class="varpill ${isBudgetRolloverCat(c)?'on':''}" aria-label="${esc(c)} 예산 이월 설정" aria-pressed="${isBudgetRolloverCat(c)}" onclick="toggleBudgetRolloverUI(${i},this)">${isBudgetRolloverCat(c)?'이월':'이월 안함'}</button>`:''; /* 예산 이월은 지출 카테고리에만 있는 설정(saving/income 대상 아님) — budgetHistory와 동일한 범위 */
@@ -8723,9 +8755,7 @@ function openCatManage(kind,keep){
     const acts=isSysAdjust?`<span class="mini">자동 생성</span>`:`<div class="row-acts">${canMerge?`<button class="act-btn" aria-label="${esc(c)} 다른 카테고리로 합치기" onclick="openCatMergePicker('${k}',${i})">${svg('merge')}</button>`:''}<button class="act-btn" aria-label="${esc(c)} 수정" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(c)} 삭제" onclick="delCat('${k}',${i})">${svg('trash')}</button></div>`;
     const moveBtns=isSysAdjust?'':`<div class="grp-move"><button type="button" class="grp-move-btn" aria-label="${esc(c)} 위로 이동" onclick="moveCat('${k}',${i},-1)"${i===0?' disabled':''}>${svg('arrowUp')}</button><button type="button" class="grp-move-btn" aria-label="${esc(c)} 아래로 이동" onclick="moveCat('${k}',${i},1)"${i===DB.categories[k].length-1?' disabled':''}>${svg('arrowDn')}</button></div>`;
     return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${rollPill}${moveBtns}${acts}</div>`;
-   }).join('')}</div>
-  <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><div class="field-clear"><input id="newCat" maxlength="${NAME_MAX}" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${esc(catAddDraft.name)}" oninput="catAddDraft.name=this.value" onkeydown="if(event.key==='Enter'&&!event.isComposing)addCat('${k}')"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">✕</button></div><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
-  <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
+   }).join('');
 }
 function addCat(k){if(twGuard())return;const v=cleanName(($('newCat')&&$('newCat').value)||catAddDraft.name);if(!v)return;
  const dup=DB.categories[k].find(c=>normName(c)===normName(v));

@@ -284,7 +284,13 @@ const FUNCTIONS = [
   // WIPE_BACKUP_KEYS는 위에서 이미 선언된 전역이라 추가 스텁이 필요 없다.
   'dismissWipeBackup',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission', 'toggleNotifyMuteGroup',
-  'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
+  'catIconOf', 'catGlyph', 'openCatManage',
+  // catManageBody/catQInput은 카테고리 관리(openCatManage)에 인라인 검색을 추가하면서 몸통을
+  // 분리한 함수들(app-evolve cycle384 advance) — recManageBody/recQInput(위 365줄 부근)과 동일한
+  // 이유로 openCatManage 자체는 여전히 openSheet 의존이 큰 실제 함수(FUNCTIONS에 이미 있음)로
+  // 로드하지만, 이 둘은 DOM 의존이 없거나($('catBody')만 참조) 얕아서 실행형으로 바로 검증한다.
+  'catManageBody', 'catQInput',
+  'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'openIconPicker', 'pickCatIcon',
   // renameCatSheet는 지금까지 extractFunction 소스 패턴으로만 검증돼(29984줄 부근) renameCat 입력의
   // value="${esc(catRenameDraft.name)}" 같은 실제 왕복 이스케이핑은 한 번도 실행된 적이 없었다
@@ -445,7 +451,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET',
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'CAT_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET',
   // WK(주말·공휴일 조정 어휘)는 renderRecSheet가 d.freq==='monthly'일 때 WK[d.weekend||'none'][0]로
   // 직접 참조한다(app-evolve cycle372 advance, openTxSheet/openRecSheet 실행형 테스트 추가 — 이
   // 전까지 renderRecSheet() 자체가 한 번도 실행된 적이 없어 빠져 있었다).
@@ -497,7 +503,7 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _debtPlanAnnT는 debtWhatIfUpdate가 쓰는 _debtWhatIfAnnT와 같은 220ms 디바운스 announceLive
 // 타이머를 debtPlanUpdate()(부채 상환 계획, app-evolve cycle373 advance)가 쓰는 것이라 같은
 // 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다.
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', 'CLOUD_SYNC_ERR_KIND'];
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', '_catQT', 'CLOUD_SYNC_ERR_KIND'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -34201,6 +34207,97 @@ test('openCatManage: income 탭의 ADJUST_CAT(잔액 조정)은 이동 버튼도
   assert.ok(!html.includes(`moveCat('income',1,`), 'ADJUST_CAT(인덱스 1)의 이동 버튼이 그려지면 안 됨');
   assert.ok(html.includes(`moveCat('income',0,`), '일반 카테고리(급여)의 이동 버튼은 그려져야 함');
 });
+/* ---------- openCatManage/catManageBody: 인라인 검색(catQ) — 자산목록(assetQ)/전체내역(histQ)/
+ * 반복거래관리(recQ)/목표관리(goalQ, GOAL_LIST_SEARCH_THRESHOLD)는 모두 검색을 지원하는데, 실제로
+ * 카테고리를 이름변경/합치기/삭제/순서변경/예산이월 설정하는 이 관리 화면만 빠져 있었다
+ * (app-evolve cycle384 critique → advance). GOAL_LIST_SEARCH_THRESHOLD와 같은 이유로 개수가
+ * CAT_LIST_SEARCH_THRESHOLD를 넘을 때만 검색창을 보여준다.
+ * DB.categories[k]는 ID 없는 순수 문자열 배열이고 moveCat/delCat/renameCatSheet/toggleCatVarUI/
+ * toggleBudgetRolloverUI/openCatMergePicker가 모두 '필터링 전 원본 배열의 인덱스'를 그대로
+ * onclick에 박아 넣으므로(recManageBody/goalsManageBody의 r.id/g.id와 다름), 아래 "검색 중에도
+ * 원본 인덱스를 가리킨다" 테스트가 이 기능의 핵심 회귀 가드다. ---------- */
+function manyCats(n) { return Array.from({ length: n }, (_, i) => '카테고리' + i); }
+test('openCatManage: 카테고리가 CAT_LIST_SEARCH_THRESHOLD개 이하면 검색창(#catQ)이 뜨지 않는다', () => {
+  setupCatManageDB();
+  sandbox.DB.categories.expense = manyCats(sandbox.CAT_LIST_SEARCH_THRESHOLD);
+  sandbox.openCatManage('expense');
+  assert.ok(!sandbox.lastSheetHtml.includes('id="catQ"'), '카테고리가 몇 개뿐이면 검색창이 화면만 차지하므로 뜨면 안 됨');
+  assert.ok(sandbox.lastSheetHtml.includes('id="catBody"'), '검색 결과를 담는 #catBody 컨테이너는 검색창 유무와 무관하게 항상 떠야 함');
+});
+test('openCatManage: 카테고리가 CAT_LIST_SEARCH_THRESHOLD개를 넘으면 검색창(#catQ)이 뜬다', () => {
+  setupCatManageDB();
+  sandbox.DB.categories.expense = manyCats(sandbox.CAT_LIST_SEARCH_THRESHOLD + 1);
+  sandbox.openCatManage('expense');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('id="catQ"'), '검색 입력창(#catQ)이 떠야 함');
+  assert.ok(html.includes("oninput=\"catQInput('expense',this.value)\""), '입력마다 현재 kind를 들고 catQInput을 불러야 함');
+});
+test('[실행형] catManageBody: 빈 검색어는 전체(안 거른) 결과와 동일하다', () => {
+  setupCatManageDB();
+  assert.strictEqual(sandbox.catManageBody('expense', ''), sandbox.catManageBody('expense', '   '), '공백만 입력해도(trim 결과 빈 문자열) 빈 검색어와 동일하게 전체를 보여줘야 함');
+  assert.ok(sandbox.catManageBody('expense', '').includes('식비'));
+  assert.ok(sandbox.catManageBody('expense', '').includes('교통'));
+});
+test('[실행형] catManageBody: 검색어가 일치하는 카테고리만, 현재 kind 안에서만 남긴다', () => {
+  setupCatManageDB();
+  const html = sandbox.catManageBody('expense', '식비');
+  assert.ok(html.includes('식비'), '일치하는 카테고리는 남아야 함');
+  assert.ok(!html.includes('교통'), '일치하지 않는 카테고리는 걸러져야 함');
+});
+test('[실행형] catManageBody: 검색 결과가 0건이면 "일치하는 카테고리가 없어요" 전용 빈 상태가 뜬다', () => {
+  setupCatManageDB();
+  const html = sandbox.catManageBody('expense', '존재하지않는검색어');
+  assert.ok(html.includes("'존재하지않는검색어'와 일치하는 카테고리가 없어요"), '검색 결과 0건 전용 안내가 없음');
+});
+/* 핵심 회귀 가드: 검색으로 목록이 줄어도 각 행의 moveCat/delCat/renameCatSheet/openCatMergePicker/
+ * toggleCatVarUI/toggleBudgetRolloverUI onclick은 반드시 DB.categories[k] 기준 "원래" 인덱스를
+ * 가리켜야 한다 — 그러지 않으면 검색 중 삭제/이동/수정이 화면에 보이는 것과 다른 카테고리를
+ * 건드리는 심각한 버그가 된다. */
+test('[실행형] catManageBody: 검색으로 좁혀진 행도 필터링 전 원본 배열 인덱스를 그대로 가리킨다(인덱스 정합성)', () => {
+  setupCatManageDB();
+  sandbox.DB.categories.expense = ['식비', '교통', '통신', '문화'];
+  const html = sandbox.catManageBody('expense', '통신'); // '통신'(원본 인덱스 2)만 남아야 함
+  assert.ok(html.includes('통신'), '통신이 결과에 있어야 함');
+  assert.ok(!html.includes('>식비<') && !html.includes('>교통<') && !html.includes('>문화<'), '통신 외 다른 카테고리는 걸러져야 함');
+  assert.ok(html.includes("onclick=\"delCat('expense',2)\""), '검색으로 좁혀진 행의 삭제 버튼이 원본 인덱스(2)를 가리켜야 함');
+  assert.ok(html.includes("onclick=\"renameCatSheet('expense',2)\""), '검색으로 좁혀진 행의 수정 버튼이 원본 인덱스(2)를 가리켜야 함');
+  assert.ok(html.includes("onclick=\"moveCat('expense',2,-1)\"") && html.includes("onclick=\"moveCat('expense',2,1)\""), '검색으로 좁혀진 행의 이동 버튼이 원본 인덱스(2)를 가리켜야 함');
+  assert.ok(html.includes("onclick=\"toggleCatVarUI('expense',2,this)\""), '검색으로 좁혀진 행의 변동 토글이 원본 인덱스(2)를 가리켜야 함');
+  assert.ok(html.includes("onclick=\"toggleBudgetRolloverUI(2,this)\""), '검색으로 좁혀진 행의 이월 토글이 원본 인덱스(2)를 가리켜야 함');
+  assert.ok(!html.includes("'expense',0)") && !html.includes("'expense',0,"), '다른 카테고리(인덱스 0)의 버튼이 섞여 들어가면 안 됨');
+});
+/* catQInput(디바운스)은 recQInput/goalQInput과 동일한 패턴 — 메인 sandbox는 setTimeout/clearTimeout이
+ * 기본 no-op이라 이 블록에서만 스파이로 바꿔 검증하고 원복한다. */
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout, orig$ = sandbox.$;
+  function restore() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; sandbox.$ = orig$; }
+  test('catQInput: 디바운스(220ms) 후에야 #catBody.innerHTML을 catManageBody(kind,검색어)로 교체한다', () => {
+    setupCatManageDB();
+    const catBodyEl = { innerHTML: 'old' };
+    let capturedMs = null, timerFn = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; timerFn = fn; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = (id) => (id === 'catBody' ? catBodyEl : null);
+    try {
+      sandbox.catQInput('expense', '식비');
+      assert.strictEqual(capturedMs, 220, '디바운스 지연은 다른 검색창(recQ/goalQ)과 동일하게 220ms여야 함');
+      assert.strictEqual(catBodyEl.innerHTML, 'old', '타이머가 실행되기 전에는 #catBody가 바뀌면 안 됨');
+      timerFn();
+      assert.ok(catBodyEl.innerHTML.includes('식비') && !catBodyEl.innerHTML.includes('교통'), '타이머 실행 후 #catBody.innerHTML이 검색 결과로 교체되어야 함');
+    } finally { restore(); }
+  });
+  test("catQInput: clrInput('catQ')가 만드는 빈 문자열 입력은 디바운스 없이 즉시 반영된다", () => {
+    setupCatManageDB();
+    const catBodyEl = { innerHTML: 'old' };
+    sandbox.setTimeout = () => { throw new Error('빈 검색어는 setTimeout을 타면 안 됨'); };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = (id) => (id === 'catBody' ? catBodyEl : null);
+    try {
+      sandbox.catQInput('expense', '');
+      assert.ok(catBodyEl.innerHTML.includes('식비') && catBodyEl.innerHTML.includes('교통'), '빈 검색어는 즉시 전체 목록으로 #catBody를 교체해야 함');
+    } finally { restore(); }
+  });
+})();
 /* openIconPicker의 각 아이콘 버튼은 svg(k,22)가 aria-hidden="true"라(장식용, line 1605 주석 참고)
  * aria-label이 버튼의 유일한 접근 가능한 이름이다. k는 'food'/'gcap'처럼 내부 식별자 키라
  * ICON_LABEL_KO 매핑 없이 그대로 쓰면 스크린리더가 영어 키를 읽어준다(app-evolve cycle281
