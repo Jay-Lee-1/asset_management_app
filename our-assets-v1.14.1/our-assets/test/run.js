@@ -10663,6 +10663,22 @@ test('globalSearchBody: 정상적으로 연결된 목표를 검색하면 어떤 
   assert.ok(!html.includes('연결된 자산을 추적할 수 없어요'));
   assert.ok(!html.includes('일부 미확인'));
 });
+/* 위 세 테스트는 "연결된 자산이 삭제됐어요" 등 캡션이 시각적으로(텍스트) 붙는지만 확인했는데,
+ * goalRowHTML()/goalsManageBody()와 동일하게 이 행도 role="button"으로 감싸여 있어 그 캡션과
+ * '달성' 배지가 role="button"의 aria-label에도 보강돼야 스크린리더 사용자에게 전달된다 —
+ * goalRowHTML/goalsManageBody의 aria-label 공백을 메운 cycle379 develop과 같은 버그 클래스가
+ * globalSearchBody에도 그대로 남아있던 것을 cycle380 develop이 고쳤다. */
+test('globalSearchBody: 연결 자산이 삭제된 목표를 검색하면 goalRowHTML과 동일하게 aria-label에도 "연결된 자산이 삭제됐어요"가 보강된다', () => {
+  setupGlobalSearchGoalDB({ id: 'g1', name: '비상금목표', type: 'asset', linkedAssetId: 'no-such-asset', targetAmount: 200000, owner: '나' });
+  const html = sandbox.globalSearchBody('비상금목표');
+  assert.ok(/aria-label="[^"]*연결된 자산이 삭제됐어요[^"]*"/.test(html), '수정 전에는 aria-label에 이 경고가 전혀 반영되지 않았음');
+});
+test('globalSearchBody: 목표를 달성하면 "달성" 배지와 함께 aria-label에도 "달성"이 보강된다', () => {
+  setupGlobalSearchGoalDB({ id: 'g1', name: '비상금목표', type: 'asset', linkedAssetId: 'a1', targetAmount: 100000, owner: '나' }); // baseAmount===targetAmount → 달성
+  const html = sandbox.globalSearchBody('비상금목표');
+  assert.ok(html.includes('>달성<'), '달성 배지가 시각적으로 없음');
+  assert.ok(/aria-label="[^"]*달성[^"]*"/.test(html), 'aria-label에 "달성"이 보강되지 않음');
+});
 
 /* ---------- globalSearchBody 반복 결과: 통합검색이 거래·자산·카테고리·목표까지만 가로질러 찾고
  * 반복 등록 자체(DB.recurrences, openRecManage/editRec로 편집·중지하는 실물)는 빠져 있던 공백을

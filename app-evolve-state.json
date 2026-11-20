@@ -1,15 +1,8 @@
 {
   "cycle": 380,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 375,
-      "phase": "develop",
-      "timestamp": "2026-11-19T06:00:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 새 영역을 조사시켰다. 발견: 부팅 1.2초 뒤 뜨는 '저축 만기 N건이 임박했어요' 토스트가 overdue(이미 지난 만기)와 soon(아직 안 지난 만기)의 구분 없이 모두 섞어, overdue뿐인 상황에서도 매번 \"곧 만기\"처럼 잘못 안내하던 버그(OS 알림/저축 관리 목록/홈 알림 카드에서 이미 세 번 고쳐진 혼동이 부팅 토스트만 누락). homeAlertCard의 allOverdue/someOverdue 판정과 동일한 maturityToastMsg(logic.js) 추가. 테스트 5건 추가. node test/run.js 3641->3646/3646 통과. APP_VERSION 1.47.483->1.47.484, sw.js CACHE v750->v751.",
-      "commit": "934d959"
-    },
     {
       "cycle": 375,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-20T01:30:00.000Z",
       "summary": "critique(cycle379)의 계획대로 goalHistoryFor()(index.html:4044)에 _balCache/_recCache와 같은 LRU 캡 패턴의 _goalHistCache(Map, GOAL_HIST_CACHE_MAX=40)를 추가했다. 캐시 키는 asset형이면 'a:'+linkedAssetId, 그 외(networth)는 'o:'+goalOwnerEff(g) — 목표 개별이 아니라 '어떤 이력을 보는지'로 묶어 같은 귀속/자산을 보는 여러 목표가 캐시를 공유한다. invalidateBalances()에서 _balCache/_recCache와 함께 무조건 전체 clear(날짜로 부분 보존할 근거가 없음, _saveCore가 DB.nwHistory 갱신보다 먼저 이 함수를 불러 다음 조회 시 항상 최신값을 다시 계산하므로 안전). 구현 중 실제로 테스트를 돌려보니 계획이 놓친 위험이 드러났다 — 테스트들이 save()->invalidateBalances()를 거치지 않고 sandbox.DB를 직접 바꿔치기하는 패턴이 수십 곳에 널려 있어, 캐시를 그대로 추가하자 'a1'/'나'/'all' 같은 흔한 키가 테스트 간·테스트 내에서 충돌해 13개 테스트가 깨졌다. 테스트 러너 루프(test/run.js 실행부)에 매 테스트 시작 전 sandbox._goalHistCache.clear()를 추가해 테스트 간 오염을 없앴고(10개 복구), 같은 테스트 안에서 DB를 바꿔치기한 뒤 바로 재조회하는 3곳(goalRowHTML의 달성 배지/연결 자산 삭제/연결 자산 종류 변경 테스트)에는 그 자리에 수동으로 sandbox._goalHistCache.clear()를 추가해 나머지 3개도 복구했다. CONSTS 목록에 GOAL_HIST_CACHE_MAX/_goalHistCache 추가, invalidateBalances 실제 동작을 isolated vm으로 검증하는 makeInvalidateBalancesCtx 추출 목록에도 _goalHistCache 추가. 캐시 적중(두 번째 호출이 DB 변경을 반영하지 않고 낡은 참조를 그대로 돌려줌)과 invalidateBalances 이후 재계산을 직접 검증하는 테스트 1건, invalidateBalances 기존 테스트 2건에 _goalHistCache 어서션 보강. node test/run.js 3697->3698/3698 통과(과정 중 캐시 충돌로 13개 실패를 거쳐 전부 복구). node --check logic.js 통과, index.html의 4개 인라인 <script> 블록 모두 node --check 통과. index.html을 수정했으므로 APP_VERSION 1.47.490->1.47.491, sw.js CACHE v757->v758. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 380,
+      "phase": "develop",
+      "timestamp": "2026-11-20T02:30:00.000Z",
+      "summary": "globalSearchBody()(통합검색 결과)의 목표 행이 goalRowHTML()/goalsManageBody()와 똑같이 '연결된 자산이 삭제됐어요'/'연결된 자산을 추적할 수 없어요'/'일부 미확인' 경고와 '달성' 배지를 시각적으로만 보여주고 role=\"button\" aria-label에는 진행률%·지남 여부만 담아 스크린리더엔 전달되지 않던 공백을 발견했다(cycle270이 시각 캡션 드리프트만 고치고 aria-label은 빠뜨린 자리, cycle377/379와 같은 버그 클래스의 세 번째 미발견 사례). goalRowHTML과 동일한 ariaWarn 조건을 재사용해 aria-label을 보강했다. 테스트 2건 추가(경고 캡션/달성 배지 각각 aria-label 반영 검증). node test/run.js 3698->3700/3700 통과. index.html을 수정해 APP_VERSION 1.47.491->1.47.492, sw.js CACHE v758->v759.",
       "commit": null
     }
   ]

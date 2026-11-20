@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.491';
+const APP_VERSION='1.47.492';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -7949,7 +7949,14 @@ function globalSearchBody(qRaw){
    const assetGone=goalLinkedAssetGone(g); /* goalRowHTML()/openGoalsList()와 동일 캡션 */
    const assetBroken=goalLinkedAssetBroken(g);
    const hasUnknown=goalHasUnknown(g);
-   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="ackGoalAchieved('${g.id}')" onkeydown="rowKeydown(event,()=>ackGoalAchieved('${g.id}'))"><div class="avatar a-save" style="width:36px;height:36px;border-radius:11px">${svg('target')}</div><div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':overdue?'<span class="mini warn">지남</span>':''}</div><div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%</div>${assetGone?'<div class="mini warn" style="margin-top:2px">연결된 자산이 삭제됐어요</div>':assetBroken?'<div class="mini warn" style="margin-top:2px">연결된 자산을 추적할 수 없어요</div>':hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}</div><div class="mc">${svg('chev')}</div></div>`;
+   /* goalRowHTML()/goalsManageBody()와 동일한 접근성 공백 — 바로 아래 텍스트는 assetGone/assetBroken/
+    * hasUnknown 경고와 '달성' 배지를 시각적으로 보여주지만, 이 행을 감싸는 role="button"의 aria-label은
+    * 진행률%·지남 여부만 담아 그 경고/배지가 스크린리더엔 전혀 전달되지 않았다(role="button" aria-label이
+    * 하위 텍스트를 접근성 트리에서 대체하므로) — cycle377(calCellsFor dayLabel)·cycle379(goalRowHTML/
+    * goalsManageBody)와 같은 버그 클래스가 통합검색 결과(globalSearchBody)에도 그대로 남아있던 세
+    * 번째 자리였다. goalRowHTML()과 동일한 조건을 그대로 재사용해 메운다(app-evolve cycle380 develop). */
+   const ariaWarn=assetGone?' 연결된 자산이 삭제됐어요':assetBroken?' 연결된 자산을 추적할 수 없어요':hasUnknown?' 일부 미확인':'';
+   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${p.achieved?' 달성':''}${ariaWarn}${overdue?' 목표일 지남':''}" onclick="ackGoalAchieved('${g.id}')" onkeydown="rowKeydown(event,()=>ackGoalAchieved('${g.id}'))"><div class="avatar a-save" style="width:36px;height:36px;border-radius:11px">${svg('target')}</div><div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':overdue?'<span class="mini warn">지남</span>':''}</div><div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%</div>${assetGone?'<div class="mini warn" style="margin-top:2px">연결된 자산이 삭제됐어요</div>':assetBroken?'<div class="mini warn" style="margin-top:2px">연결된 자산을 추적할 수 없어요</div>':hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}</div><div class="mc">${svg('chev')}</div></div>`;
   }).join('')}</div>${moreBtn('goals',goalsRemain)}`;
  if(recsAll.length)html+=`<div class="menu-cap" style="margin-top:14px">반복 · ${recsAll.length}개</div><div class="card">${recsCapped.map(r=>{
    const av=r.type==='expense'?'a-food':r.type==='income'?'a-in':r.type==='saving'?'a-save':'a-etc'; /* openRecManage() 행과 동일한 타입별 색상 */
