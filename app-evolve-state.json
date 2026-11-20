@@ -1,146 +1,111 @@
 {
   "cycle": 383,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
       "cycle": 378,
-      "phase": "develop",
-      "timestamp": "2026-11-19T18:05:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-377에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: saveBudget()(index.html:8486)이 delBudget/doRenameCat/doRenameOwner 등 44곳에서 쓰는 undoToast 관례를 어기고 유일하게 되돌릴 수 없는 예산 편집이었다 — 예산 입력 시 자릿수를 잘못 눌러 덮어쓰면(예: 32만원을 320만원으로) 이전 값이 그 자리에서 영구히 사라짐. delBudget과 동일한 패턴(existing/prevAmount를 setBudgetFrom 전에 캡처)으로 undoToast를 추가해 덮어쓰기 전 금액(또는 그 달에 처음 설정한 경우 항목 자체 제거)으로 되돌릴 수 있게 했다. 테스트 2건 추가(기존 금액 덮어쓰기 후 되돌리기, 처음 설정 후 되돌리면 항목 제거+다른 달 영향 없음 확인). node test/run.js 3668->3670/3670 통과. index.html을 수정했으므로 APP_VERSION 1.47.487->1.47.488, sw.js CACHE v754->v755.",
-      "commit": "d14425d"
-    },
-    {
-      "cycle": 378,
-      "phase": "review",
-      "timestamp": "2026-11-19T19:00:00.000Z",
-      "summary": "develop(cycle378, d14425d: saveBudget()에 undoToast 추가)을 검토했다. delBudget()의 existing/prevAmount 캡처-복원 패턴과 1:1로 대조해 동일함을 확인(budgetKey(y,m)로 정확히 일치하는 이력 항목만 찾아 되돌리고, 처음 설정이면 추가된 항목을 splice로 제거). undoToast 호출 시그니처·6초 타이머·hover/focus pause도 다른 44곳과 동일. 새 테스트 2건이 구현과 정확히 일치. node test/run.js 3670/3670 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 378,
       "phase": "critique",
       "timestamp": "2026-11-19T20:18:04.991Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-378에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 처음 두 시도는 범위 밖으로 기각: (1) CDN 스크립트 SRI 추가는 외부 URL fetch(네트워크 권한 확장)가 필요해 기각, (2) 개발 주석 제거용 빌드 스텝은 netlify.toml 빌드/퍼블리시 설정을 건드려야 해 이 자동화의 안전 규칙(CI/CD 설정 불가침) 위반으로 기각. 세 번째 시도에서 로컬 파일 편집만으로 가능한 후보를 찾음: 거래(ledgerCatSel/ledgerAssetMoveSel)·전체내역(histCatSel/histAssetMoveSel)·자산 목록은 bulkCatPickFor/bulkAssetMovePickFor로 다건 선택 시 카테고리 일괄 변경·계좌 일괄 이동을 지원하는데, 똑같은 category/fromAssetId/toAssetId 필드를 가진 반복 거래 관리 선택모드(ST.recSel, index.html:8914-8926/13306-13329)만 삭제·일시중지/다시시작만 있고 이 두 액션이 빠져 있음을 확인(grep으로 bulkCatTargets/bulkAssetMoveTargets/bulkCatPickFor/bulkAssetMovePickFor 호출부 및 recToggleSel/recSelAll/recDelSel/recActiveSel 실제 라인 존재 재확인). pending_advance_plan에 bulkRecCatTargets/bulkRecAssetMoveTargets(logic.js) 추가 + recCatSel/recAssetMoveSel(index.html) + doBulkRecCat/doBulkRecAssetMove + updateSelBottom 바닥바 연결 + 유닛 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "general-purpose 서브에이전트에게 cycle340-378에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 처음 두 시도는 범위 밖으로 기각: (1) CDN 스크립트 SRI 추가는 외부 URL fetch(네트워크 권한 확장)가 필요해 기각, (2) 개발 주석 제거용 빌드 스텝은 netlify.toml 빌드/퍼블리시 설정을 건드려야 해 이 자동화의 안전 규칙(CI/CD 설정 불가침) 위반으로 기각. 세 번째 시도에서 로컬 파일 편집만으로 가능한 후보를 찾음: 거래(ledgerCatSel/ledgerAssetMoveSel)·전체내역(histCatSel/histAssetMoveSel)·자산 목록은 bulkCatPickFor/bulkAssetMovePickFor로 다건 선택 시 카테고리 일괄 변경·계좌 일괄 이동을 지원하는데, 똑같은 category/fromAssetId/toAssetId 필드를 가진 반복 거래 관리 선택모드(ST.recSel, index.html:8914-8926/13306-13329)만 삭제·일시중지/다시시작만 있고 이 두 액션이 빠져 있음을 확인. pending_advance_plan에 bulkRecCatTargets/bulkRecAssetMoveTargets(logic.js) 추가 + recCatSel/recAssetMoveSel(index.html) + doBulkRecCat/doBulkRecAssetMove + updateSelBottom 바닥바 연결 + 유닛 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     },
     {
       "cycle": 378,
       "phase": "advance",
       "timestamp": "2026-11-19T21:16:09.571Z",
-      "summary": "critique(cycle378)의 계획대로 반복 내역 관리 선택모드(ST.recSel)에 거래/전체내역/자산 목록과 동일한 일괄 카테고리 변경·계좌 이동을 추가했다. logic.js에 bulkRecCatTargets/bulkRecAssetMoveTargets 추가(bulkCatTargets/bulkAssetMoveTargets와 동일 규칙 — transfer 제외, type 혼합 거부). 계획의 전제(\"반복 거래엔 split 개념이 없다\")는 실제로 확인해보니 틀렸다 — recDraft.splits가 이미 존재해(txSplitAdd의 쌍둥이 recSplitAdd 등) bulkCatTargets처럼 분할(splits.length>1)이면 reason:\"split\"으로 거부하는 가드를 추가했다(계좌 이동은 bulkAssetMoveTargets와 동일하게 분할도 허용). index.html에 doBulkRecCat/doBulkRecAssetMove(doBulkCat/doBulkAssetMove와 동일한 touchSave+undoToast 패턴), bulkRecCatPickFor/bulkRecAssetMovePickFor(openCatPicker/openAssetPicker 재사용), recCatSel/recAssetMoveSel을 추가했다. 다만 피커의 onPick이 부르는 closeSheet()가 ST.recSel을 비우는 부수효과에 의존하지 않도록, ledgerCatSel/histCatSel과 동일하게 afterApply에서 ST.recSel.mode/ids를 직접 비우도록 설계해 recActiveSel/recDelSel과 같은 기준으로 테스트 가능하게 했다. updateSelBottom()의 바닥바 마크업(s.cat/s.move 렌더링)이 이미 lSel/hist/recSel에 공통이라 activeSel()의 ST.recSel 분기에 cat/move 키만 추가하면 됐다(마크업 자체는 수정 불필요). 테스트 26건 추가(targets 판정 11건, doBulk 되돌리기/twGuard/안전망 8건, pickFor 피커 연동 4건, recCatSel/recAssetMoveSel 선택모드 종료 2건, activeSel 바닥바 버튼 와이어링 1건). node test/run.js 3670->3696/3696 통과. node --check logic.js 통과. index.html/logic.js를 수정했으므로 APP_VERSION 1.47.488->1.47.489, sw.js CACHE v755->v756. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle378)의 계획대로 반복 내역 관리 선택모드(ST.recSel)에 거래/전체내역/자산 목록과 동일한 일괄 카테고리 변경·계좌 이동을 추가했다. logic.js에 bulkRecCatTargets/bulkRecAssetMoveTargets 추가. index.html에 doBulkRecCat/doBulkRecAssetMove, bulkRecCatPickFor/bulkRecAssetMovePickFor, recCatSel/recAssetMoveSel을 추가했다. 테스트 26건 추가. node test/run.js 3670->3696/3696 통과. APP_VERSION 1.47.488->1.47.489, sw.js CACHE v755->v756. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 379,
       "phase": "develop",
       "timestamp": "2026-11-19T22:10:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle374-378에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 반복/날짜 순수함수, bulk 선택모드, undoToast 커버리지, CSV 가드, SRI, 빌드 스텝 등 여러 후보를 살폈으나 대부분 이미 매우 잘 커버돼 있거나(SRI/빌드 스텝은 네트워크 확장·CI/CD 불가침 규칙 위반으로 기각) 새로울 게 없었다. cycle377의 calCellsFor dayLabel 접근성 수정과 같은 버그 클래스를 목표 관리 화면에서 발견: goalRowHTML()(index.html:4054)/goalsManageBody()(4139)가 role=\"button\" 컨테이너의 aria-label에 진행률%·지남 여부만 담아, role=\"button\" aria-label이 하위 텍스트를 접근성 트리에서 완전히 대체하는 특성상 시각적으로는 보이는 '달성' 배지와 '연결된 자산이 삭제됐어요'/'연결된 자산을 추적할 수 없어요'/'일부 미확인' 경고 캡션이 스크린리더 사용자에게 전혀 전달되지 않던 공백(마지막 경고는 실제 행동이 필요한 상태인데도 안내되지 않음). 두 함수 모두 시각 캡션과 동일한 조건(assetGone/assetBroken/hasUnknown/p.achieved)을 재사용해 aria-label에 보강(ariaWarn 변수). 기존 테스트 3건에 aria-label 어서션을 확장하고 '달성' 배지 aria-label 보강을 확인하는 신규 테스트 1건 추가. node test/run.js 3696->3697/3697 통과, node --check logic.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.489->1.47.490, sw.js CACHE v756->v757.",
+      "summary": "goalRowHTML()(index.html:4054)/goalsManageBody()(4139)의 role=\"button\" aria-label에 진행률%·지남 여부만 담겨 '달성' 배지와 연결자산 경고 캡션이 스크린리더에 전달 안 되던 공백을 ariaWarn 변수로 보강. 테스트 1건 추가. node test/run.js 3696->3697/3697 통과. APP_VERSION 1.47.489->1.47.490, sw.js CACHE v756->v757.",
       "commit": "4dd287f"
-    },
-    {
-      "cycle": 379,
-      "phase": "review",
-      "timestamp": "2026-11-19T23:07:25.000Z",
-      "summary": "develop(cycle379, 4dd287f: goalRowHTML/goalsManageBody의 role=\"button\" aria-label에 달성 배지·연결자산 경고 캡션 보강)을 검토했다. 두 함수 모두 ariaWarn 계산에 쓰는 assetGone/assetBroken/hasUnknown/p.achieved가 바로 위에서 시각 캡션에 쓰는 것과 동일한 변수(재선언 없음)임을 직접 대조해 확인, cycle377 calCellsFor dayLabel과 동일한 패턴. node --check logic.js 통과, node test/run.js 3697/3697 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
     },
     {
       "cycle": 379,
       "phase": "critique",
       "timestamp": "2026-11-20T00:28:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-379에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: goalHistoryFor()(index.html:4044-4049, 목표의 진행률 계산용 이력 조회)가 자산 연결형 목표에 대해 allTxns(RANGE_FROM,TODAY) 전체 스캔 + assetBalanceSeries()를 매 호출마다 캐싱 없이 재계산함을 확인(index.html ~3090-3113의 _balCache/_recCache, 12093 _bwc Map, 8121 makeMonthCatCache와 같은 패턴이 이미 여러 곳에 있는데도 goals만 빠짐). pending_advance_plan에 _goalHistCache(Map, _balCache와 동일한 LRU 캡 패턴)를 추가하고 goalHistoryFor()에서 캐시 적중 시 바로 반환, invalidateBalances()에서 함께 비우는 계획 저장(호출부 변경 불필요). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "goalHistoryFor()(index.html:4044-4049)가 자산 연결형 목표에 대해 매 호출마다 캐싱 없이 allTxns 전체 스캔+assetBalanceSeries()를 재계산함을 발견(_balCache/_recCache/makeMonthCatCache 패턴이 이미 있는데 goals만 빠짐). pending_advance_plan에 _goalHistCache(LRU Map) 추가 계획 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 379,
       "phase": "advance",
       "timestamp": "2026-11-20T01:30:00.000Z",
-      "summary": "critique(cycle379)의 계획대로 goalHistoryFor()(index.html:4044)에 _balCache/_recCache와 같은 LRU 캡 패턴의 _goalHistCache(Map, GOAL_HIST_CACHE_MAX=40)를 추가했다. 캐시 키는 asset형이면 'a:'+linkedAssetId, 그 외(networth)는 'o:'+goalOwnerEff(g). invalidateBalances()에서 _balCache/_recCache와 함께 전체 clear. 테스트 캐시 충돌 13개 발견 후 복구. node test/run.js 3697->3698/3698 통과. node --check logic.js 통과. index.html을 수정했으므로 APP_VERSION 1.47.490->1.47.491, sw.js CACHE v757->v758. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle379)의 계획대로 goalHistoryFor()에 _balCache/_recCache와 같은 LRU 캡 패턴의 _goalHistCache(Map, GOAL_HIST_CACHE_MAX=40) 추가. invalidateBalances()에서 함께 clear. node test/run.js 3697->3698/3698 통과. APP_VERSION 1.47.490->1.47.491, sw.js CACHE v757->v758. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 380,
       "phase": "develop",
       "timestamp": "2026-11-20T02:30:00.000Z",
-      "summary": "globalSearchBody()(통합검색 결과)의 목표 행이 goalRowHTML()/goalsManageBody()와 똑같이 '연결된 자산이 삭제됐어요'/'연결된 자산을 추적할 수 없어요'/'일부 미확인' 경고와 '달성' 배지를 시각적으로만 보여주고 role=\"button\" aria-label에는 진행률%·지남 여부만 담아 스크린리더엔 전달되지 않던 공백을 발견했다(cycle270이 시각 캡션 드리프트만 고치고 aria-label은 빠뜨린 자리, cycle377/379와 같은 버그 클래스의 세 번째 미발견 사례). goalRowHTML과 동일한 ariaWarn 조건을 재사용해 aria-label을 보강했다. 테스트 2건 추가(경고 캡션/달성 배지 각각 aria-label 반영 검증). node test/run.js 3698->3700/3700 통과. index.html을 수정해 APP_VERSION 1.47.491->1.47.492, sw.js CACHE v758->v759.",
-      "commit": null
-    },
-    {
-      "cycle": 380,
-      "phase": "review",
-      "timestamp": "2026-11-20T03:07:08.707Z",
-      "summary": "develop(cycle380, 00e06e5: globalSearchBody() 목표 행 aria-label에 달성/연결자산 경고 보강)을 검토했다. goalRowHTML()(index.html:4091)의 aria-label 템플릿 리터럴과 바이트 단위로 대조해 완전히 동일함을 확인(p.achieved/ariaWarn/overdue 순서와 조건식 일치), ariaWarn 계산에 쓰는 assetGone/assetBroken/hasUnknown도 바로 위에서 시각 캡션에 쓰는 것과 동일한 변수(재선언 없음, cycle270이 추가한 주석 바로 아래)임을 확인. 새 테스트 2건이 구현과 정확히 일치(연결 자산 삭제 시 aria-label 반영, 달성 배지 aria-label 반영). node --check logic.js 통과, node test/run.js 3700/3700 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
+      "summary": "globalSearchBody() 목표 행이 goalRowHTML/goalsManageBody와 같은 경고를 aria-label에 담지 않던 공백(cycle377/379와 같은 패턴의 세 번째 사례) 발견 및 수정. 테스트 2건 추가. node test/run.js 3698->3700/3700 통과. APP_VERSION 1.47.491->1.47.492, sw.js CACHE v758->v759.",
+      "commit": "00e06e5"
     },
     {
       "cycle": 380,
       "phase": "critique",
       "timestamp": "2026-11-20T04:12:02.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-380에서 다룬 모든 주제를 배제 목록으로 주고(SRI/빌드 스텝은 재차 범위 밖으로 안내) 새 영역을 조사시켰다. 발견: doSettleN()(index.html:6000-6025)의 N인 정산 부분 실패 처리가 실제 버그를 품고 있다 — 현금성 자산 없는 참가자를 만나면 이미 만든 이체 거래는 유지하고 settledThrough는 당기지 않는 cycle367의 의도된 동작이지만, confirmSettlementN()(index.html:5990-5998)이 재시도 시 settlementSummaryN/settleUpTransfers(logic.js:238,282)로 transfers를 처음부터 다시 계산해 이미 생성된 transfer형 '정산' 거래를 전혀 고려하지 않는다. 막혔던 참가자의 현금 자산을 추가해 재시도하면 이미 성공한 이체까지 포함해 전부 다시 생성되어 실제 돈이 안 움직였는데도 같은 송금이 두 번 기록된다. index.html:6000-6025, logic.js:238-296 직접 대조로 재확인, cycle367 기존 테스트가 재시도 경로를 전혀 다루지 않음을 test/run.js에서 확인. pending_advance_plan에 settleTransfer 플래그 + netOutSettledTransfers(logic.js) 순수 함수로 재계산 시 기존 완료분 상쇄 + end-to-end 재시도 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "doSettleN()의 N인 정산 부분 실패 후 재시도 시 confirmSettlementN()이 settlementSummaryN/settleUpTransfers로 transfers를 처음부터 다시 계산해 이미 성공한 이체 거래를 중복 생성하는 버그 발견. pending_advance_plan에 settleTransfer 플래그 + netOutSettledTransfers(logic.js) 계획 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 380,
       "phase": "advance",
       "timestamp": "2026-11-20T05:12:21.957Z",
-      "summary": "critique(cycle380)의 계획대로 N인 정산 부분 실패 후 재시도 시 중복 생성 버그를 고쳤다. doSettleN()이 만드는 transfer 거래에 settleTransfer:true 플래그를 추가(index.html doSettleN). logic.js에 순수 함수 netOutSettledTransfers(byOwner,settleTxns) 추가 — settleTxns({from,to,amount})의 from은 net을 올리고(빚 감소) to는 net을 내린다(받을 돈 감소). index.html에 existingSettleTransfersN(from) 헬퍼를 추가해 DB.txns 중 type==='transfer'&&settleTransfer&&date in [from,TODAY]인 것들을 owner 기준({from,to,amount})으로 변환하고, confirmSettlementN()과 openSettlement()의 N인 분기 양쪽에서 settlementSummaryN 직후 sn.byOwner=netOutSettledTransfers(sn.byOwner,existingSettleTransfersN(from))를 적용한 뒤 settleUpTransfers를 호출하도록 수정 — 화면 표시와 재시도 생성이 항상 같은 값을 쓰게 됐다. 계획이 제안한 'tx/rec 쌍 테스트' 대신(이 버그엔 쌍둥이 코드가 없음) netOutSettledTransfers 유닛 테스트 4건과 confirmSettlementN+doSettleN 부분실패→재시도 end-to-end 테스트 1건을 추가(부분 실패 후 아이의 현금 자산을 추가해 재시도하면 이미 성공한 배우자->나 이체는 다시 안 만들고 아이->나 몫만 새로 생김을 confirmSheet 메시지와 DB.txns 개수로 검증). cycle367의 기존 부분 실패 테스트는 수정 없이 그대로 통과해 회귀 없음을 확인. node test/run.js 3700->3705/3705 통과. node --check logic.js 통과. index.html/logic.js를 수정했으므로 APP_VERSION 1.47.492->1.47.493, sw.js CACHE v759->v760. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle380)의 계획대로 N인 정산 재시도 중복생성 버그 수정. doSettleN()의 transfer에 settleTransfer:true 플래그, logic.js에 netOutSettledTransfers(byOwner,settleTxns) 추가, existingSettleTransfersN(from) 헬퍼로 confirmSettlementN/openSettlement N인 분기에서 적용. 테스트 5건 추가. node test/run.js 3700->3705/3705 통과. APP_VERSION 1.47.492->1.47.493, sw.js CACHE v759->v760. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 381,
       "phase": "develop",
       "timestamp": "2026-11-20T06:12:42.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle376-380에서 다룬 모든 주제를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: assetBodyHTML()의 자산관리 탭 자산 행(role=\"button\", 일반 모드 .row-tap과 일괄선택 모드 asset-item 둘 다)이 '총자산 미포함' 칩과 '가격 미확인' 경고를 시각적으로만 보여주고 aria-label에는 이름·금액만 담아, cycle377(calCellsFor)/cycle379,380(goalRowHTML/goalsManageBody/globalSearchBody)에서 이미 고친 것과 같은 버그 클래스의 네 번째 미발견 인스턴스였다. includeInTotal===false 또는 시세평가 자산의 rateUnknown()이 true일 때 두 경고 문구를 aria-label에도 추가. 실행형 테스트 4건 추가(미포함 칩 일반/선택모드, 가격 미확인 있음/없음 회귀). node test/run.js 3705->3709/3709 통과. index.html을 수정했으므로 APP_VERSION 1.47.493->1.47.494, sw.js CACHE v760->v761.",
+      "summary": "assetBodyHTML() 자산관리 탭 자산 행(일반/일괄선택 모드)이 '총자산 미포함' 칩·'가격 미확인' 경고를 aria-label에 담지 않던 공백(같은 패턴의 네 번째 사례) 발견 및 수정. 테스트 4건 추가. node test/run.js 3705->3709/3709 통과. APP_VERSION 1.47.493->1.47.494, sw.js CACHE v760->v761.",
       "commit": "0121cb9"
-    },
-    {
-      "cycle": 381,
-      "phase": "review",
-      "timestamp": "2026-11-20T07:07:57.000Z",
-      "summary": "develop(cycle381, 0121cb9: assetBodyHTML() 자산 행 aria-label에 총자산 미포함/가격 미확인 경고 보강)을 검토했다. ariaWarn 계산식 `(a.includeInTotal?'':' 총자산 미포함')+(showEval&&rateUnknown(a)?' 가격 미확인':'')`이 같은 함수 안의 시각 캡션(미포함 칩 line 4813/4829, '가격 미확인' line 4830 `showEval?(rateUnknown(a)?'<div class=\"mini warn\">가격 미확인</div>':...)`)과 동일한 변수(a.includeInTotal/showEval/rateUnknown(a))를 그대로 재사용함을 직접 대조해 확인 — cycle377(calCellsFor)/379,380(goalRowHTML/goalsManageBody/globalSearchBody)과 같은 패턴. row-tap과 일괄선택 모드 asset-item 양쪽 aria-label에 동일하게 반영됐음도 확인. 새 테스트 4건(미포함 일반/선택모드, 가격미확인 있음/없음 회귀)이 구현과 정확히 일치. node --check logic.js 통과, node test/run.js 3709/3709 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
     },
     {
       "cycle": 381,
       "phase": "critique",
       "timestamp": "2026-11-20T08:12:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-381에서 다룬 모든 주제(role=button aria-label 패턴, goalHistoryFor 캐싱, N인 정산 재시도, saveBudget undo, recSel 일괄작업, 히스토리 필터 리셋, split 테스트, SRI/빌드 스텝 기각 등)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: debtsBehind()(index.html:12037-12046)와 debtsPaidOff()(index.html:12067-12076)가 서로 독립적으로 allTxns 전체 스캔+assetBalSampleDates+부채 자산마다 assetBalanceSeries(logic.js:2004, debtsPaidOff는 assetBalancePeak도) 재계산을 중복 수행하는데, 이 둘이 homeAlerts()(index.html:12192,12200)에서 연달아 호출되고 homeAlerts() 자체가 updateAlerts()->renderCurrent() 경로로 거래/자산/목표 저장 거의 전부·탭 전환마다 불린다(index.html:12141 주석). index.html:3092-3097 _goalHistCache 주석이 이 homeAlerts 핫패스를 캐싱 동기로 명시하면서도 바로 옆 debt 중복은 cycle379(goalHistoryFor 캐싱)가 남겨둔 자리였음을 직접 라인 대조로 확인(file:line 재검증 완료). pending_advance_plan에 debtPayoffStatuses() 공유 함수로 통합(txns/dates/자산별 assetBalanceSeries 1회만, debtsBehind/debtsPaidOff는 thin wrapper로 시그니처 유지) + homeAlerts()에서 1회 호출로 교체 + FUNCTIONS 등록 및 동등성/중복제거 검증 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "debtsBehind()/debtsPaidOff()가 독립적으로 allTxns 전체 스캔+자산별 assetBalanceSeries 재계산을 중복 수행하고, 이 둘이 homeAlerts()(저장/탭 전환마다 호출되는 핫패스)에서 연달아 호출됨을 발견. pending_advance_plan에 debtPayoffStatuses() 공유 함수 통합 계획 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 381,
       "phase": "advance",
       "timestamp": "2026-11-20T09:11:14.119Z",
-      "summary": "critique(cycle381)의 계획대로 debtsBehind()(index.html, 옛 12037)와 debtsPaidOff()(옛 12067)의 중복 전체 스캔을 debtPayoffStatuses() 공유 함수로 통합했다. txns(allTxns+!isPending)/dates(assetBalSampleDates 60)를 한 번만 계산하고, includeInTotal한 debt 자산을 한 번만 순회하며 assetBalanceSeries를 자산당 정확히 한 번만 호출, debtNewlyPaidOff로 확정된 자산에만 assetBalancePeak을 계산해(기존엔 후보 전체에 계산한 뒤 버렸다) 그만큼도 줄였다. debtsBehind()/debtsPaidOff()는 기존 시그니처·반환 모양을 그대로 유지하는 thin wrapper로 바꿔 openDebtBehindList/openDebtPaidOffList와 test/run.js 호출부는 수정 불필요. homeAlerts()(핫패스 — 저장/탭 전환 거의 전부에서 불림)는 debtPayoffStatuses()를 한 번만 호출해 .behind/.paidOff를 읽도록 수정. test/run.js FUNCTIONS에 debtPayoffStatuses 등록. 테스트 3건 추가: mixed fixture(정체/완납/진행중/이력없음/총계제외 5종)로 debtPayoffStatuses()와 debtsBehind()/debtsPaidOff() 출력이 JSON.stringify 기준 완전히 동일함을 확인, assetBalanceSeries 호출 카운터로 따로 부르면 자산당 2번(behind+paidOff 각 1번=합 4회, 자산 2개)이던 게 debtPayoffStatuses()는 자산당 1번(합 2회)으로 줄었음을 확인, homeAlerts()가 debtPayoffStatuses()를 정확히 1회만 호출함을 확인. node test/run.js 3709->3712/3712 통과. node --check logic.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.494->1.47.495, sw.js CACHE v761->v762. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle381)의 계획대로 debtsBehind()/debtsPaidOff()의 중복 전체 스캔을 debtPayoffStatuses() 공유 함수로 통합(txns/dates/assetBalanceSeries 각 1회만). 기존 함수는 thin wrapper로 시그니처 유지, homeAlerts()는 1회 호출로 교체. 테스트 3건 추가. node test/run.js 3709->3712/3712 통과. APP_VERSION 1.47.494->1.47.495, sw.js CACHE v761->v762. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 382,
       "phase": "develop",
       "timestamp": "2026-11-20T10:13:42.920Z",
-      "summary": "general-purpose 서브에이전트에게 cycle377-381에서 다룬 모든 주제(role=button aria-label 패턴, goalHistoryFor 캐싱, N인 정산 재시도, saveBudget undo, recSel 일괄작업, 히스토리 필터 리셋, debtPayoffStatuses 통합 등)를 배제 목록으로 주고 새 영역을 조사시켰다. 발견: globalSearchBody()(통합검색)의 자산 결과 행이 cycle380에서 같은 함수의 목표(goal) 행에만 달성/연결자산 경고를 aria-label에 보강했을 뿐, 바로 같은 함수 안의 자산(asset) 결과 행은 assetBodyHTML()(cycle381에서 고친 자산관리 탭)과 달리 \"총자산 미포함\" 칩과 \"가격 미확인\" 경고를 시각적으로도, aria-label로도 전혀 보여주지 않던 공백이었다(role=button 패턴의 다섯 번째 미발견 인스턴스, cycle380이 같은 함수 안의 goal 분기만 고치고 asset 분기를 놓친 자리). assetBodyHTML()과 동일한 showEval/isMarketValued/rateUnknown/includeInTotal 조건을 재사용해 시각 칩/경고와 aria-label을 모두 추가. 테스트 3건 추가(미포함 칩 aria-label 반영, 가격 미확인 경고 aria-label 반영, 정상 자산엔 둘 다 안 붙는 회귀 가드) — 테스트 작성 중 index.html을 임시로 되돌려 2건이 실제로 실패하는 것을 확인해 테스트가 버그를 실제로 잡는지 검증한 뒤 복구. node test/run.js 3712->3715/3715 통과. node --check logic.js, node --check sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.495->1.47.496, sw.js CACHE v762->v763.",
+      "summary": "globalSearchBody() 자산 결과 행이 assetBodyHTML()과 달리 '총자산 미포함'/'가격 미확인' 경고를 시각적으로도 aria-label로도 전혀 보여주지 않던 공백(cycle380이 같은 함수의 goal 분기만 고치고 asset 분기를 놓친 자리) 발견 및 수정. 테스트 3건 추가. node test/run.js 3712->3715/3715 통과. APP_VERSION 1.47.495->1.47.496, sw.js CACHE v762->v763.",
       "commit": "d95b6ba"
-    },
-    {
-      "cycle": 382,
-      "phase": "review",
-      "timestamp": "2026-11-20T11:09:49.261Z",
-      "summary": "develop(cycle382, d95b6ba: globalSearchBody() 자산 결과 aria-label에 총자산 미포함/가격 미확인 경고 보강)을 검토했다. 추가된 ariaWarn 계산식이 assetBodyHTML()(index.html:4806)의 (a.includeInTotal?...:...)+(showEval&&rateUnknown(a)?...:...)과 바이트 단위로 동일함을 직접 대조해 확인 — cycle377/379-381과 같은 role=\"button\" aria-label 보강 패턴의 다섯 번째 인스턴스. 시각 칩(\"미포함\")·경고(\"가격 미확인\")도 assetBodyHTML의 마크업을 그대로 재사용함을 확인. 새 테스트 3건(미포함 칩+aria-label, 가격 미확인+aria-label, 정상 자산 회귀 가드)이 구현과 정확히 일치. node test/run.js 3715/3715 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
     },
     {
       "cycle": 382,
       "phase": "critique",
       "timestamp": "2026-11-20T12:14:00.000Z",
-      "summary": "role=button aria-label 패턴(5건), goalHistoryFor 캐싱, N인 정산 재시도, saveBudget undo, recSel 일괄작업, debtPayoffStatuses 통합, SRI/빌드 스텝 기각 등 cycle340-382에서 다룬 주제를 배제 목록으로 준 general-purpose 서브에이전트가 시세 동기화(syncRates/homeAlerts) 경로에서 새 버그를 찾았다: syncRates()(index.html:4457-4490)의 R.failStreak는 fx/stock/crypto 중 하나라도 성공하면 즉시 0으로 리셋되는 전역 카운터라, 주식+코인을 함께 보유한 가구가 코인 API만 지속 실패해도 주식이 성공하는 한 failStreak가 0을 유지해 homeAlerts()의 staleRates 카드(12123행, failStreak>=3)가 영원히 뜨지 않는다. rateUnknown()(3202-3208행)도 과거 캐시값이 남아있으면 null이 아니라 개별 자산 배지도 안 붙어, 그 코인 자산은 경고 없이 낡은 가격으로 계속 총자산에 반영된다. rateStatusText()(4514행)는 이미 fxFail||stockFail||cryptoFail OR로 봐서 시세 시트를 직접 열면 '최신 아님'이 보이는데 홈 알림까지는 전달되지 않는 비대칭임을 직접 코드 대조로 확인(syncRates 4457-4490, rateUnknown 3202-3208, rateStatusText 4514, homeAlerts staleRates 12123, mergeRates logic.js 612-618, test/run.js 6874-6900). pending_advance_plan에 R.fxFailStreak/stockFailStreak/cryptoFailStreak 개별 추적 + logic.js의 anyRateSourceStale() 순수 함수로 homeAlerts의 staleRates 조건 교체 + 혼합 보유 시나리오 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "syncRates()의 전역 R.failStreak가 fx/stock/crypto 중 하나라도 성공하면 즉시 0으로 리셋돼, 혼합 포트폴리오(주식+코인)에서 코인 API만 지속 실패해도 homeAlerts()의 staleRates 카드가 영원히 안 뜨는 버그 발견. pending_advance_plan에 소스별 개별 failStreak + anyRateSourceStale(logic.js) 계획 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 382,
       "phase": "advance",
       "timestamp": "2026-11-20T13:14:00.000Z",
-      "summary": "critique(cycle382)의 계획대로 혼합 포트폴리오에서 시세 소스 하나만 지속 실패해도 홈 경고가 안 뜨던 공백을 고쳤다. syncRates()(index.html)에서 기존 전역 R.failStreak(rateStatusText() 호환 유지)와 별도로 R.fxFailStreak/stockFailStreak/cryptoFailStreak을 각 소스가 성공(또는 fetchFxGold 등이 null을 돌려줘 애초에 불필요)하면 0, 실패하면 +1로 독립 추적하도록 추가했다. logic.js에 순수 함수 anyRateSourceStale(streaks,threshold=3)을 추가해 fx/stock/crypto 중 하나라도 threshold 이상이면 true를 돌려주게 하고, homeAlerts()의 staleRates 조건(기존 hasRateAssets()&&failStreak>=3)을 이 헬퍼로 교체했다 — 전역 조건(셋 다 동시에 threshold 도달해야 함)의 상위집합이라 회귀 없음. sanitizeBackup()의 숫자 클램프 목록에 새 필드 3개를 추가(복원/클라우드 풀 경로로 손상된 값이 들어올 수 있으므로 failStreak와 동일하게 처리). mergeRates()는 rates 객체를 통째로 교체하는 방식이라 추가 병합 로직 불필요했다. 기존 cycle269 staleRates 테스트 2건이 failStreak만 보고 있어 깨졌던 것을 stockFailStreak도 함께 채우도록 수정하고, 새 테스트 6건 추가: anyRateSourceStale() 유닛 테스트(8개 단언), 주식 성공+코인 3연속 실패 혼합 fixture에서 staleRates가 뜨는지(수정 전 공백의 직접 재현), 코인만 보유 시 기존처럼 뜨는지(회귀 가드), 두 소스 모두 보유 중 코인이 1~2회만 간헐 실패하면 안 뜨는지. node test/run.js 3715->3719/3719 통과. node --check logic.js, node --check sw.js 통과. index.html/logic.js/sw.js를 수정했으므로 APP_VERSION 1.47.496->1.47.497, sw.js CACHE v763->v764. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle382)의 계획대로 혼합 포트폴리오 시세 소스별 지속 실패 미경보 버그 수정. syncRates()에 R.fxFailStreak/stockFailStreak/cryptoFailStreak 개별 추적 추가(기존 R.failStreak는 호환 유지), logic.js에 anyRateSourceStale(streaks,threshold=3) 추가, homeAlerts() staleRates 조건을 이 헬퍼로 교체. sanitizeBackup() 숫자 클램프에 새 필드 3개 추가. 테스트 6건 추가. node test/run.js 3715->3719/3719 통과. APP_VERSION 1.47.496->1.47.497, sw.js CACHE v763->v764. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 383,
+      "phase": "develop",
+      "timestamp": "2026-11-20T14:15:00.000Z",
+      "summary": "saveAsset()이 maturityDate(매입일 아님, 만기일)에는 RANGE_FROM/RANGE_TO 가드를 두는데 acquiredAt(매입일, annualizedReturn()의 보유기간 계산에 쓰임)에는 없었음을 발견(saveGoal의 targetDate와 같은 클래스, cycle319에서 고친 버그). 매입일 피커가 무한 스크롤이라 미래만 막고 과거 하한은 안 걸러 비정상적으로 먼 과거 날짜(예: 1000년)가 저장될 수 있었다. saveAsset()에 dateBelowRangeFloor/dateAboveRangeCeil 가드 쌍 추가(index.html, maturityDate 가드 바로 아래). 테스트 4건 추가(하한 미달/상한 초과/정상범위/필드없음 회귀). node test/run.js 3719->3723/3723 통과, node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.497->1.47.498, sw.js CACHE v764->v765.",
       "commit": null
     }
   ]
