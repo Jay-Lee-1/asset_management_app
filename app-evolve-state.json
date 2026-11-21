@@ -1,15 +1,8 @@
 {
   "cycle": 386,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 380,
-      "phase": "develop",
-      "timestamp": "2026-11-20T02:30:00.000Z",
-      "summary": "globalSearchBody() 목표 행이 goalRowHTML/goalsManageBody와 같은 경고를 aria-label에 담지 않던 공백(cycle377/379와 같은 패턴의 세 번째 사례) 발견 및 수정. 테스트 2건 추가. node test/run.js 3698->3700/3700 통과. APP_VERSION 1.47.491->1.47.492, sw.js CACHE v758->v759.",
-      "commit": "00e06e5"
-    },
     {
       "cycle": 380,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-21T04:15:00.000Z",
       "summary": "recNthDate/recCountUntil(logic.js:138-170)이 recDates(r,from,to)를 부를 때 from으로 base.startDate 자체를 그대로 써, weekend='earlier'인 반복의 첫 원본 후보(=startDate)가 주말·공휴일이라 그 이전 평일로 당겨지면 push()의 'd>=from' 검사에 걸려 통째로 유실되는 버그 발견 및 수정(예: monthly day=1+earlier, startDate=2025-11-01(토) → 실제 첫 회차는 2025-10-31인데 기존엔 다음달 2025-12-01을 1번째로 오판했고, recCountUntil도 같은 구간에서 1개 적게 셈 — '횟수' 입력(_applyCount/recalcEndCond)으로 역산하는 endDate가 한 회차 뒤로 밀려 '1번만 반복'을 저장해도 실제로는 2번 생성되는 금전 정확성 버그였다). shiftWeekend의 최대 이동폭(10일)만큼 from을 앞당긴 RECNTH_SHIFT_BUFFER_DAYS=10 버퍼를 추가해 고침 — recDates 자체의 raw ds>=r.startDate 가드는 그대로라 새 원본 후보가 섞여 들어오지 않고, weekend='later'는 항상 미래로만 밀어 처음부터 영향이 없었다. 기존 self-consistency 테스트 2건(daily+earlier, startDate=2026-01-01이 신정이라 같은 경로를 타던 테스트)이 narrow window(from=startDate)로 비교해 회귀로 깨져 wideFrom(startDate-10일)으로 같이 수정. 신규 회귀 테스트 3건 추가(첫 회차 유실 가드/recCountUntil 카운트 가드/later 영향 없음 가드). 부가로 renderRecSheet()(index.html:7086)에 '다음 결제일' 미리보기 힌트를 추가해(recNthDate(base,1) 재사용, monthly일 때만 노출) 반복일이 말일을 넘기거나 주말·공휴일로 조정될 때 저장 전에 실제 날짜를 미리 볼 수 있게 함(새 계산식 없이 기존 순수 함수만 재사용). 테스트 3건 추가. node test/run.js 3747->3753/3753 통과, node --check logic.js/sw.js/메인 script 블록 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.504->1.47.505, sw.js CACHE v771->v772.",
+      "commit": "e4d98d0"
+    },
+    {
+      "cycle": 386,
+      "phase": "review",
+      "timestamp": "2026-11-21T06:00:00.000Z",
+      "summary": "develop(cycle386)의 recNthDate/recCountUntil RECNTH_SHIFT_BUFFER_DAYS=10 버퍼 수정과 renderRecSheet() '다음 결제일' 힌트를 검토. recDates()의 push()가 'raw ds>=r.startDate' 게이트(호출부에서 이미 보장) 이후 'shiftWeekend(ds)>=from' 필터를 적용하는 구조를 재확인해, winFrom=startDate-10일로 넓혀도 shiftWeekend의 상한(n<10, 최대 10일 이동)과 정확히 맞아 새로운 원본 후보가 섞여 들어오지 않음(경계값 10일도 d>=winFrom로 포함됨)을 확인. monthly/yearly/daily/weekly/biweekly 각 분기 모두 버퍼가 freq에 무관하게 일반적으로 적용되고, daily/weekly/biweekly의 'target=addDays(from,-2)' 스캔 시작점 최적화도 winFrom이 더 과거라 target<=r.startDate가 되어 트리거되지 않아 회귀가 없음을 확인. recNthDate/recCountUntil을 호출하는 7개 지점(index.html: _applyCount/recalcEndCond/recSave/txSave 등)이 모두 base 객체를 그대로 넘기므로 함수 내부 수정만으로 전부 일관되게 고쳐짐. renderRecSheet() 힌트는 freq==='monthly' 가드로 weekly/biweekly/daily/yearly에는 영향 없고 fmtDateFull/recNthDate 기존 순수 함수만 재사용해 새 버그 표면이 없음. node test/run.js 3753/3753, node --check logic.js/sw.js 통과. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
