@@ -1,15 +1,8 @@
 {
   "cycle": 387,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 381,
-      "phase": "develop",
-      "timestamp": "2026-11-20T06:12:42.000Z",
-      "summary": "assetBodyHTML() 자산관리 탭 자산 행(일반/일괄선택 모드)이 '총자산 미포함' 칩·'가격 미확인' 경고를 aria-label에 담지 않던 공백(같은 패턴의 네 번째 사례) 발견 및 수정. 테스트 4건 추가. node test/run.js 3705->3709/3709 통과. APP_VERSION 1.47.493->1.47.494, sw.js CACHE v760->v761.",
-      "commit": "0121cb9"
-    },
     {
       "cycle": 381,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-21T07:10:00.000Z",
       "summary": "critique(cycle386)의 계획대로 commitTx() 기존 거래 수정에 undo 추가. i>=0(기존 거래 교체) 분기에서 DB.txns[i]=d 직전에 orig=DB.txns[i]를 캡처하고, 성공 토스트를 orig가 있을 때만 undoToast(msg, undoFn)로 교체했다. commitRec()(7233행)과 달리 undoFn은 교체 당시의 배열 인덱스 i를 클로저하지 않고 undo 시점에 orig.id로 DB.txns를 다시 findIndex해 찾는다 — 거래 수정 후 6초 undo 윈도우 동안에도 백그라운드 클라우드 머지·정산 이체 생성 등이 배열 길이/순서를 바꿀 수 있어 고정 인덱스가 틀린 자리를 가리킬 위험이 있기 때문(정산/반복은 애초에 고정 인덱스라 그 위험이 없다). 신규 저장(d.id 없음, orig===null)은 트래시로 지우면 되므로 기존 toast() 그대로 유지. 테스트 3건 추가: 기존 거래 수정+undo 복원(금액/메모), 신규 저장은 undoToast 안 부름, undo 윈도우 중 배열 앞에 레코드가 끼어들어도 orig.id로 올바르게 되돌림(인덱스 클로저였다면 실패했을 케이스). node test/run.js 3753->3756/3756 통과, node --check(메인 script 블록 추출)/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.505->1.47.506, sw.js CACHE v772->v773. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 387,
+      "phase": "develop",
+      "timestamp": "2026-11-21T07:20:39.000Z",
+      "summary": "검색창 6곳(goalQ/assetQ/histQ/gsQ/catQ/recQ) 모두 지우기(fc-x) 버튼은 있지만 입력창에 포커스가 있는 상태에서 키보드로 검색어를 즉시 지울 방법(Escape)이 통째로 빠져 있던 사례 발견 — Tab으로 fc-x 버튼까지 옮겨가야만 지울 수 있었다(날짜피커 방향키·캐러셀 Arrow키처럼 이미 누적된 키보드 접근성 패턴과 같은 결이지만, 한 위젯이 아니라 검색창 전부가 똑같이 비어 있던 사례). 6개 입력 모두에 onkeydown=\"if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('ID')}\"를 추가해, 입력값이 있을 때만 document 레벨 onSheetKeydown()의 '시트 닫기' Escape 버블을 막고 clrInput()으로 즉시 지운다 — clrInput()이 이미 fc-x 버튼과 동일하게 'input' 이벤트를 디스패치해 각 *QInput() 디바운스 핸들러를 그대로 타므로 새 로직은 필요 없다. 입력값이 없으면 그대로 버블시켜 Escape가 시트를 닫는 기존 동작을 보존한다. 기존 goalQ/assetQ/histQ/recQ/catQ 마크업 테스트 5건에 어서션을 추가하고, 지금까지 FUNCTIONS에 없던 openGlobalSearch를 추가해 gsQ용 신규 테스트 1건을 더했다. node test/run.js 3756->3757/3757 통과, node --check(메인 <script> 블록 추출)/logic.js/sw.js/test/run.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.506->1.47.507, sw.js CACHE v773->v774.",
+      "commit": "5ba7a64"
     }
   ]
 }

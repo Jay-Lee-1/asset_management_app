@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.506';
+const APP_VERSION='1.47.507';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4118,9 +4118,19 @@ let _goalQT=null;
  * owner를 바꿔야 했다 — openRecManage()와 완전히 동일한 패턴(선택모드면 검색창·추가 버튼을 숨기고
  * 선택 토글 버튼으로 전환, wireLongPress로 길게 눌러도 선택모드로 들어감)으로 메운다(app-evolve
  * cycle305 critique → advance). */
+/* 검색창 6곳(goalQ/assetQ/histQ/gsQ/catQ/recQ) 모두 지우기(fc-x) 버튼은 있지만 키보드로 입력창에
+ * 포커스가 있는 상태에서 검색어를 지울 방법은 Tab으로 fc-x 버튼까지 옮겨가는 것뿐이었다 — 다른
+ * 텍스트 입력(브라우저 네이티브 type="search" 등)에서 흔한 'Escape로 지우기' 관례가 통째로
+ * 빠져 있던 사례(날짜피커 방향키·캐러셀 Arrow키처럼 이미 누적된 키보드 접근성 패턴과 같은 결
+ * 이지만, 이번엔 한 위젯이 아니라 검색창 전부가 똑같이 비어 있었다). 단, 이 시트들 위에서 Escape는
+ * 이미 document 레벨 onSheetKeydown()이 '현재 열린 시트 닫기'로 쓰고 있어(overlayEscapeTarget),
+ * 입력값이 있을 때만 stopPropagation()으로 그 버블을 막고 clrInput()으로 지운다 — 입력값이 없으면
+ * 그대로 버블시켜 기존처럼 시트가 닫히게 둔다(이미 비어 있는데 또 Escape를 누르는 건 '지울 것도 없고
+ * 그냥 닫겠다'는 입력으로 보는 쪽이 자연스럽다). clrInput()이 이미 fc-x 버튼과 똑같이 'input' 이벤트를
+ * 디스패치해 각 *QInput() 디바운스 핸들러를 그대로 타므로 새 로직은 필요 없다(app-evolve cycle387 develop). */
 function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 전체 목표를 보여준다 — 각 줄의 진행률만 그 목표 자신의 귀속(goalOwnerEff)을 쓴다 */
  const showSearch=!ST.goalSel.mode&&(DB.goals||[]).length>GOAL_LIST_SEARCH_THRESHOLD;
- const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="goalQ" aria-label="목표 검색" placeholder="이름·금액 검색" value="" oninput="goalQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('goalQ')">✕</button></div></div>`:'';
+ const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="goalQ" aria-label="목표 검색" placeholder="이름·금액 검색" value="" oninput="goalQInput(this.value)" onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('goalQ')}"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('goalQ')">✕</button></div></div>`:'';
  const toolbar=ST.goalSel.mode?'':`<div class="as-tools"><div class="as-actions"><button class="as-tbtn" onclick="openGoalSortSheet()">${svg('sort')} 정렬</button><button class="as-tbtn" onclick="ST.goalSel.mode=true;openGoalsList()">${svg('check')} 선택</button></div></div>`;
  openSheet(`<h3>목표 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요</div>${searchBar}${toolbar}
   <div id="goalBody">${goalsManageBody('')}</div>
@@ -4872,7 +4882,7 @@ function renderAssets(){
  <div id="targetAllocBody">${targetAllocationCard(ST.assetOwner)}</div>
  <div id="investGlBody">${investGainLossCard(ST.assetOwner)}</div>
  <div id="goalsSummaryBody">${goalsSummaryCard(ST.assetOwner)}</div>
- ${(!ST.editAssets&&!ST.aSel.mode)?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="assetQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="${esc(ST.assetQ)}" oninput="assetQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('assetQ')">✕</button></div></div>`:''}
+ ${(!ST.editAssets&&!ST.aSel.mode)?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="assetQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="${esc(ST.assetQ)}" oninput="assetQInput(this.value)" onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('assetQ')}"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('assetQ')">✕</button></div></div>`:''}
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
    <div class="as-actions">${ST.editAssets?`<button class="as-tbtn primary" onclick="ST.editAssets=false;save();renderAssets()">${svg('check')} 완료</button>`:
     `<button class="as-tbtn" onclick="openSortSheet()">${svg('sort')} 정렬</button>
@@ -7523,7 +7533,7 @@ function renderHistory(){
  ${pageHead('history')}
  ${H.selMode?'':`
  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
- <div class="searchbar" style="flex:1">${svg('search')}<div class="field-clear"><input id="histQ" aria-label="내역 검색" placeholder="메모·카테고리·자산·금액(>10만, 1만~5만) 검색" value="${esc(H.q)}" oninput="histQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('histQ')">✕</button></div></div>
+ <div class="searchbar" style="flex:1">${svg('search')}<div class="field-clear"><input id="histQ" aria-label="내역 검색" placeholder="메모·카테고리·자산·금액(>10만, 1만~5만) 검색" value="${esc(H.q)}" oninput="histQInput(this.value)" onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('histQ')}"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('histQ')">✕</button></div></div>
  <button type="button" class="sch-chip" aria-label="내역 선택" onclick="ST.hist.selMode=true;updateHist();updateSelBottom()">${svg('check',14)}</button>
  </div>
  ${ownerSegHtml(H.owner,oi=>`histOwnerSel(${oi})`,{typeButton:true})}
@@ -7973,7 +7983,7 @@ let _gsQT=null,GS_EXPAND={};
 function openGlobalSearch(){
  GS_EXPAND={};
  openSheet(`<h3>통합 검색</h3>
-  <div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="gsQ" aria-label="통합 검색" placeholder="거래·자산·카테고리·목표 검색" value="" oninput="gsQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('gsQ')">✕</button></div></div>
+  <div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="gsQ" aria-label="통합 검색" placeholder="거래·자산·카테고리·목표 검색" value="" oninput="gsQInput(this.value)" onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('gsQ')}"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('gsQ')">✕</button></div></div>
   <div id="gsBody">${globalSearchBody('')}</div>`);
 }
 /* clrInput('gsQ')가 만드는 빈 문자열 입력은 histQInput/assetQInput/goalQInput/recQInput
@@ -8745,7 +8755,7 @@ function openCatManage(kind,keep){
  const avCls=k==='income'?'a-in':k==='saving'?'a-save':'a-food';
  const trigIcon=catAddDraft.icon||(k==='income'?'arrowUp':k==='saving'?'piggy':'tag');
  const showSearch=DB.categories[k].length>CAT_LIST_SEARCH_THRESHOLD;
- const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="catQ" aria-label="카테고리 검색" placeholder="카테고리 이름 검색" value="" oninput="catQInput('${k}',this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('catQ')">✕</button></div></div>`:'';
+ const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="catQ" aria-label="카테고리 검색" placeholder="카테고리 이름 검색" value="" oninput="catQInput('${k}',this.value)" onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('catQ')}"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('catQ')">✕</button></div></div>`:'';
  openSheet(`<h3>카테고리 관리</h3><div class="desc">${k==='saving'?'아이콘과 이름으로 추가해요.':'‘변동’은 매달 금액이 달라지는 항목이에요.'}</div>
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${['expense','income','saving'].map(x=>`<button class="${k===x?'on':''}" aria-pressed="${k===x}" onclick="openCatManage('${x}')">${CAT_LABEL[x]}</button>`).join('')}</div>
   ${k==='income'?`<div class="section-title" style="margin-top:18px">수입 카테고리<span class="link" role="button" tabindex="0" aria-label="수입 분석 보기" onclick="openIncomeAnalysis()" onkeydown="rowKeydown(event,()=>openIncomeAnalysis())">수입 분석 ${svg('chev')}</span></div>`:''}
@@ -9024,7 +9034,7 @@ function recFreqLabel(r){return recFreqLabelStr(r.freq,r.day,r.startDate)}
 let _recQT=null;
 function openRecManage(){
  openSheet(`<h3>반복 내역 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요 · ▶/⏸로 일시중지</div>
-  ${ST.recSel.mode?'':`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="recQ" aria-label="반복 내역 검색" placeholder="메모·카테고리·주기 검색" value="" oninput="recQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('recQ')">✕</button></div></div>
+  ${ST.recSel.mode?'':`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="recQ" aria-label="반복 내역 검색" placeholder="메모·카테고리·주기 검색" value="" oninput="recQInput(this.value)" onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('recQ')}"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('recQ')">✕</button></div></div>
   <div class="as-tools"><div class="as-actions"><button class="as-tbtn" onclick="ST.recSel.mode=true;openRecManage()">${svg('check')} 선택</button></div></div>`}
   <div id="recBody">${recManageBody('')}</div>
   <div style="height:14px"></div>${ST.recSel.mode?'':`<button class="btn btn-primary" onclick="openRecSheet()">${svg('plus')} 반복 추가</button>`}`);

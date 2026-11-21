@@ -425,6 +425,10 @@ const FUNCTIONS = [
   // 검증용(app-evolve cycle318 develop) — clrInput('gsQ')가 만드는 빈 문자열 입력을 디바운스 없이
   // 즉시 반영하는 가드가 빠져 있던 공백을 메웠다.
   'gsQInput',
+  // openGlobalSearch(통합검색 시트)는 gsQ 검색창의 Escape 지우기 핸들러(app-evolve cycle387 develop)
+  // 마크업 검증용으로 처음 FUNCTIONS에 올린다 — openSheet()(기존 스텁)만 호출하고 globalSearchBody('')
+  // (이미 FUNCTIONS에 있음)로 빈 검색어 분기만 타므로 DB를 전혀 건드리지 않아 추가 스텁이 필요 없다.
+  'openGlobalSearch',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -5394,6 +5398,7 @@ test('openGoalsList: 목표가 GOAL_LIST_SEARCH_THRESHOLD개를 넘으면 검색
   sandbox.openGoalsList();
   assert.ok(sandbox.lastSheetHtml.includes('id="goalQ"'), '검색 입력창(#goalQ)이 떠야 함');
   assert.ok(sandbox.lastSheetHtml.includes('oninput="goalQInput(this.value)"'), '입력마다 goalQInput을 불러야 함');
+  assert.ok(sandbox.lastSheetHtml.includes(`onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('goalQ')}"`), 'goalQ에 Escape로 즉시 지우는 키보드 단축 핸들러가 없음(app-evolve cycle387 develop)');
 });
 test('[실행형] goalsManageBody: 검색어가 이름에 일치하는 목표만 남긴다', () => {
   sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
@@ -10811,6 +10816,19 @@ test('suggestCategoryForMemo: 메모가 빈 문자열(공백만)이거나 거래
   assert.strictEqual(sandbox.suggestCategoryForMemo('', [{ type: 'expense', date: '2026-10-01', memo: '', category: '카페' }], 'expense'), null);
   assert.strictEqual(sandbox.suggestCategoryForMemo('  ', [], 'expense'), null);
   assert.strictEqual(sandbox.suggestCategoryForMemo('스타벅스', [], 'expense'), null);
+});
+
+/* ---------- openGlobalSearch의 gsQ 검색창 — goalQ/assetQ/histQ/catQ/recQ 6곳 모두 지우기(fc-x)
+ * 버튼은 있지만 Escape로 즉시 지우는 키보드 단축은 통째로 빠져 있었다(app-evolve cycle387 develop).
+ * 입력값이 있을 때만 stopPropagation()으로 document 레벨 onSheetKeydown()의 '시트 닫기'를 막고
+ * clrInput()으로 지운다 — 입력값이 없으면 그대로 버블시켜 Escape가 시트를 닫는 기존 동작을 보존한다. */
+test('openGlobalSearch: gsQ에도 Escape로 즉시 지우는 키보드 단축 핸들러가 있다', () => {
+  sandbox.lastSheetHtml = null;
+  sandbox.openGlobalSearch();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('id="gsQ"'), '검색 입력창(#gsQ)이 떠야 함');
+  assert.ok(html.includes('oninput="gsQInput(this.value)"'), '입력마다 gsQInput을 불러야 함');
+  assert.ok(html.includes(`onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('gsQ')}"`), 'gsQ에 Escape로 즉시 지우는 키보드 단축 핸들러가 없음');
 });
 
 /* ---------- 전역 통합검색(openGlobalSearch, index.html): 같은 검색어가 거래/자산/카테고리
@@ -27054,6 +27072,7 @@ test('[실행형] openRecManage: 검색창(#recQ)과 그 결과를 담는 #recBo
   assert.ok(html.includes('id="recQ"'), '검색 입력창(#recQ)이 떠야 함');
   assert.ok(html.includes('oninput="recQInput(this.value)"'), '입력마다 recQInput을 불러야 함');
   assert.ok(html.includes('id="recBody"'), '검색 결과를 담는 #recBody 컨테이너가 떠야 함');
+  assert.ok(html.includes(`onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('recQ')}"`), 'recQ에 Escape로 즉시 지우는 키보드 단축 핸들러가 없음(app-evolve cycle387 develop)');
 });
 test('[실행형] recManageBody: 검색어가 메모에만 일치해도 그 그룹만 남고 다른 그룹은 사라진다', () => {
   const ctx = recManageCtx();
@@ -34382,6 +34401,7 @@ test('openCatManage: 카테고리가 CAT_LIST_SEARCH_THRESHOLD개를 넘으면 �
   const html = sandbox.lastSheetHtml;
   assert.ok(html.includes('id="catQ"'), '검색 입력창(#catQ)이 떠야 함');
   assert.ok(html.includes("oninput=\"catQInput('expense',this.value)\""), '입력마다 현재 kind를 들고 catQInput을 불러야 함');
+  assert.ok(html.includes(`onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('catQ')}"`), 'catQ에 Escape로 즉시 지우는 키보드 단축 핸들러가 없음(app-evolve cycle387 develop)');
 });
 test('[실행형] catManageBody: 빈 검색어는 전체(안 거른) 결과와 동일하다', () => {
   setupCatManageDB();
@@ -35686,6 +35706,7 @@ test('renderAssets: 자산 탭에도 histQ와 동일한 패턴의 검색창(asse
   const html = sandbox.pageAssetsEl.innerHTML;
   assert.ok(html.includes('<input id="assetQ"'), '검색 입력란(assetQ)이 렌더돼야 함');
   assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('assetQ')">`), 'assetQ에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  assert.ok(html.includes(`onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('assetQ')}"`), 'assetQ에 Escape로 즉시 지우는 키보드 단축 핸들러가 없음(app-evolve cycle387 develop)');
 });
 test('renderAssets: 함수 본문이 fcWire()를 호출해 assetQ의 지우기 버튼을 실제로 배선한다(시트가 아닌 탭 화면이라 openSheet()의 자동 배선을 못 타므로 직접 호출해야 함)', () => {
   const body = sandbox.renderAssets.toString();
@@ -36514,6 +36535,7 @@ test('renderHistory: histQ(검색창)도 다른 텍스트 입력란과 동일하
   const html = sandbox.pageHistoryEl.innerHTML;
   assert.ok(html.includes('<div class="field-clear"><input id="histQ"'), 'histQ 입력이 field-clear로 감싸져 있지 않음');
   assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('histQ')">`), 'histQ에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  assert.ok(html.includes(`onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('histQ')}"`), 'histQ에 Escape로 즉시 지우는 키보드 단축 핸들러가 없음(app-evolve cycle387 develop)');
 });
 test('renderHistory: 함수 본문이 fcWire()를 호출해 histQ의 지우기 버튼을 실제로 배선한다(시트가 아닌 탭 화면이라 openSheet()의 자동 배선을 못 타므로 직접 호출해야 함)', () => {
   const body = extractFunction('renderHistory');
