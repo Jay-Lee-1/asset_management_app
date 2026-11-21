@@ -1,6 +1,6 @@
 {
   "cycle": 390,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -99,6 +99,13 @@
       "phase": "advance",
       "timestamp": "2026-11-21T18:20:00.000Z",
       "summary": "critique(cycle389)의 계획대로 공용 피커 시트에 Escape 즉시 지우기와 방향키 그리드 탐색을 추가. (1) openAssetPicker(#pkQ)/openCatPicker(#pkCatQ) 검색 입력에 검색창 6곳(goalQ 등)과 동일한 onkeydown=\"if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput(...)}\" 추가. (2) 날짜 선택기(dpStepDate/dpGridKeydown)와 같은 '순수 인덱스 계산 + DOM은 포커스 이동만' 분리로 pkListNextIdx(idx,len,key)(ArrowUp/Down+Home/End)와 pkItemKeydown(e)을 신설해 #pkGroup(openAssetPicker/openTypePicker/openOwnerPicker/openCurrencyPicker가 공유하는 세로 .pk-item 목록, 자산유형별 .pk-cap 캡션은 querySelectorAll('.pk-item')이 버튼만 모아 자동으로 건너뜀)에 onkeydown 인라인 속성으로 배선. (3) pkGridNextIdx(idx,len,cols,key)(ArrowLeft/Right/Up/Down+Home/End, cols=3은 .pk-cat-grid의 CSS grid-template-columns:repeat(3,1fr)과 짝)와 pkCatKeydown(e)을 신설해 #catGrid에 기존 onclick 위임과 같은 이유로 프로퍼티 할당(catGridEl.onkeydown=pkCatKeydown)으로 배선 — innerHTML 교체에도 안 끊김. 계획이 언급한 '재검색 후 포커스 복원'(roving tabindex 포함)은 구현하지 않음: #pkQ/#pkCatQ 입력이 그리드 바깥에 있어 타이핑 중 포커스는 항상 입력에 있고, refreshPkAssetList/refreshPkCatList가 다시 그리는 동안 그리드 안에 포커스가 있을 수 있는 경로 자체가 없어(날짜 선택기의 dpFocusDate/dpExtend처럼 스크롤 중 아직 안 렌더된 날짜로 포커스를 옮기는 상황과 다름) 일어날 수 없는 상황에 대한 코드를 추가하지 않았다(코드에 그 판단 근거를 주석으로 남김). 버튼들은 이미 네이티브 포커스 가능(tabindex 기본값)이라 날짜 선택기의 .dp-cell과 동일하게 별도 roving tabindex 없이 포커스만 이동한다. pkListNextIdx/pkGridNextIdx를 test/run.js FUNCTIONS에 추가하고 dpStepDate 테스트 바로 뒤에 순수 테스트 7건 추가(pkListNextIdx 3건: 상/하 이동+양끝 클램프, Home/End, 모르는 key; pkGridNextIdx 4건: 좌/우 이동+양끝 클램프, 상/하가 cols만큼 건너뛰며 해당 줄이 없으면 머묾, Home/End, 모르는 key) — pkItemKeydown/pkCatKeydown 자체는 dpGridKeydown과 동일한 이유로 실행형 테스트 대상에서 제외. node test/run.js 3829->3836/3836 통과, node --check(메인 <script> 블록 추출)/logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.511->1.47.512, sw.js CACHE v778->v779.",
+      "commit": null
+    },
+    {
+      "cycle": 390,
+      "phase": "develop",
+      "timestamp": "2026-11-21T19:30:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-389 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx undo 등)을 주고 조사시킴. cycle389 advance가 공용 피커(openAssetPicker/openCatPicker/openTypePicker/openOwnerPicker/openCurrencyPicker) 5종에 방향키 그리드 탐색을 적용했지만, 같은 '열거형 그리드' 모양인 카테고리 아이콘 피커(openIconPicker, .icon-grid, index.html:8727-8734, CSS grid-template-columns:repeat(5,1fr))는 그 5종 전수조사 범위에 들지 않아 유일하게 빠져 있었음을 발견 — pkQ/pkCatQ류 검색 UI가 없어 Escape-clear는 대상 없음(스코프 아님), 방향키만 사각지대. 카테고리 피커 그리드(pkCatKeydown, cols=3)와 완전히 같은 모양이라 범용 순수 함수 pkGridNextIdx(idx,len,cols,key)를 그대로 재사용해 iconCellKeydown(e)만 신설(.icon-grid에 id=\"iconGrid\"+인라인 onkeydown=\"iconCellKeydown(event)\" 배선, cols=5). 아이콘 피커는 검색/재렌더가 없는 정적 그리드라 pkCatKeydown(프로퍼티 할당, innerHTML 교체 대비)이 아니라 pkItemKeydown과 동일하게 인라인 속성으로 바로 배선. 테스트 5건 추가: pkGridNextIdx cols=5 전용 순수 테스트 2건(상/하 5칸 건너뛰기+양끝 클램프, 좌/우+Home/End), openIconPicker 마크업에 id/onkeydown 배선 확인 1건, iconCellKeydown 조기-return 가드 2건(.icon-cell 아닌 타겟, 방향키 아닌 key). test/run.js FUNCTIONS에 iconCellKeydown 추가. node test/run.js 3836->3841/3841 통과, node --check(메인 <script> 블록, HTML 주석 내 리터럴 '<script>' 텍스트로 인한 블록0 오탐은 cycle389 review가 이미 확인한 추출 스크립트 자체의 아티팩트)/logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.512->1.47.513, sw.js CACHE v779->v780.",
       "commit": null
     }
   ]

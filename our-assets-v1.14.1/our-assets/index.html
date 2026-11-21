@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.512';
+const APP_VERSION='1.47.513';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -8729,11 +8729,25 @@ function openIconPicker(type,current,cb,onCancel){_iconCb=cb;_iconCancel=onCance
  if(current&&!keys.includes(current))keys=[current,...keys];
  const cells=keys.map(k=>`<button class="icon-cell${k===current?' on':''}" onclick="pickCatIcon('${k}')" aria-label="${ICON_LABEL_KO[k]||k} 아이콘" aria-pressed="${k===current}">${svg(k,22)}</button>`).join('');
  openSheet(`<h3>아이콘 선택</h3><div class="desc">${CAT_LABEL[type]||''} 카테고리에 어울리는 기호를 골라요</div>
-  <div class="icon-grid">${cells}</div>
+  <div class="icon-grid" id="iconGrid" onkeydown="iconCellKeydown(event)">${cells}</div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft" onclick="iconPickerCancel()">취소</button></div>`);
 }
 function pickCatIcon(k){const cb=_iconCb;_iconCb=null;_iconCancel=null;if(cb)cb(k)}
 function iconPickerCancel(){const c=_iconCancel;_iconCb=null;_iconCancel=null;if(c)c()}
+/* 아이콘 피커 그리드(.icon-grid, 5열)의 방향키 탐색 — pkCatKeydown(카테고리 피커 그리드, 3열)과
+ * 완전히 같은 모양이라 pkGridNextIdx를 그대로 재사용한다. 열 수 5는 .icon-grid의 CSS
+ * grid-template-columns:repeat(5,1fr)과 짝이 맞아야 하므로 열이 바뀌면 이 숫자도 같이 바꿔야 한다.
+ * 검색/재렌더가 없는 정적 그리드라 pkCatKeydown처럼 프로퍼티 할당이 아니라 pkItemKeydown처럼
+ * 인라인 onkeydown 속성으로 바로 배선한다(app-evolve cycle390). */
+function iconCellKeydown(e){
+ if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key))return;
+ const item=e.target.closest&&e.target.closest('.icon-cell');
+ if(!item)return;
+ const items=[...item.closest('.icon-grid').querySelectorAll('.icon-cell')];
+ const idx=items.indexOf(item);if(idx<0)return;
+ e.preventDefault();
+ items[pkGridNextIdx(idx,items.length,5,e.key)].focus();
+}
 let catAddDraft={name:'',icon:''};
 let catRenameDraft={name:'',icon:''};
 function pickCatAddIcon(k){openIconPicker(k,catAddDraft.icon||'',ic=>{catAddDraft.icon=ic;openCatManage(k,true)},()=>openCatManage(k,true))}

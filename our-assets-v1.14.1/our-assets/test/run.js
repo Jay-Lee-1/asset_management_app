@@ -298,7 +298,7 @@ const FUNCTIONS = [
   // 로드하지만, 이 둘은 DOM 의존이 없거나($('catBody')만 참조) 얕아서 실행형으로 바로 검증한다.
   'catManageBody', 'catQInput',
   'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
-  'openIconPicker', 'pickCatIcon',
+  'openIconPicker', 'pickCatIcon', 'iconCellKeydown',
   // renameCatSheet는 지금까지 extractFunction 소스 패턴으로만 검증돼(29984줄 부근) renameCat 입력의
   // value="${esc(catRenameDraft.name)}" 같은 실제 왕복 이스케이핑은 한 번도 실행된 적이 없었다
   // (app-evolve cycle374 advance — .replace(/"/g,'&quot;') 7곳을 esc()로 통일한 critique 계획의
@@ -1276,6 +1276,20 @@ test('pkGridNextIdx: Home/End는 첫/마지막 항목으로 이동한다', () =>
 });
 test('pkGridNextIdx: 모르는 key는 인덱스를 그대로 돌려준다(호출부가 이동 없음으로 처리)', () => {
   assert.strictEqual(sandbox.pkGridNextIdx(4, 9, 3, 'Tab'), 4);
+});
+// 아이콘 피커(.icon-grid, 5열, app-evolve cycle390)도 pkGridNextIdx를 그대로 재사용하므로
+// cols=5 케이스를 추가 — expense 탭은 30개 아이콘(6행×5열)이라 마지막 줄이 꽉 찬다.
+test('pkGridNextIdx: cols=5(아이콘 피커)에서도 상/하가 5칸씩 건너뛰고 양끝에서 머문다', () => {
+  assert.strictEqual(sandbox.pkGridNextIdx(7, 30, 5, 'ArrowDown'), 12);
+  assert.strictEqual(sandbox.pkGridNextIdx(7, 30, 5, 'ArrowUp'), 2);
+  assert.strictEqual(sandbox.pkGridNextIdx(2, 30, 5, 'ArrowUp'), 2, '위로 더 갈 줄이 없으면 머문다');
+  assert.strictEqual(sandbox.pkGridNextIdx(27, 30, 5, 'ArrowDown'), 27, '마지막 줄이 꽉 차 있어도 그 아래 줄이 없으면 머문다');
+});
+test('pkGridNextIdx: cols=5에서 좌/우 이동과 Home/End도 열 개수와 무관하게 동일하게 동작한다', () => {
+  assert.strictEqual(sandbox.pkGridNextIdx(6, 30, 5, 'ArrowLeft'), 5);
+  assert.strictEqual(sandbox.pkGridNextIdx(6, 30, 5, 'ArrowRight'), 7);
+  assert.strictEqual(sandbox.pkGridNextIdx(6, 30, 5, 'Home'), 0);
+  assert.strictEqual(sandbox.pkGridNextIdx(6, 30, 5, 'End'), 29);
 });
 
 /* ---------- addMonthsStr(logic.js): addMonths와 이름은 비슷하지만 day를 clamp하지 않는 별도 함수 ----------
@@ -34906,6 +34920,24 @@ test('ICON_LABEL_KO 완전성 가드: CAT_ICON_SET의 expense/income/saving에 �
 test('index.html 소스 가드: openIconPicker가 옛 영문 키 그대로의 aria-label 템플릿을 더는 쓰지 않는다(회귀 가드)', () => {
   assert.ok(!src.includes('aria-label="${k} 아이콘"'), '치환 전 영문 키 템플릿 리터럴이 소스에 남아있으면 안 됨');
   assert.ok(src.includes('aria-label="${ICON_LABEL_KO[k]||k} 아이콘"'), 'ICON_LABEL_KO 폴백 패턴이 소스에 있어야 함');
+});
+// 날짜 선택기/공용 피커 5종과 달리 아이콘 피커(.icon-grid)만 방향키 그리드 탐색이 빠져 있던
+// 사각지대(app-evolve cycle390 critique 없이 develop에서 바로 발견·수정). 정적 그리드라
+// pkCatKeydown(카테고리 피커, 프로퍼티 할당)이 아니라 pkItemKeydown처럼 인라인 onkeydown으로 배선한다.
+test('openIconPicker: .icon-grid에 id와 iconCellKeydown 방향키 배선이 있다', () => {
+  sandbox.openIconPicker('expense', '', () => {}, null);
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('<div class="icon-grid" id="iconGrid" onkeydown="iconCellKeydown(event)">'), '.icon-grid에 id="iconGrid"와 onkeydown="iconCellKeydown(event)"가 있어야 함');
+});
+test('iconCellKeydown: target.closest(\'.icon-cell\')이 null이면(위임 밖 클릭 등) 조기 return한다', () => {
+  let prevented = false;
+  sandbox.iconCellKeydown({ key: 'ArrowRight', target: { closest: () => null }, preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, false, '.icon-cell이 아니면 preventDefault를 호출하면 안 됨');
+});
+test('iconCellKeydown: 방향키 목록에 없는 key는 무시한다', () => {
+  let prevented = false;
+  sandbox.iconCellKeydown({ key: 'Tab', target: { closest: () => ({}) }, preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, false, '방향키가 아니면 closest도 호출 전에 조기 return해야 함');
 });
 test('moveCat: 인접 항목과 순서를 바꾸고 저장 후 같은 탭을 다시 연다', () => {
   setupCatManageDB();
