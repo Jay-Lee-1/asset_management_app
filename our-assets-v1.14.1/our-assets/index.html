@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.507';
+const APP_VERSION='1.47.508';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -11393,7 +11393,28 @@ function confirmSheet(title,msg,ok,cb){window._cf=cb;
  openSheet(`<h3>${title}</h3><div class="desc" style="margin-bottom:22px">${msg}</div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
    <button class="btn btn-danger" onclick="closeSheet();_cf&&_cf()">${ok}</button></div>`);}
-function fmtAmt(inp,allowNeg){const neg=allowNeg&&/^-/.test(inp.value);let v=inp.value.replace(/[^0-9]/g,'');const n=v?Math.min(Number(v),AMOUNT_MAX):0;inp.value=v?(neg?'-':'')+n.toLocaleString('ko-KR'):(neg?'-':'')}
+/* caretPosAfterFormat(oldValue,oldCaret,newValue): fmtAmt()가 매 oninput마다 inp.value를
+ * 통째로 재포맷하면서(천단위 콤마 삽입/제거) 커서 위치를 전혀 다루지 않아, 코드로 .value를
+ * 대입하면(모든 주요 브라우저 공통) 커서가 항상 끝으로 튀던 버그(app-evolve cycle387
+ * critique→advance) 수정의 핵심 헬퍼다. "oldCaret 앞에 숫자가 몇 개 있었는가"만을 좌표로 써서
+ * newValue에서 같은 자리를 되찾는다 — 콤마 개수가 입력 중간에 늘거나 줄어도(예: 999->1,000)
+ * 숫자 개수 기준이라 흔들리지 않는다. 숫자 앞이 아니라 '-' 부호 자체(허용 음수 입력의 맨 앞)를
+ * 가리키는 caret은 숫자 0개로는 구분이 안 되므로 minusConsumed(부호를 이미 지났는지)로 따로
+ * 가른다. */
+function caretPosAfterFormat(oldValue,oldCaret,newValue){
+ oldValue=String(oldValue==null?'':oldValue);newValue=String(newValue==null?'':newValue);
+ oldCaret=Math.max(0,Math.min(oldCaret,oldValue.length));
+ const minusConsumed=oldValue[0]==='-'&&oldCaret>=1;
+ let digitsBefore=0;
+ for(let i=0;i<oldCaret;i++)if(oldValue[i]>='0'&&oldValue[i]<='9')digitsBefore++;
+ if(digitsBefore===0)return minusConsumed?(newValue[0]==='-'?1:0):0;
+ let seen=0;
+ for(let i=0;i<newValue.length;i++){
+  if(newValue[i]>='0'&&newValue[i]<='9'){seen++;if(seen===digitsBefore)return i+1;}
+ }
+ return newValue.length;
+}
+function fmtAmt(inp,allowNeg){const oldValue=inp.value;const oldCaret=typeof inp.selectionStart==='number'?inp.selectionStart:oldValue.length;const neg=allowNeg&&/^-/.test(inp.value);let v=inp.value.replace(/[^0-9]/g,'');const n=v?Math.min(Number(v),AMOUNT_MAX):0;const newValue=v?(neg?'-':'')+n.toLocaleString('ko-KR'):(neg?'-':'');inp.value=newValue;try{const pos=caretPosAfterFormat(oldValue,oldCaret,newValue);inp.setSelectionRange(pos,pos);}catch(e){}}
 function fmtQty(inp){let v=inp.value.replace(/[^0-9.]/g,'');const dot=v.indexOf('.');if(dot!==-1)v=v.slice(0,dot+1)+v.slice(dot+1).replace(/\./g,'');inp.value=v}
 
 function wireLongPress(root,onLong){

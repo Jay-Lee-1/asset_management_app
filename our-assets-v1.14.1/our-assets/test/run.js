@@ -227,7 +227,7 @@ const FUNCTIONS = [
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals', 'makeMonthCatCache',
   'yearSpendByCategory', 'yearIncomeByCategory', 'yearRealizedGain', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'caretPosAfterFormat', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'confirmCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
@@ -2136,6 +2136,55 @@ test('fmtAmt(): AMOUNT_MAX 이하 입력은 상한에 영향받지 않고 그대
   const inp = { value: '500000' };
   sandbox.fmtAmt(inp);
   assert.strictEqual(inp.value, '500,000');
+});
+
+/* ---------- caretPosAfterFormat()/fmtAmt(): 금액 입력 중간 편집 시 커서가 끝으로 튀던 버그
+ * (app-evolve cycle387 critique → advance) — fmtAmt()는 oninput마다 inp.value를 통째로
+ * 재포맷(toLocaleString)하는데, 코드로 .value를 대입하면 모든 주요 브라우저에서 커서가 값
+ * 끝으로 이동한다. caretPosAfterFormat(oldValue,oldCaret,newValue)는 "oldCaret 앞에 숫자가
+ * 몇 개 있었는가"만으로 좌표를 잡아 newValue에서 같은 자리를 되찾는 순수 헬퍼다. */
+test('caretPosAfterFormat(): 커서 앞 숫자 개수가 같은 새 문자열의 지점을 찾는다(쉼표 삽입)', () => {
+  assert.strictEqual(sandbox.caretPosAfterFormat('1234567', 3, '1,234,567'), 4);
+});
+test('caretPosAfterFormat(): 999->9999처럼 자릿수가 늘어 끝에서 입력하면 커서도 끝을 따라간다', () => {
+  assert.strictEqual(sandbox.caretPosAfterFormat('9999', 4, '9,999'), 5);
+});
+test('caretPosAfterFormat(): 중간 삽입으로 기존 쉼표 위치가 잘못돼도(숫자 개수 기준 재계산) 방금 입력한 숫자 뒤에 자리를 둔다', () => {
+  // "1,234"의 2번째 문자 뒤(캐럿=2)에 '9'를 입력하면 브라우저는 그 자리에 그대로 끼워 넣어
+  // "1,9234"(캐럿=3)를 만들고, fmtAmt가 숫자만 다시 그룹핑하면 "19,234"가 된다.
+  assert.strictEqual(sandbox.caretPosAfterFormat('1,9234', 3, '19,234'), 2);
+});
+test('caretPosAfterFormat(): 음수 부호 앞(맨 처음)의 커서는 새 문자열에서도 맨 앞에 남는다', () => {
+  assert.strictEqual(sandbox.caretPosAfterFormat('-500', 0, '-500'), 0);
+});
+test('caretPosAfterFormat(): 음수 부호 바로 뒤(숫자 입력 전)의 커서는 부호 뒤에 그대로 남는다', () => {
+  assert.strictEqual(sandbox.caretPosAfterFormat('-500', 1, '-500'), 1);
+});
+test('caretPosAfterFormat(): AMOUNT_MAX로 잘려 커서 앞 숫자 개수가 새 문자열에 없으면 끝으로 보낸다', () => {
+  const newValue = sandbox.AMOUNT_MAX.toLocaleString('ko-KR');
+  assert.strictEqual(sandbox.caretPosAfterFormat('9999999999999999', 16, newValue), newValue.length);
+});
+test('fmtAmt(): 숫자 중간에 삽입해도(.value 대입이 기본적으로 옮기는 끝 위치 대신) 방금 입력한 숫자 뒤로 커서를 복원한다', () => {
+  const inp = domstub.createElement('input');
+  inp.value = '1,9234'; // "1,234"의 2번째 문자 뒤에 '9'를 삽입해 브라우저가 만든 raw 값
+  inp.selectionStart = 3; inp.selectionEnd = 3; // 네이티브 삽입 직후 캐럿
+  sandbox.fmtAmt(inp);
+  assert.strictEqual(inp.value, '19,234');
+  assert.strictEqual(inp.selectionStart, 2, '커서가 값 끝(6)이 아니라 방금 입력한 숫자 뒤에 남아야 함');
+  assert.strictEqual(inp.selectionEnd, 2);
+});
+test('fmtAmt(): allowNeg=true에서 "-" 바로 뒤의 커서도 재포맷 후(.value 대입이 끝으로 옮긴 걸 되돌려) 그대로 보존된다', () => {
+  const inp = domstub.createElement('input');
+  inp.value = '-500';
+  inp.selectionStart = 1; inp.selectionEnd = 1;
+  sandbox.fmtAmt(inp, true);
+  assert.strictEqual(inp.value, '-500');
+  assert.strictEqual(inp.selectionStart, 1);
+});
+test('fmtAmt(): selectionStart/setSelectionRange가 없는 평범한 객체(기존 테스트들)에도 에러 없이 값만 포맷한다', () => {
+  const inp = { value: '1234' };
+  assert.doesNotThrow(() => sandbox.fmtAmt(inp));
+  assert.strictEqual(inp.value, '1,234');
 });
 
 /* cleanName()은 AMOUNT_MAX(숫자 입력 상한)의 텍스트 대응판 — 자산/소유자/카테고리/목표 이름

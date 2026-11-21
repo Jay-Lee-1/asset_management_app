@@ -58,13 +58,31 @@ class DomNode {
     // 객체로 충분하다.
     this.style = {};
     this.dataset = {};
+    // selectionStart/selectionEnd: fmtAmt()의 커서 보존 수정(app-evolve cycle387 critique→advance)을
+    // 실행형으로 검증하려면 실제 <input>처럼 ".value 대입이 커서를 끝으로 이동시키는" 동작까지
+    // 재현해야 한다(아래 value setter) — 그래야 setSelectionRange() 복원 호출이 없으면 테스트가
+    // 실패하는, 고치기 전 실제 버그 재현이 된다.
+    this._selStart = 0;
+    this._selEnd = 0;
   }
   get id() { return this._attrs.id || ''; }
   set id(v) { this.setAttribute('id', v); }
   get type() { return this._attrs.type || 'text'; }
   set type(v) { this.setAttribute('type', v); }
   get value() { return this._attrs.value || ''; }
-  set value(v) { this._attrs.value = String(v); }
+  // 실제 브라우저의 HTMLInputElement.value 대입과 동일하게, 코드로 .value를 바꾸면 커서가
+  // 값 끝으로 이동한다 — fmtAmt()가 이 setter 뒤에 setSelectionRange()로 복원하지 않으면
+  // 테스트가 "끝으로 튐"을 그대로 잡아낸다.
+  set value(v) { this._attrs.value = String(v); this._selStart = this._selEnd = this._attrs.value.length; }
+  get selectionStart() { return this._selStart; }
+  set selectionStart(v) { this._selStart = v; }
+  get selectionEnd() { return this._selEnd; }
+  set selectionEnd(v) { this._selEnd = v; }
+  setSelectionRange(start, end) {
+    const len = this.value.length;
+    this._selStart = Math.max(0, Math.min(start, len));
+    this._selEnd = Math.max(0, Math.min(end, len));
+  }
   // disabled/tabIndex: sheetFocusables()가 포커스 가능 엘리먼트를 걸러내는 데 직접 읽는
   // 두 속성(app-evolve cycle366 critique→advance) — 그 외 쓰임은 없어 더 넓히지 않는다.
   get disabled() { return this.hasAttribute('disabled'); }

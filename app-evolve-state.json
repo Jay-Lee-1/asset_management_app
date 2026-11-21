@@ -1,19 +1,8 @@
 {
-  "cycle": 387,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "fmtAmt() 금액 입력 포맷팅이 매 입력마다 커서를 맨 끝으로 이동시켜 중간 편집이 불가능함",
-    "why": "fmtAmt(inp,allowNeg)(index.html:11396)은 oninput마다 inp.value를 toLocaleString('ko-KR')로 재포맷하는데, selectionStart/selectionEnd를 전혀 읽거나 복원하지 않는다. .value를 코드로 재대입하면 모든 주요 브라우저에서 커서가 끝으로 이동하므로, 숫자 중간을 고치는 모든 편집(예: '1,234,567'의 앞자리 수정, 중간에 빠진 숫자 삽입) 뒤에는 커서가 끝으로 튀어 그 다음 편집도 전부 엉뚱한 위치에서 일어난다. 거래 금액(txAmt)·분담 금액·반복거래 금액·자산 잔액/매입가·채무 추가상환·목표 금액·예산 한도·큰거래 임계값·빠른금액 등 앱에서 가장 자주 쓰는 입력 전부가 이 함수를 공유해 영향받는다. grep으로 fmtAmt 어디서도 selectionStart/selectionEnd/setSelectionRange를 다루지 않고, test/domstub.js의 input 스텁도 selection을 모델링하지 않아 지금까지 전혀 테스트되지 않았음을 확인.",
-    "approach": "1) index.html의 fmtAmt()에서 inp.value 재대입 전에 inp.selectionStart(없으면 value.length)를 캡처하고, 그 커서 앞의 기존 raw 값에서 숫자 개수를 센다. 2) 재포맷 후 새 문자열에서 같은 숫자 개수 지점을 찾아(쉼표 삽입/제거, allowNeg의 선행 '-' 고려) 위치를 구하는 순수 헬퍼 caretPosAfterFormat(oldValue, oldCaret, newValue)를 추가(logic.js 또는 index.html 내 다른 UI 헬퍼처럼 로컬)하고 fmtAmt()가 그 결과로 inp.setSelectionRange(pos,pos)를 try/catch로 감싸 호출. 3) test/domstub.js의 input 스텁에 selectionStart/selectionEnd/setSelectionRange 최소 지원을 추가해 '중간 삽입/삭제' 시나리오를 시뮬레이션 가능하게 함. 4) test/run.js에 회귀 테스트 추가: 중간 삽입 시 커서 보존, 중간 삭제 시(천단위 쉼표 개수가 바뀌는 경계 포함) 커서 보존, 맨 앞 위치, 기존 allowNeg/AMOUNT_MAX clamp 케이스에도 커서 단언 추가. 5) index.html을 수정하므로 APP_VERSION과 sw.js CACHE 버전을 올린다."
-  },
+  "cycle": 388,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 382,
-      "phase": "develop",
-      "timestamp": "2026-11-20T10:13:42.920Z",
-      "summary": "globalSearchBody() 자산 결과 행이 assetBodyHTML()과 달리 '총자산 미포함'/'가격 미확인' 경고를 시각적으로도 aria-label로도 전혀 보여주지 않던 공백(cycle380이 같은 함수의 goal 분기만 고치고 asset 분기를 놓친 자리) 발견 및 수정. 테스트 3건 추가. node test/run.js 3712->3715/3715 통과. APP_VERSION 1.47.495->1.47.496, sw.js CACHE v762->v763.",
-      "commit": "d95b6ba"
-    },
     {
       "cycle": 382,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-21T09:10:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-387에서 다룬 모든 주제(aria-label, debtPayoffStatuses 통합, anyRateSourceStale, acquiredAt 가드 롤백, 휴지통 전체비우기 7종, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트, commitTx undo, 검색창 Escape 6곳)를 배제 목록으로 주고 전략적 재검토시킴. fmtAmt(inp,allowNeg)(index.html:11396)가 금액 입력 oninput마다 inp.value를 toLocaleString('ko-KR')로 재포맷하면서 selectionStart/selectionEnd를 전혀 다루지 않아, 숫자 맨 끝이 아닌 중간을 고칠 때마다 커서가 끝으로 튀어버리는 버그를 발견. 거래/분담/반복/자산 잔액·매입가/채무 추가상환/목표/예산/큰거래 임계값/빠른금액 등 앱 전역 금액 입력이 전부 이 함수를 공유해 영향받는, 사용 빈도가 가장 높은 입력 중 하나. pending_advance_plan에 caretPosAfterFormat(oldValue,oldCaret,newValue) 순수 헬퍼 + fmtAmt() setSelectionRange 복원 + test/domstub.js selection 스텁 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 387,
+      "phase": "advance",
+      "timestamp": "2026-11-21T10:10:00.000Z",
+      "summary": "critique(cycle387)의 계획대로 fmtAmt() 금액 입력 커서 끝 이동 버그 수정. index.html에 순수 헬퍼 caretPosAfterFormat(oldValue,oldCaret,newValue) 추가 — oldCaret 앞의 숫자 개수만을 좌표로 써서 newValue(콤마 삽입/제거로 길이가 달라져도)에서 같은 자리를 되찾고, 숫자 0개 구간은 minusConsumed(부호를 이미 지났는지)로 따로 갈라 allowNeg의 선행 '-' 앞/뒤 커서를 구분한다. fmtAmt()는 inp.value 대입 전에 oldValue/oldCaret(selectionStart, 없으면 value.length로 폴백)을 캡처해두고, 대입 후 caretPosAfterFormat 결과로 inp.setSelectionRange(pos,pos)를 호출하되 전체를 try/catch로 감싸 selectionStart/setSelectionRange가 없는 객체(기존 fmtAmt 테스트들이 쓰는 평범한 { value } 객체, 그리고 narrower vm 컨텍스트에 caretPosAfterFormat이 없을 때의 ReferenceError까지)에서도 조용히 넘어가게 했다. test/domstub.js의 DomNode에 selectionStart/selectionEnd/setSelectionRange를 추가했는데, .value setter가 실제 <input>처럼 대입 즉시 커서를 끝으로 옮기도록 만들어(고치기 전 버그를 그대로 재현) setSelectionRange 복원 호출이 빠지면 테스트가 실제로 깨지게 했다. test/run.js FUNCTIONS에 caretPosAfterFormat 추가, caretPosAfterFormat 순수 테스트 6건(쉼표 삽입/끝 입력/중간 삽입으로 쉼표 그룹 재배치/부호 앞·뒤 커서/AMOUNT_MAX 클램프로 숫자 개수가 사라진 경우의 끝 폴백) + domstub input으로 fmtAmt 전체를 실행하는 통합 테스트 3건(중간 삽입 후 커서 복원, allowNeg '-' 뒤 커서 보존, selectionStart 없는 평범한 객체도 안 터짐) 추가. node test/run.js 3757->3766/3766 통과, 메인 <script> 블록 node --check(함수로 파싱)/sw.js/logic.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.507->1.47.508, sw.js CACHE v774->v775. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
