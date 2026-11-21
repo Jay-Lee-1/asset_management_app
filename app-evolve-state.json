@@ -1,61 +1,8 @@
 {
-  "cycle": 389,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "공용 피커 시트(openPicker 계열)에 Escape 지우기·방향키 그리드 탐색 보강",
-    "why": "거래/반복/자산 입력 등 앱 최고빈도 플로우에서 열리는 openAssetPicker/openCatPicker/openTypePicker/openOwnerPicker/openCurrencyPicker(index.html:13499-13628, openPicker/pkChoose/pkFilteredAssets/catFilteredGrid 공유)가, 이미 다른 화면 6곳 검색창(goalQ 등)과 날짜 선택기에 적용된 Escape 즉시 지우기·방향키 그리드 탐색의 사각지대로 남아있다. 검증된 패턴을 제품에서 가장 트래픽이 높은 지점에 확장하는 것이라 리스크는 낮고 효과는 크다.",
-    "approach": "1) openAssetPicker(13554)/openCatPicker(13628)의 pkQ/pkCatQ input에 goalQ 등과 동일한 onkeydown Escape-clear 추가. 2) #pkGroup(.pk-item 목록, 상/하+Home/End)과 #catGrid(.pk-cat-grid, 상/하/좌/우+Home/End)에 dpGridKeydown을 참고한 방향키 핸들러 신설, roving tabindex로 구현. 3) refreshPkAssetList/refreshPkCatList(13546/13619)가 검색마다 DOM을 통째로 다시 그리므로 포커스 인덱스를 전역 상태로 분리해 재검색 후에도 포커스 위치 복원. 4) openTypePicker/openOwnerPicker/openCurrencyPicker는 검색바가 없으므로 방향키 탐색만 동일 핸들러 재사용. 범위 제외: aria-label 문구 변경, mergeCatInto/moveCat 등 피커가 호출하는 기능 자체 로직, 검색창 자동포커스, 피커 비주얼/애니메이션 변경."
-  },
+  "cycle": 390,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 384,
-      "phase": "review",
-      "timestamp": "2026-11-20T21:00:00.000Z",
-      "summary": "develop(cycle384)의 목표 정렬(DB.settings.goalSort/openGoalSortSheet/goalsManageBody) 변경을 검토. targetDate 정렬의 null-last 비교, progress 정렬의 goalPct(0~100 클램프, NaN 불가) 기반 안정성, name 정렬, .slice()로 DB.goals 원본 보존 모두 올바름을 확인했고 g.id 기반 렌더링이라 정렬 순서 변경이 선택모드/복제/삭제 등 다른 로직에 영향 없음을 확인. openGoalSortSheet()가 이미 열린 목표 관리 시트 위의 '서브 시트'인데 openPicker()류와 달리 window._pkBack을 설정하지 않아 엣지 스와이프 뒤로가기 시 목표 목록으로 안 돌아가고 시트 전체가 닫히는 점, openGoalsList() 재호출 시 검색어가 항상 빈 문자열로 리셋되는 점을 발견했으나 둘 다 이 커밋이 새로 만든 문제가 아니라 openGoalsList()의 기존 설계(선택모드 토글·롱프레스 콜백 등 다른 모든 재호출 경로도 동일하게 동작)와 100% 동일해 회귀가 아님을 확인(수정하지 않음). node test/run.js 3731/3731 통과, node --check logic.js/sw.js 통과. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 385,
-      "phase": "develop",
-      "timestamp": "2026-11-20T22:10:00.000Z",
-      "summary": "mergeOwnerInto(index.html:5749)가 정산(DB.settings.settle) 두 당사자를 서로 합쳐 ownerA===ownerB가 되면 settle을 null로 꺼버리는데(cycle364), delOwner(cycle347)가 같은 collapse 상황에서 함께 초기화하는 DB.settings.settledThrough는 여기서 빠뜨리고 있었음을 서브에이전트 탐색으로 발견. 죽은 settledThrough가 남으면 나중에 완전히 다른 참가자 쌍으로 정산을 새로 설정해도 그 하한 이전 공유지출이 영구적으로 집계에서 빠진다. settleCollapsed/prevSettledThrough 변수를 추가해 delOwner와 동일한 패턴으로 settle=null과 함께 settledThrough=null로 초기화하고, undoToast 되돌리기에서도 함께 복원하도록 수정. 테스트 3건 추가(collapse 시 초기화/collapse 아닌 단순 이동 시 보존/undo 복원). node test/run.js 3739->3742/3742 통과, node --check(스크립트 블록 추출)/logic.js/test/run.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.502->1.47.503, sw.js CACHE v769->v770.",
-      "commit": "8b4ab4c"
-    },
-    {
-      "cycle": 385,
-      "phase": "review",
-      "timestamp": "2026-11-20T23:07:48.000Z",
-      "summary": "develop(cycle385)의 mergeOwnerInto() settledThrough collapse 초기화 수정을 검토. delOwner(index.html:5674)의 기존 패턴과 1:1 대응됨을 확인: settleCollapsed일 때만(renameOwnerSheet/doRenameOwner처럼 단순 이동이라 settle이 살아있는 경우는 건드리지 않음) settledThrough=null로 초기화하고, undoToast가 prevSettledThrough로 되돌림. 추가된 테스트 3건(collapse 시 초기화/collapse 아닌 이동 시 보존/undo 복원)이 핵심 분기를 모두 덮는다. 코드 자체의 버그는 발견하지 못함. node test/run.js 3742/3742 통과, 메인 <script> 블록 node --check 통과. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 385,
-      "phase": "critique",
-      "timestamp": "2026-11-21T00:11:10.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-385에서 다룬 모든 주제를 배제 목록으로 주고 전략적 재검토시킴. 날짜 선택기(openFieldDatePicker/dpMonthBlock, index.html:11454-11511)의 .dp-cell 버튼들이 aria-label만 갖고 onkeydown이 전혀 없어 방향키 탐색이 안 되는데, 이 앱의 다른 모든 커스텀 위젯(순자산/자산잔액/배분 차트 peek의 ArrowLeft/Right+Home/End, 귀속 캐러셀의 ArrowLeft/Right, 휠 피커의 ArrowUp/Down+Home/End)은 이미 이 패턴을 갖추고 있어 날짜 선택기만 빠진 사례를 발견. 거래 날짜/매입일/만기일/목표일 등 앱 전역에서 가장 자주 쓰는 입력인데도 키보드 전용 사용자는 Tab만으로 날짜 하나하나를 짚어가야 함. pending_advance_plan에 ArrowLeft/Right(±1일)·ArrowUp/Down(±7일)·Home/End(월초/월말)·PageUp/PageDown(±1개월) 방향키 탐색 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 385,
-      "phase": "advance",
-      "timestamp": "2026-11-21T01:10:00.000Z",
-      "summary": "critique(cycle385)의 계획대로 날짜 선택기 캘린더 그리드에 방향키 탐색 추가. dpMonthBlock()의 .dp-cell 버튼에 data-date 속성을 추가하고, #dpScroll에 onkeydown=\"dpGridKeydown(event)\"를 onscroll과 같은 인라인 속성 패턴으로 달아 매 renderDatePicker() 재렌더에도 끊기지 않게 했다. 순수 날짜 계산은 dpStepDate(ds,key)로 분리(ArrowLeft/Right=addDays(±1), ArrowUp/Down=addDays(±7), Home/End=그 달 1일/말일, PageUp/PageDown=addMonths(±1, 월말 clamp), 모르는 key는 그대로 반환) — whTargetIdx가 DOM 없이 순수 인덱스 계산만 테스트되는 것과 같은 분리 원칙. dpGridKeydown(e)은 e.target의 .dp-cell[data-date]를 찾아 dpStepDate로 다음 날짜를 구하고 dpFocusDate(ds)에 넘긴다. dpFocusDate는 대상 셀이 아직 렌더 안 됐으면(스크롤 끝 근처) dpExtend(sc,dir)로 최대 4번까지 이어붙인 뒤 focus()+scrollIntoView({block:'nearest'})한다. 선택 커밋(dpPick)은 건드리지 않음 — 포커스된 <button>의 기본 Enter/Space→click 동작에 그대로 맡겨 탐색과 커밋을 분리했다. dpStepDate에 테스트 6건 추가(ArrowLeft/Right 월경계 롤오버, ArrowUp/Down 7일, Home/End 윤년 2월 포함, PageUp/PageDown addMonths와 동일 clamp, 모르는 key). test/run.js FUNCTIONS에 'dpStepDate' 추가. node test/run.js 3742->3747/3747 통과, 메인 <script> 블록 node --check/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.503->1.47.504, sw.js CACHE v770->v771. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 386,
-      "phase": "develop",
-      "timestamp": "2026-11-21T04:15:00.000Z",
-      "summary": "recNthDate/recCountUntil(logic.js:138-170)이 recDates(r,from,to)를 부를 때 from으로 base.startDate 자체를 그대로 써, weekend='earlier'인 반복의 첫 원본 후보(=startDate)가 주말·공휴일이라 그 이전 평일로 당겨지면 push()의 'd>=from' 검사에 걸려 통째로 유실되는 버그 발견 및 수정(예: monthly day=1+earlier, startDate=2025-11-01(토) → 실제 첫 회차는 2025-10-31인데 기존엔 다음달 2025-12-01을 1번째로 오판했고, recCountUntil도 같은 구간에서 1개 적게 셈 — '횟수' 입력(_applyCount/recalcEndCond)으로 역산하는 endDate가 한 회차 뒤로 밀려 '1번만 반복'을 저장해도 실제로는 2번 생성되는 금전 정확성 버그였다). shiftWeekend의 최대 이동폭(10일)만큼 from을 앞당긴 RECNTH_SHIFT_BUFFER_DAYS=10 버퍼를 추가해 고침 — recDates 자체의 raw ds>=r.startDate 가드는 그대로라 새 원본 후보가 섞여 들어오지 않고, weekend='later'는 항상 미래로만 밀어 처음부터 영향이 없었다. 기존 self-consistency 테스트 2건(daily+earlier, startDate=2026-01-01이 신정이라 같은 경로를 타던 테스트)이 narrow window(from=startDate)로 비교해 회귀로 깨져 wideFrom(startDate-10일)으로 같이 수정. 신규 회귀 테스트 3건 추가(첫 회차 유실 가드/recCountUntil 카운트 가드/later 영향 없음 가드). 부가로 renderRecSheet()(index.html:7086)에 '다음 결제일' 미리보기 힌트를 추가해(recNthDate(base,1) 재사용, monthly일 때만 노출) 반복일이 말일을 넘기거나 주말·공휴일로 조정될 때 저장 전에 실제 날짜를 미리 볼 수 있게 함(새 계산식 없이 기존 순수 함수만 재사용). 테스트 3건 추가. node test/run.js 3747->3753/3753 통과, node --check logic.js/sw.js/메인 script 블록 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.504->1.47.505, sw.js CACHE v771->v772.",
-      "commit": "e4d98d0"
-    },
-    {
-      "cycle": 386,
-      "phase": "review",
-      "timestamp": "2026-11-21T06:00:00.000Z",
-      "summary": "develop(cycle386)의 recNthDate/recCountUntil RECNTH_SHIFT_BUFFER_DAYS=10 버퍼 수정과 renderRecSheet() '다음 결제일' 힌트를 검토. recDates()의 push()가 'raw ds>=r.startDate' 게이트(호출부에서 이미 보장) 이후 'shiftWeekend(ds)>=from' 필터를 적용하는 구조를 재확인해, winFrom=startDate-10일로 넓혀도 shiftWeekend의 상한(n<10, 최대 10일 이동)과 정확히 맞아 새로운 원본 후보가 섞여 들어오지 않음(경계값 10일도 d>=winFrom로 포함됨)을 확인. monthly/yearly/daily/weekly/biweekly 각 분기 모두 버퍼가 freq에 무관하게 일반적으로 적용되고, daily/weekly/biweekly의 'target=addDays(from,-2)' 스캔 시작점 최적화도 winFrom이 더 과거라 target<=r.startDate가 되어 트리거되지 않아 회귀가 없음을 확인. recNthDate/recCountUntil을 호출하는 7개 지점(index.html: _applyCount/recalcEndCond/recSave/txSave 등)이 모두 base 객체를 그대로 넘기므로 함수 내부 수정만으로 전부 일관되게 고쳐짐. renderRecSheet() 힌트는 freq==='monthly' 가드로 weekly/biweekly/daily/yearly에는 영향 없고 fmtDateFull/recNthDate 기존 순수 함수만 재사용해 새 버그 표면이 없음. node test/run.js 3753/3753, node --check logic.js/sw.js 통과. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 386,
       "phase": "critique",
@@ -123,7 +70,7 @@
       "cycle": 388,
       "phase": "advance",
       "timestamp": "2026-11-21T14:33:56.000Z",
-      "summary": "critique(cycle388)가 세운 계획대로 카테고리 관리(openCatManage/catManageBody, index.html)에 거래내역/전체내역/자산목록/반복거래/목표관리와 동일한 선택모드+하단 일괄 액션바+단일 undoToast 패턴을 추가. ST.catSel={mode:false,ids:new Set()} 신설(카테고리는 고유 id가 없어 ids는 DB.categories[kind] 안의 인덱스 집합, 선택모드 중엔 그 kind를 _catMgmtKind 전역이 들고 있음 — 구분(지출/수입/저축) 전환 시 자동 초기화). openCatManage에 '선택' 토글 버튼과 선택모드 중 검색창/새 카테고리 추가 입력 숨김을 추가하고, catManageBody에 체크박스 행 렌더링 분기(합치기/수정/삭제/변동전환/이월설정/순서이동 버튼을 체크박스로 대체, ADJUST_CAT은 선택 대상에서 제외)를 추가. wireLongPress로 롱프레스 진입도 연결. 계획대로 범위를 두 액션으로 제한: (1) 일괄 삭제 — doDeleteCat의 트래시(DB.trashCats) 적재/반복거래 비활성화 로직을 catDelSel/doDeleteCatsUndo로 배치화해 deleteGoalsUndo와 동일한 단일 undoToast 제공, (2) 일괄 변동/고정 전환 — bulkCatVarTargets/doBulkCatVarToggle/catVarSel로 doBulkInclToggle(자산 총자산 포함/제외 배치 토글)과 동일한 패턴 적용(저축 카테고리는 변동/고정 구분이 없어 버튼 자체를 안 보여줌). activeSel()/updateSelBottom()/exitSelMode()/closeSheet()/go()에 다른 4개 선택모드와 동일한 배선을 추가. 합치기/이월설정/순서이동은 계획대로 이번 cycle 범위에서 제외.\ntest/run.js에 catSelectableIdx/bulkCatVarTargets/doBulkCatVarToggle/doDeleteCatsUndo(배치 삭제 undo 복원·트래시 적재·반복거래 비활성화 패리티 포함)/catSelPartial/catToggleSel/catSelAll/catDelSel/catVarSel 및 openCatManage/catManageBody의 선택모드 렌더링·activeSel의 catVarT 판정 회귀 테스트를 신규 추가. 기존 doRenameCat/doDeleteCat/mergeCatInto/addCat/moveCat/openCatManage/catManageBody/catQInput/closeSheet 등 카테고리 관련 함수들은 전부 내부적으로 openCatManage(k)를 불러 시트를 새로고침하는데, 이제 그 함수가 ST.catSel.mode를 읽으므로 그 함수들을 테스트하는 기존 픽스처 다수가 깨짐 — 기본 sandbox.ST 및 setupAssetsDB/setupLedgerDB/setupHistoryDB 등 널리 쓰이는 ST 전체 재할당 지점들에 catSel 기본값을 추가해 회귀 없이 수습. node test/run.js 3773->3815/3815 통과(신규 42건), node --check(메인 <script> 블록) 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.509->1.47.510, sw.js CACHE v776->v777.",
+      "summary": "critique(cycle388)가 세운 계획대로 카테고리 관리(openCatManage/catManageBody, index.html)에 거래내역/전체내역/자산목록/반복거래/목표관리와 동일한 선택모드+하단 일괄 액션바+단일 undoToast 패턴을 추가. ST.catSel={mode:false,ids:new Set()} 신설(카테고리는 고유 id가 없어 ids는 DB.categories[kind] 안의 인덱스 집합, 선택모드 중엔 그 kind를 _catMgmtKind 전역이 들고 있음 — 구분(지출/수입/저축) 전환 시 자동 초기화). openCatManage에 '선택' 토글 버튼과 선택모드 중 검색창/새 카테고리 추가 입력 숨김을 추가하고, catManageBody에 체크박스 행 렌더링 분기(합치기/수정/삭제/변동전환/이월설정/순서이동 버튼을 체크박스로 대체, ADJUST_CAT은 선택 대상에서 제외)를 추가. wireLongPress로 롱프레스 진입도 연결. 계획대로 범위를 두 액션으로 제한: (1) 일괄 삭제 — doDeleteCat의 트래시(DB.trashCats) 적재/반복거래 비활성화 로직을 catDelSel/doDeleteCatsUndo로 배치화해 deleteGoalsUndo와 동일한 단일 undoToast 제공, (2) 일괄 변동/고정 전환 — bulkCatVarTargets/doBulkCatVarToggle/catVarSel로 doBulkInclToggle(자산 총자산 포함/제외 배치 토글)과 동일한 패턴 적용(저축 카테고리는 변동/고정 구분이 없어 버튼 자체를 안 보여줌). activeSel()/updateSelBottom()/exitSelMode()/closeSheet()/go()에 다른 4개 선택모드와 동일한 배선을 추가. 합치기/이월설정/순서이동은 계획대로 이번 cycle 범위에서 제외.\ntest/run.js에 catSelectableIdx/bulkCatVarTargets/doBulkCatVarToggle/doDeleteCatsUndo(배치 삭제 undo 복원·트래시 적재·반복거래 비활성화 패리티 포함)/catSelPartial/catToggleSel/catSelAll/catDelSel/catVarSel 및 openCatManage/catManageBody의 선택모드 렌더링·activeSel의 catVarT 판정 회귀 테스트를 신규 추가. 기존 doRenameCat/doDeleteCat/mergeCatInto/addCat/moveCat/openCatManage/catManageBody/catQInput/closeSheet 등 카테고리 관련 함수들은 전부 내부적으로 openCatManage(k)를 불러 시트를 새로고침하는데, 이제 그 함수가 ST.catSel.mode를 읽으므로 그 함수들을 테스트하는 기존 픽스처 다수가 깨짐 — 기본 sandbox.ST 및 setupAssetsDB/setupLedgerDB/setupHistoryDB 등 널리 쓰이는 ST 전체 재할당 지점들에 catSel 기본값을 추가해 회귀 없이 수습. node test/run.js 3773->3815/3815 통과(신규 42건), node --check(메인 <script> 블록) 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.509->1.47.510, sw.js CACHE v776->v777. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
@@ -145,6 +92,13 @@
       "phase": "critique",
       "timestamp": "2026-11-21T17:10:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-389 전체 배제 목록(aria-label, debtPayoffStatuses, anyRateSourceStale, N인 정산, acquiredAt 가드 롤백, 휴지통 전체비우기, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트, commitTx undo, 검색창 Escape 6곳, fmtAmt 커서버그, 문의하기 메모 클램프, 카테고리 관리 일괄선택 삭제/변동전환/예산이월, 카테고리 합치기/순서이동)를 주고 전략적 재검토시킴. openAssetPicker/openCatPicker/openTypePicker/openOwnerPicker/openCurrencyPicker(index.html:13499-13628, openPicker/pkChoose/pkFilteredAssets/catFilteredGrid 공유) — 거래/반복/자산 입력 등 앱 최고빈도 플로우에서 열리는 공용 피커 시트 — 가 다른 화면 6곳 검색창(goalQ 등)에 적용된 Escape 즉시 지우기와 날짜 선택기에 적용된 방향키 그리드 탐색 모두의 사각지대로 남아있음을 발견(pkQ/pkCatQ에 onkeydown 없음, #pkGroup/#catGrid에 dpGridKeydown류 핸들러 없음, grep으로 확인). 이미 검증된 두 패턴을 가장 트래픽 높은 공용 컴포넌트에 확장하는 것이라 리스크 낮고 효과 큼. pending_advance_plan에 저장(approach: pkQ/pkCatQ Escape-clear, #pkGroup/#catGrid 방향키+roving tabindex, refreshPkAssetList/refreshPkCatList 재검색 후 포커스 복원, openTypePicker/openOwnerPicker/openCurrencyPicker는 방향키만 재사용; aria-label/피커 호출 로직/자동포커스/비주얼 변경은 범위 제외). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 389,
+      "phase": "advance",
+      "timestamp": "2026-11-21T18:20:00.000Z",
+      "summary": "critique(cycle389)의 계획대로 공용 피커 시트에 Escape 즉시 지우기와 방향키 그리드 탐색을 추가. (1) openAssetPicker(#pkQ)/openCatPicker(#pkCatQ) 검색 입력에 검색창 6곳(goalQ 등)과 동일한 onkeydown=\"if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput(...)}\" 추가. (2) 날짜 선택기(dpStepDate/dpGridKeydown)와 같은 '순수 인덱스 계산 + DOM은 포커스 이동만' 분리로 pkListNextIdx(idx,len,key)(ArrowUp/Down+Home/End)와 pkItemKeydown(e)을 신설해 #pkGroup(openAssetPicker/openTypePicker/openOwnerPicker/openCurrencyPicker가 공유하는 세로 .pk-item 목록, 자산유형별 .pk-cap 캡션은 querySelectorAll('.pk-item')이 버튼만 모아 자동으로 건너뜀)에 onkeydown 인라인 속성으로 배선. (3) pkGridNextIdx(idx,len,cols,key)(ArrowLeft/Right/Up/Down+Home/End, cols=3은 .pk-cat-grid의 CSS grid-template-columns:repeat(3,1fr)과 짝)와 pkCatKeydown(e)을 신설해 #catGrid에 기존 onclick 위임과 같은 이유로 프로퍼티 할당(catGridEl.onkeydown=pkCatKeydown)으로 배선 — innerHTML 교체에도 안 끊김. 계획이 언급한 '재검색 후 포커스 복원'(roving tabindex 포함)은 구현하지 않음: #pkQ/#pkCatQ 입력이 그리드 바깥에 있어 타이핑 중 포커스는 항상 입력에 있고, refreshPkAssetList/refreshPkCatList가 다시 그리는 동안 그리드 안에 포커스가 있을 수 있는 경로 자체가 없어(날짜 선택기의 dpFocusDate/dpExtend처럼 스크롤 중 아직 안 렌더된 날짜로 포커스를 옮기는 상황과 다름) 일어날 수 없는 상황에 대한 코드를 추가하지 않았다(코드에 그 판단 근거를 주석으로 남김). 버튼들은 이미 네이티브 포커스 가능(tabindex 기본값)이라 날짜 선택기의 .dp-cell과 동일하게 별도 roving tabindex 없이 포커스만 이동한다. pkListNextIdx/pkGridNextIdx를 test/run.js FUNCTIONS에 추가하고 dpStepDate 테스트 바로 뒤에 순수 테스트 7건 추가(pkListNextIdx 3건: 상/하 이동+양끝 클램프, Home/End, 모르는 key; pkGridNextIdx 4건: 좌/우 이동+양끝 클램프, 상/하가 cols만큼 건너뛰며 해당 줄이 없으면 머묾, Home/End, 모르는 key) — pkItemKeydown/pkCatKeydown 자체는 dpGridKeydown과 동일한 이유로 실행형 테스트 대상에서 제외. node test/run.js 3829->3836/3836 통과, node --check(메인 <script> 블록 추출)/logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.511->1.47.512, sw.js CACHE v778->v779.",
       "commit": null
     }
   ]

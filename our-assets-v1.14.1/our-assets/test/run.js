@@ -191,7 +191,7 @@ function extractMainScript() {
 // index.html이 아니라 logic.js에 있다 — 위 logicSrc로 직접 로드하므로 이 목록에는 없다
 // (app-evolve cycle97 advance, cycle111 advance).
 const FUNCTIONS = [
-  'addMonths', 'dpStepDate', 'fetchWithTimeout', 'withTimeout',
+  'addMonths', 'dpStepDate', 'pkListNextIdx', 'pkGridNextIdx', 'fetchWithTimeout', 'withTimeout',
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat', 'catSelectableIdx',
   'num', 'doRenameCat', 'doDeleteCat', 'doDeleteCatsUndo', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
@@ -1237,6 +1237,45 @@ test('dpStepDate: PageUp/PageDown은 한 달 이동하며 addMonths와 동일하
 });
 test('dpStepDate: 모르는 key는 날짜를 그대로 돌려준다(호출부가 이동 없음으로 처리)', () => {
   assert.strictEqual(sandbox.dpStepDate('2026-03-15', 'Tab'), '2026-03-15');
+});
+
+/* ---------- pkListNextIdx/pkGridNextIdx: 공용 피커 시트(openAssetPicker/openTypePicker/
+ * openOwnerPicker/openCurrencyPicker의 #pkGroup 세로 목록, openCatPicker의 #catGrid 3열 그리드)
+ * 방향키 탐색이 쓰는 순수 인덱스 계산(app-evolve cycle389 critique → advance). dpStepDate와 같은
+ * 이유로 DOM을 직접 다루는 쪽(pkItemKeydown/pkCatKeydown)은 실행형으로 검증하지 않고, 그 두
+ * 함수가 공유하는 이 순수 계산만 고정해 둔다. */
+test('pkListNextIdx: ArrowUp/ArrowDown은 한 칸씩 이동하며 양끝에서 더 나가지 않는다', () => {
+  assert.strictEqual(sandbox.pkListNextIdx(2, 5, 'ArrowUp'), 1);
+  assert.strictEqual(sandbox.pkListNextIdx(2, 5, 'ArrowDown'), 3);
+  assert.strictEqual(sandbox.pkListNextIdx(0, 5, 'ArrowUp'), 0);
+  assert.strictEqual(sandbox.pkListNextIdx(4, 5, 'ArrowDown'), 4);
+});
+test('pkListNextIdx: Home/End는 첫/마지막 항목으로 이동한다', () => {
+  assert.strictEqual(sandbox.pkListNextIdx(2, 5, 'Home'), 0);
+  assert.strictEqual(sandbox.pkListNextIdx(2, 5, 'End'), 4);
+});
+test('pkListNextIdx: 모르는 key는 인덱스를 그대로 돌려준다(호출부가 이동 없음으로 처리)', () => {
+  assert.strictEqual(sandbox.pkListNextIdx(2, 5, 'ArrowLeft'), 2);
+});
+test('pkGridNextIdx: ArrowLeft/ArrowRight는 한 칸씩 이동하며 양끝에서 더 나가지 않는다', () => {
+  assert.strictEqual(sandbox.pkGridNextIdx(4, 9, 3, 'ArrowLeft'), 3);
+  assert.strictEqual(sandbox.pkGridNextIdx(4, 9, 3, 'ArrowRight'), 5);
+  assert.strictEqual(sandbox.pkGridNextIdx(0, 9, 3, 'ArrowLeft'), 0);
+  assert.strictEqual(sandbox.pkGridNextIdx(8, 9, 3, 'ArrowRight'), 8);
+});
+test('pkGridNextIdx: ArrowUp/ArrowDown은 열 개수(cols)만큼 건너뛰며, 그 줄이 없으면 머문다', () => {
+  assert.strictEqual(sandbox.pkGridNextIdx(4, 9, 3, 'ArrowUp'), 1);
+  assert.strictEqual(sandbox.pkGridNextIdx(4, 9, 3, 'ArrowDown'), 7);
+  assert.strictEqual(sandbox.pkGridNextIdx(1, 9, 3, 'ArrowUp'), 1, '위로 더 갈 줄이 없으면 머문다');
+  assert.strictEqual(sandbox.pkGridNextIdx(7, 9, 3, 'ArrowDown'), 7, '아래로 더 갈 줄이 없으면(마지막 줄이 꽉 안 차도) 머문다');
+  assert.strictEqual(sandbox.pkGridNextIdx(8, 9, 3, 'ArrowDown'), 8, '마지막 항목에서 더 갈 줄이 없으면 머문다');
+});
+test('pkGridNextIdx: Home/End는 첫/마지막 항목으로 이동한다', () => {
+  assert.strictEqual(sandbox.pkGridNextIdx(4, 9, 3, 'Home'), 0);
+  assert.strictEqual(sandbox.pkGridNextIdx(4, 9, 3, 'End'), 8);
+});
+test('pkGridNextIdx: 모르는 key는 인덱스를 그대로 돌려준다(호출부가 이동 없음으로 처리)', () => {
+  assert.strictEqual(sandbox.pkGridNextIdx(4, 9, 3, 'Tab'), 4);
 });
 
 /* ---------- addMonthsStr(logic.js): addMonths와 이름은 비슷하지만 day를 clamp하지 않는 별도 함수 ----------
