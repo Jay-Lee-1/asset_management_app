@@ -1,19 +1,8 @@
 {
-  "cycle": 388,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "카테고리 관리(openCatManage)에 일괄 선택(다중 삭제/변동·고정 전환) 추가",
-    "why": "거래내역(ST.lSel)/전체내역(ST.hist.selMode)/자산목록(ST.aSel)/반복거래(ST.recSel)/목표관리(ST.goalSel) 5곳은 모두 선택모드+하단 일괄 액션바+단일 undoToast 패턴을 갖췄는데 카테고리 관리(catManageBody, index.html:8752-8789)만 전부 행 단위(합치기/수정/삭제/변동전환/이월설정/순서이동)라 ST.catSel 자체가 없다. CAT_LIST_SEARCH_THRESHOLD=10이 이미 카테고리 10개 초과 사용자를 전제하는데, 그런 사용자가 여러 카테고리를 한꺼번에 정리하려면 N번의 확인창+개별 6초 undo를 반복해야 한다.",
-    "approach": "ST.catSel={mode:false,ids:new Set()}를 ST.recSel/ST.goalSel과 동일 구조로 추가. openCatManage에 다른 4개 화면과 동일한 선택 토글 버튼 + catManageBody에 체크박스 행 렌더링 분기, wireLongPress로 롱프레스 진입 연결. 하단 선택바는 이번 cycle 범위를 두 액션으로 제한: (1) 일괄 삭제 - delCat의 반복거래 비활성화/트래시 적재/톰스톤 처리를 배치로 적용해 deleteGoalsUndo(13243-13250)와 동일 패턴의 단일 undoToast 제공, (2) 일괄 변동/고정 전환 - isVarCat을 배치 적용(자산의 총자산 포함/제외 배치 토글(13048)과 동일 패턴). 합치기/이월설정/순서이동은 이번 cycle에서 제외. test/run.js에 배치 삭제 undo 복원/트래시 적재/반복거래 비활성화 패리티 회귀 테스트 추가."
-  },
+  "cycle": 389,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 383,
-      "phase": "review",
-      "timestamp": "2026-11-20T15:45:00.000Z",
-      "summary": "develop(cycle383)의 acquiredAt RANGE_FROM/RANGE_TO 가드가 실제로는 회귀였음을 발견: maturityDate/targetDate는 allTxns(RANGE_FROM,RANGE_TO) 기반 집계에 쓰여 범위 밖이면 조용히 빠지지만, acquiredAt은 annualizedReturn()의 순수 날짜 차이 계산에만 쓰이고 allTxns에 들어가지 않는다. 매입일 피커가 '무제한 과거 스크롤'을 의도적으로 지원하고(부동산·오래된 주식 등 RANGE_FROM(2023-01-01) 이전 실제 매입일이 흔함), CSV/백업 가져오기(csvDateValid)도 acquiredAt엔 포맷만 검사해 범위를 안 묻는 것과 모순됨을 확인. saveAsset()에서 d.acquiredAt에 대한 dateBelowRangeFloor/dateAboveRangeCeil 가드 두 줄을 제거하고 이유를 주석으로 남김. RANGE_FROM 이전 매입일을 막던 테스트 2건을 '정상 저장됨'을 보장하는 회귀 방지 테스트로 교체. node test/run.js 3723->3722/3722 통과(테스트 2건을 1건으로 병합), node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.498->1.47.499, sw.js CACHE v765->v766.",
-      "commit": null
-    },
     {
       "cycle": 383,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-21T13:14:22.045Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-388 전체 배제 목록(aria-label, debtPayoffStatuses, anyRateSourceStale, N인 정산, acquiredAt 가드 롤백, 휴지통 전체비우기, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트, commitTx undo, 검색창 Escape 6곳, fmtAmt 커서버그, 문의하기 메모 클램프)를 주고 전략적 재검토시킴. 거래내역/전체내역/자산목록/반복거래/목표관리 5곳이 모두 갖춘 선택모드+일괄액션+단일undoToast 패턴이 카테고리 관리(catManageBody, index.html:8752-8789)에만 전혀 없음(ST.catSel grep 0건, 합치기/수정/삭제/변동전환/이월설정/순서이동 전부 행 단위)을 발견. CAT_LIST_SEARCH_THRESHOLD=10이 카테고리 다수 사용자를 이미 전제하는 것과 대비됨. pending_advance_plan에 ST.catSel 추가 + 일괄 삭제/일괄 변동전환 2개 액션만 범위로 둔 계획 저장(합치기/이월설정/순서이동은 제외). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 388,
+      "phase": "advance",
+      "timestamp": "2026-11-21T14:33:56.000Z",
+      "summary": "critique(cycle388)가 세운 계획대로 카테고리 관리(openCatManage/catManageBody, index.html)에 거래내역/전체내역/자산목록/반복거래/목표관리와 동일한 선택모드+하단 일괄 액션바+단일 undoToast 패턴을 추가. ST.catSel={mode:false,ids:new Set()} 신설(카테고리는 고유 id가 없어 ids는 DB.categories[kind] 안의 인덱스 집합, 선택모드 중엔 그 kind를 _catMgmtKind 전역이 들고 있음 — 구분(지출/수입/저축) 전환 시 자동 초기화). openCatManage에 '선택' 토글 버튼과 선택모드 중 검색창/새 카테고리 추가 입력 숨김을 추가하고, catManageBody에 체크박스 행 렌더링 분기(합치기/수정/삭제/변동전환/이월설정/순서이동 버튼을 체크박스로 대체, ADJUST_CAT은 선택 대상에서 제외)를 추가. wireLongPress로 롱프레스 진입도 연결. 계획대로 범위를 두 액션으로 제한: (1) 일괄 삭제 — doDeleteCat의 트래시(DB.trashCats) 적재/반복거래 비활성화 로직을 catDelSel/doDeleteCatsUndo로 배치화해 deleteGoalsUndo와 동일한 단일 undoToast 제공, (2) 일괄 변동/고정 전환 — bulkCatVarTargets/doBulkCatVarToggle/catVarSel로 doBulkInclToggle(자산 총자산 포함/제외 배치 토글)과 동일한 패턴 적용(저축 카테고리는 변동/고정 구분이 없어 버튼 자체를 안 보여줌). activeSel()/updateSelBottom()/exitSelMode()/closeSheet()/go()에 다른 4개 선택모드와 동일한 배선을 추가. 합치기/이월설정/순서이동은 계획대로 이번 cycle 범위에서 제외.\ntest/run.js에 catSelectableIdx/bulkCatVarTargets/doBulkCatVarToggle/doDeleteCatsUndo(배치 삭제 undo 복원·트래시 적재·반복거래 비활성화 패리티 포함)/catSelPartial/catToggleSel/catSelAll/catDelSel/catVarSel 및 openCatManage/catManageBody의 선택모드 렌더링·activeSel의 catVarT 판정 회귀 테스트를 신규 추가. 기존 doRenameCat/doDeleteCat/mergeCatInto/addCat/moveCat/openCatManage/catManageBody/catQInput/closeSheet 등 카테고리 관련 함수들은 전부 내부적으로 openCatManage(k)를 불러 시트를 새로고침하는데, 이제 그 함수가 ST.catSel.mode를 읽으므로 그 함수들을 테스트하는 기존 픽스처 다수가 깨짐 — 기본 sandbox.ST 및 setupAssetsDB/setupLedgerDB/setupHistoryDB 등 널리 쓰이는 ST 전체 재할당 지점들에 catSel 기본값을 추가해 회귀 없이 수습. node test/run.js 3773->3815/3815 통과(신규 42건), node --check(메인 <script> 블록) 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.509->1.47.510, sw.js CACHE v776->v777.",
       "commit": null
     }
   ]

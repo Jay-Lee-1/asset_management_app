@@ -192,8 +192,8 @@ function extractMainScript() {
 // (app-evolve cycle97 advance, cycle111 advance).
 const FUNCTIONS = [
   'addMonths', 'dpStepDate', 'fetchWithTimeout', 'withTimeout',
-  'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
-  'num', 'doRenameCat', 'doDeleteCat', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
+  'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat', 'catSelectableIdx',
+  'num', 'doRenameCat', 'doDeleteCat', 'doDeleteCatsUndo', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'allocSeriesChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV', 'recurrencesToCSV', 'goalsToCSV', 'budgetHistoryToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
@@ -214,6 +214,10 @@ const FUNCTIONS = [
   // 카테고리 변경·계좌 이동을 추가한 것(app-evolve cycle378 critique → advance).
   'doBulkRecCat', 'bulkRecCatPickFor', 'recCatSel', 'doBulkRecAssetMove', 'bulkRecAssetMovePickFor', 'recAssetMoveSel',
   'deleteGoalsUndo', 'openGoalTrashList', 'restoreTrashGoal', 'purgeTrashGoal', 'goalSelPartial', 'goalToggleSel', 'goalSelAll', 'goalDelSel', 'doBulkGoalOwnerMove', 'goalOwnerMovePickFor', 'goalOwnerMoveSel',
+  // bulkCatVarTargets/doBulkCatVarToggle(변동/고정 일괄 전환), catSelPartial/catToggleSel/catSelAll/
+  // catDelSel/catVarSel(카테고리 관리 선택모드 ST.catSel)은 recSel/goalSel과 동일한 선택모드+일괄
+  // 액션+단일 undoToast 패턴을 카테고리 관리에 추가한 것(app-evolve cycle388 critique → advance).
+  'bulkCatVarTargets', 'doBulkCatVarToggle', 'catSelPartial', 'catToggleSel', 'catSelAll', 'catDelSel', 'catVarSel',
   'assetMergeCounts', 'assetMergeSubKey', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
@@ -507,7 +511,10 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _debtPlanAnnT는 debtWhatIfUpdate가 쓰는 _debtWhatIfAnnT와 같은 220ms 디바운스 announceLive
 // 타이머를 debtPlanUpdate()(부채 상환 계획, app-evolve cycle373 advance)가 쓰는 것이라 같은
 // 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다.
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', '_catQT', 'CLOUD_SYNC_ERR_KIND'];
+// _catMgmtKind는 카테고리 관리 선택모드(ST.catSel)가 추가되면서 openCatManage/catSelAll/catDelSel/
+// catVarSel/exitSelMode/activeSel이 "지금 어느 구분(지출/수입/저축)을 보고 있는지" 공유하려고 쓰는
+// 전역이라 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다(app-evolve cycle388 advance).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', '_catQT', '_catMgmtKind', 'CLOUD_SYNC_ERR_KIND'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -663,7 +670,13 @@ const sandbox = {
   // renderCurrent()의 에러 바운더리 테스트용 상태 — 실제 index.html의 ST/renderers를
   // 그대로 끌어오지 않고(그 둘은 화면 상태/렌더 함수 묶음이라 순수 로직이 아님) 이 테스트가
   // 필요로 하는 최소한의 모양만 흉내낸다(renderers[ST.tab]() 호출 하나만 있으면 됨).
-  ST: { tab: 'home' },
+  // catSel: doRenameCat/doDeleteCat/addCat/moveCat/mergeCatInto 등 카테고리 관리 함수는 전부 끝에
+  // openCatManage(k)를 불러 시트를 다시 그리는데(선택모드 추가 전부터 있던 기존 동작), openCatManage/
+  // catManageBody가 이제 ST.catSel.mode를 읽으므로(app-evolve cycle388 advance) 이 함수들을 테스트하는
+  // 수십 개의 기존 테스트가 ST를 따로 세팅하지 않고 이 기본값에 암묵적으로 의존한다 — recSel/goalSel
+  // 추가 때는 그 함수들을 직접 테스트하는 쪽만 고치면 됐지만(해당 화면 밖에서는 안 읽힘), catSel은
+  // 카테고리 관련 모든 함수의 '새로고침' 경로에 걸려 있어 그 범위가 다르다.
+  ST: { tab: 'home', catSel: { mode: false, ids: new Set() } },
   renderers: { home: () => {} },
   // renderHome()이 계산해 넣는 모듈 스코프 변수(_homeNeg) — renderHome 자체는 순수 로직이
   // 아니라 여기선 추출하지 않으므로(위 renderers.home 스텁과 같은 이유), renderCurrent()가
@@ -3408,6 +3421,21 @@ test('activeRecsForCat: 최상위 category엔 없고 분할(splits) 항목에만
   assert.deepStrictEqual(sandbox.activeRecsForCat('expense', 'OTT').map(r => r.id), ['r1']);
 });
 
+/* ---------- catSelectableIdx: 카테고리 관리 선택모드(ST.catSel)의 '전체 선택' 대상 인덱스
+ * (app-evolve cycle388 advance) ---------- */
+test('catSelectableIdx: 수입(income)의 잔액 조정(ADJUST_CAT)은 인덱스에서 빠진다', () => {
+  sandbox.DB = { categories: { income: ['급여', sandbox.ADJUST_CAT, '용돈'] } };
+  assert.deepStrictEqual(Array.from(sandbox.catSelectableIdx('income')), [0, 2]);
+});
+test('catSelectableIdx: 지출/저축은 ADJUST_CAT이 없으므로 전체 인덱스를 그대로 돌려준다', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통', '문화'] } };
+  assert.deepStrictEqual(Array.from(sandbox.catSelectableIdx('expense')), [0, 1, 2]);
+});
+test('catSelectableIdx: 해당 구분에 카테고리가 없으면(또는 DB.categories 자체가 비어 있으면) 빈 배열이다', () => {
+  sandbox.DB = { categories: {} };
+  assert.deepStrictEqual(Array.from(sandbox.catSelectableIdx('expense')), []);
+});
+
 /* ---------- doDeleteCat: 연결된 활성 반복거래를 비활성화하고, undo로 카테고리+반복거래 모두 복원한다 ---------- */
 test('doDeleteCat: 연결된 활성 반복거래를 비활성화하고, undo 콜백을 부르면 카테고리와 반복거래 상태를 모두 복원한다', () => {
   sandbox.DB = {
@@ -3546,6 +3574,97 @@ test('doDeleteCat: undoToast의 즉시 undo 콜백을 부르면 DB.trashCats에�
   assert.strictEqual(rec._autoDeactivatedByCatDelete, undefined, '즉시 undo로 되돌아왔으면 플래그도 함께 지워져야 함');
 });
 
+/* ---------- doDeleteCatsUndo: 카테고리 관리 선택모드(ST.catSel)의 일괄 삭제 — doDeleteCat(건당
+ * 삭제, 위)의 트래시/반복거래 비활성화 로직을 여러 건에 한 번에 적용하고 deleteGoalsUndo/
+ * deleteAssetsUndo와 동일하게 하나의 undoToast로 전부 되돌릴 수 있다(app-evolve cycle388
+ * advance). ---------- */
+test('doDeleteCatsUndo: 여러 카테고리를 한 번에 지우면 각각 DB.trashCats에 담기고 연결된 활성 반복거래도 모두 비활성화된다', () => {
+  const r1 = { id: 'r1', type: 'expense', category: '커피', active: true };
+  const r2 = { id: 'r2', type: 'expense', category: '식비', active: true };
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비', '교통'] },
+    catIcon: { 'expense:커피': 'coffee' },
+    catVar: { 'expense:커피': true },
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 50000 }] },
+    catBudgetRollover: { 'expense:식비': true },
+    txns: [], recurrences: [r1, r2],
+  };
+  sandbox.lastUndo = null;
+  sandbox.doDeleteCatsUndo('expense', ['커피', '식비']);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['교통'], '선택된 두 카테고리가 모두 지워져야 함');
+  assert.strictEqual(sandbox.DB.trashCats.length, 2, '지워진 두 카테고리가 각각 DB.trashCats에 담겨야 함(doDeleteCat과 동일한 트래시 패턴)');
+  const byName = Object.fromEntries(sandbox.DB.trashCats.map(x => [x.name, x]));
+  assert.strictEqual(byName['커피'].icon, 'coffee');
+  assert.strictEqual(byName['커피'].catVar, true);
+  assert.strictEqual(byName['식비'].hadBudget, true);
+  assert.strictEqual(byName['식비'].wasRollover, true);
+  assert.strictEqual(r1.active, false, '커피에 연결된 반복거래도 비활성화되어야 함');
+  assert.strictEqual(r1._autoDeactivatedByCatDelete, true);
+  assert.strictEqual(r2.active, false, '식비에 연결된 반복거래도 비활성화되어야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  assert.ok(/2개/.test(sandbox.lastUndo.msg));
+});
+test('doDeleteCatsUndo: undo 콜백을 부르면 카테고리/아이콘/변동/예산/이월설정/반복거래 활성 상태가 모두 복원되고 트래시에서도 빠진다', () => {
+  const r1 = { id: 'r1', type: 'expense', category: '커피', active: true };
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: { 'expense:커피': 'coffee' },
+    catVar: { 'expense:커피': true },
+    budgetHistory: {}, catBudgetRollover: {},
+    txns: [], recurrences: [r1],
+  };
+  sandbox.lastUndo = null;
+  sandbox.doDeleteCatsUndo('expense', ['커피']);
+  assert.strictEqual(sandbox.DB.trashCats.length, 1);
+  sandbox.lastUndo.undoFn();
+  assert.ok(sandbox.DB.categories.expense.includes('커피'), '카테고리가 되살아나야 함');
+  assert.strictEqual(sandbox.DB.catIcon['expense:커피'], 'coffee', '아이콘도 복원되어야 함');
+  assert.strictEqual(sandbox.DB.catVar['expense:커피'], true, '변동 플래그도 복원되어야 함');
+  assert.strictEqual(r1.active, true, '반복거래도 다시 활성화되어야 함');
+  assert.strictEqual(r1._autoDeactivatedByCatDelete, undefined);
+  assert.strictEqual(sandbox.DB.trashCats.length, 0, '되돌리면 트래시에서도 제거되어야 함');
+});
+test('doDeleteCatsUndo: 수입의 잔액 조정(ADJUST_CAT)이 섞여 있어도 그것만 건너뛰고 나머지는 지운다', () => {
+  sandbox.DB = {
+    categories: { income: ['급여', sandbox.ADJUST_CAT] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {},
+    txns: [], recurrences: [],
+  };
+  sandbox.doDeleteCatsUndo('income', ['급여', sandbox.ADJUST_CAT]);
+  assert.deepStrictEqual(sandbox.DB.categories.income, [sandbox.ADJUST_CAT], 'ADJUST_CAT은 삭제되지 않고 남아야 함');
+  assert.strictEqual(sandbox.DB.trashCats.length, 1, 'ADJUST_CAT을 뺀 나머지 한 건만 트래시에 담겨야 함');
+});
+test('doDeleteCatsUndo: 배치 중간에 카테고리가 1개로 줄면 나머지 삭제는 조용히 건너뛴다(최소 1개 유지)', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {},
+    txns: [], recurrences: [],
+  };
+  sandbox.doDeleteCatsUndo('expense', ['커피', '식비']);
+  assert.strictEqual(sandbox.DB.categories.expense.length, 1, '마지막 카테고리는 지워지면 안 됨');
+  assert.strictEqual(sandbox.DB.trashCats.length, 1, '실제로 지워진 한 건만 트래시에 담겨야 함');
+});
+test('doDeleteCatsUndo: 지정한 이름이 하나도 안 걸리면(이미 지워졌거나 존재하지 않음) DB.trashCats를 건드리지 않고 undoToast도 안 띄운다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {},
+    txns: [], recurrences: [],
+  };
+  sandbox.lastUndo = null;
+  sandbox.doDeleteCatsUndo('expense', ['없는카테고리']);
+  assert.strictEqual(sandbox.DB.trashCats, undefined, '아무것도 안 지워졌으면 trashCats 모양도 바뀌면 안 됨(deleteGoalsUndo 등과 동일한 opts 회귀 가드)');
+  assert.strictEqual(sandbox.lastUndo, null);
+});
+test('doDeleteCatsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 삭제되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { categories: { expense: ['커피', '식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {}, txns: [], recurrences: [] };
+  sandbox.lastUndo = null;
+  sandbox.doDeleteCatsUndo('expense', ['커피']);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['커피', '식비'], '튜토리얼 중에는 삭제가 막혀야 함');
+  assert.strictEqual(sandbox.lastUndo, null);
+  sandbox.TWi = -1;
+});
+
 test('addCat: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰스톤이 지워진다', () => {
   sandbox.DB = {
     categories: { expense: ['식비'] },
@@ -3614,33 +3733,33 @@ test('doRenameCat: ST.hist.catExact가 옛 카테고리명을 가리키고 있�
     categories: { expense: ['식비'] }, catIcon: {}, catVar: {},
     txns: [{ id: 't1', type: 'expense', category: '식비', memo: '식비' }], recurrences: [],
   };
-  sandbox.ST = { hist: { catExact: '식비', owner: '전체' } };
+  sandbox.ST = { hist: { catExact: '식비', owner: '전체' }, catSel: { mode: false, ids: new Set() } };
   sandbox.catRenameDraft = { name: '외식비', icon: '' };
   sandbox.doRenameCat('expense', 0);
   assert.strictEqual(sandbox.ST.hist.catExact, '외식비', '전체내역 탭의 카테고리 필터가 새 이름을 따라가지 않음');
 });
 test('doRenameCat: ST.hist.catExact가 다른 카테고리를 보고 있었다면(또는 ST.hist 자체가 없어도) 건드리지 않고 에러도 내지 않는다', () => {
   sandbox.DB = { categories: { expense: ['식비', '교통비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
-  sandbox.ST = { hist: { catExact: '교통비', owner: '전체' } };
+  sandbox.ST = { hist: { catExact: '교통비', owner: '전체' }, catSel: { mode: false, ids: new Set() } };
   sandbox.catRenameDraft = { name: '외식비', icon: '' };
   sandbox.doRenameCat('expense', 0);
   assert.strictEqual(sandbox.ST.hist.catExact, '교통비', '무관한 카테고리 필터는 그대로 유지돼야 함');
   // ST.hist 자체가 없는 호출부(이 파일의 다른 doRenameCat 테스트들)에서도 TypeError 없이 끝나야 함
-  sandbox.ST = { tab: 'home' };
+  sandbox.ST = { tab: 'home', catSel: { mode: false, ids: new Set() } };
   sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
   sandbox.catRenameDraft = { name: '외식비2', icon: '' };
   assert.doesNotThrow(() => sandbox.doRenameCat('expense', 0));
 });
 test('doRenameCat: catExact는 지출(expense) 전용 필터이므로 수입/저축 카테고리 이름변경은 건드리지 않는다', () => {
   sandbox.DB = { categories: { income: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
-  sandbox.ST = { hist: { catExact: '식비', owner: '전체' } }; // 지출 카테고리 '식비'를 보고 있던 상태(이름만 우연히 같은 수입 카테고리)
+  sandbox.ST = { hist: { catExact: '식비', owner: '전체' }, catSel: { mode: false, ids: new Set() } }; // 지출 카테고리 '식비'를 보고 있던 상태(이름만 우연히 같은 수입 카테고리)
   sandbox.catRenameDraft = { name: '용돈', icon: '' };
   sandbox.doRenameCat('income', 0);
   assert.strictEqual(sandbox.ST.hist.catExact, '식비', '수입 카테고리 이름변경은 지출 전용 catExact 필터와 무관해야 함');
 });
 test("doRenameCat: ST.hist.catExactType이 'income'이면 수입 카테고리 이름변경도 ST.hist.catExact를 새 이름으로 함께 옮긴다", () => {
   sandbox.DB = { categories: { income: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
-  sandbox.ST = { hist: { catExact: '식비', catExactType: 'income', owner: '전체' } };
+  sandbox.ST = { hist: { catExact: '식비', catExactType: 'income', owner: '전체' }, catSel: { mode: false, ids: new Set() } };
   sandbox.catRenameDraft = { name: '용돈', icon: '' };
   sandbox.doRenameCat('income', 0);
   assert.strictEqual(sandbox.ST.hist.catExact, '용돈', "catExactType이 'income'이면 수입 카테고리 이름변경도 따라가야 함");
@@ -3661,7 +3780,7 @@ test('doRenameCat: undoToast로 되돌리면 이름/거래·반복거래 categor
     recurrences: [{ id: 'r1', type: 'expense', category: '식비', memo: '식비' }],
     deletedIds: {},
   };
-  sandbox.ST = { hist: { catExact: '식비', owner: '전체' } };
+  sandbox.ST = { hist: { catExact: '식비', owner: '전체' }, catSel: { mode: false, ids: new Set() } };
   sandbox.catRenameDraft = { name: '외식비', icon: '' };
   sandbox.doRenameCat('expense', 0);
   assert.strictEqual(sandbox.DB.categories.expense[0], '외식비');
@@ -3777,7 +3896,7 @@ test('mergeCatInto: catIcon/catVar/catBudgetRollover는 대상(toName)이 가진
 });
 test('mergeCatInto: ST.hist.catExact가 from을 보고 있었다면 toName으로 함께 옮겨간다(doRenameCat과 동일한 규칙)', () => {
   sandbox.DB = { categories: { expense: ['커피', '식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [] };
-  sandbox.ST = { hist: { catExact: '커피', owner: '전체' } };
+  sandbox.ST = { hist: { catExact: '커피', owner: '전체' }, catSel: { mode: false, ids: new Set() } };
   sandbox.mergeCatInto('expense', 0, '식비');
   assert.strictEqual(sandbox.ST.hist.catExact, '식비');
 });
@@ -3814,7 +3933,7 @@ test('mergeCatInto: undoToast로 되돌리면 카테고리/거래/반복거래/�
     txns: [{ id: 't1', type: 'expense', category: '커피', memo: '커피' }],
     recurrences: [{ id: 'r1', type: 'expense', category: '커피', memo: '커피', active: false }],
   };
-  sandbox.ST = { hist: { catExact: '커피', owner: '전체' } };
+  sandbox.ST = { hist: { catExact: '커피', owner: '전체' }, catSel: { mode: false, ids: new Set() } };
   sandbox.mergeCatInto('expense', 0, '식비');
   sandbox.lastUndo.undoFn();
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['커피', '식비'], '원래 순서(index)로 복원돼야 함');
@@ -4404,7 +4523,7 @@ test('saveBudget: 기존 예산을 덮어쓰면 undoToast로 이전 금액이 �
 });
 test('saveBudget: 그 달에 처음 설정하는 예산이면 undo 시 항목 자체가 제거된다(다른 달 예산은 영향 없음)', () => {
   sandbox.DB = { txns: [{ type: 'expense', category: '식비', amount: 10000, date: '2026-06-10' }], recurrences: [], budgetHistory: { 식비: [{ from: '2026-01', amount: 50000 }] } };
-  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 }, catSel: { mode: false, ids: new Set() } };
   sandbox.budgetInValue = '80000';
   sandbox.lastUndo = null;
   sandbox.saveBudget(0);
@@ -11750,7 +11869,7 @@ test('[실행형] debtPlanStrategySel: #debtPlanBody가 이미 사라졌으면(�
   });
 })();
 test('[실행형] debtPlanUpdate: #debtPlanBody가 이미 사라졌으면(시트가 닫힌 뒤 등) 아무 것도 하지 않고 조용히 반환한다(announceLive도 불리지 않음)', () => {
-  sandbox.ST = { hist: { debtPlanStrategy: 'avalanche', debtPlanExtra: 0 } };
+  sandbox.ST = { hist: { debtPlanStrategy: 'avalanche', debtPlanExtra: 0 }, catSel: { mode: false, ids: new Set() } };
   sandbox.announceLiveCalls = [];
   sandbox.debtPlanBodyMissing = true;
   try {
@@ -14019,6 +14138,79 @@ test('doBulkRecActive: bulkRecActiveTargets이 실패(빈 선택)로 판정하�
   assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
 });
 
+/* ---------- bulkCatVarTargets/doBulkCatVarToggle: 카테고리 관리 선택모드(ST.catSel)의 '변동'/'고정'
+ * 일괄 전환 — assetInclTargets/doBulkInclToggle(자산 선택모드의 포함/제외 일괄 전환)과 동일한
+ * 패턴이되, ids는 DB.categories[type] 안의 인덱스 집합이고 변동 여부는 항목 자신이 아니라
+ * DB.catVar[catKey(type,name)]에 저장된다(app-evolve cycle388 advance). ---------- */
+test('bulkCatVarTargets: 선택이 비었으면 reason:empty', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catVar: {} };
+  assert.strictEqual(sandbox.bulkCatVarTargets('expense', new Set()).ok, false);
+});
+test('bulkCatVarTargets: 선택된 인덱스가 전부 ADJUST_CAT뿐이면(수입) reason:empty', () => {
+  sandbox.DB = { categories: { income: ['급여', sandbox.ADJUST_CAT] }, catVar: {} };
+  assert.strictEqual(sandbox.bulkCatVarTargets('income', new Set([1])).ok, false);
+});
+test('bulkCatVarTargets: 선택된 카테고리가 전부 변동이면 allVar:true, mixed:false', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catVar: { 'expense:식비': true, 'expense:교통': true } };
+  const r = sandbox.bulkCatVarTargets('expense', new Set([0, 1]));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.allVar, true);
+  assert.strictEqual(r.mixed, false);
+});
+test('bulkCatVarTargets: 선택된 카테고리가 전부 고정이면 allVar:false, mixed:false', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catVar: {} };
+  const r = sandbox.bulkCatVarTargets('expense', new Set([0, 1]));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.allVar, false);
+  assert.strictEqual(r.mixed, false);
+});
+test('bulkCatVarTargets: 선택된 카테고리의 변동/고정이 섞여 있으면 mixed:true', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catVar: { 'expense:식비': true } };
+  const r = sandbox.bulkCatVarTargets('expense', new Set([0, 1]));
+  assert.strictEqual(r.mixed, true);
+});
+test('bulkCatVarTargets: 수입에 ADJUST_CAT이 선택에 섞여 있어도 그것만 제외하고 나머지로 판정한다', () => {
+  sandbox.DB = { categories: { income: ['급여', sandbox.ADJUST_CAT] }, catVar: { 'income:급여': true } };
+  const r = sandbox.bulkCatVarTargets('income', new Set([0, 1]));
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(Array.from(r.names), ['급여']);
+  assert.strictEqual(r.allVar, true);
+});
+test('doBulkCatVarToggle: 선택한 카테고리들의 변동/고정을 일괄로 바꾼다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catVar: {} };
+  sandbox.lastUndo = null;
+  sandbox.doBulkCatVarToggle('expense', new Set([0, 1]), true);
+  assert.strictEqual(sandbox.isVarCat('expense', '식비'), true);
+  assert.strictEqual(sandbox.isVarCat('expense', '교통'), true);
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+});
+test('doBulkCatVarToggle: undo 콜백을 부르면 각 카테고리의 원래 변동/고정 상태로 정확히 복원한다(섞여 있던 선택도)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catVar: { 'expense:식비': true } };
+  sandbox.lastUndo = null;
+  sandbox.doBulkCatVarToggle('expense', new Set([0, 1]), false);
+  assert.strictEqual(sandbox.isVarCat('expense', '식비'), false);
+  assert.strictEqual(sandbox.isVarCat('expense', '교통'), false);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.isVarCat('expense', '식비'), true, '원래 변동이었던 카테고리는 다시 변동으로 돌아와야 함');
+  assert.strictEqual(sandbox.isVarCat('expense', '교통'), false, '원래 고정이었던 카테고리는 고정으로 남아야 함');
+});
+test('doBulkCatVarToggle: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { categories: { expense: ['식비'] }, catVar: {} };
+  sandbox.doBulkCatVarToggle('expense', new Set([0]), true);
+  assert.strictEqual(sandbox.isVarCat('expense', '식비'), false);
+  sandbox.TWi = -1;
+});
+test('doBulkCatVarToggle: bulkCatVarTargets이 실패(빈 선택)로 판정하면 아무 것도 바꾸지 않는다(catVarSel이 먼저 걸러내므로 여기선 안전망)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { categories: { expense: ['식비'] }, catVar: {} };
+  sandbox.lastUndo = null;
+  sandbox.doBulkCatVarToggle('expense', new Set(), true);
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+});
+
 /* ---------- bulkRecCatTargets(logic.js)/doBulkRecCat/bulkRecCatPickFor/recCatSel: 반복 내역 관리
    선택모드(ST.recSel)의 일괄 카테고리 변경 (app-evolve cycle378 critique → advance — 거래/전체내역/
    자산 목록은 이미 일괄 카테고리 변경·계좌 이동을 지원하는데 반복 내역 관리만 빠져 있던 공백) ---------- */
@@ -14863,7 +15055,7 @@ test('assetDelSel: 확인을 누르면 선택 모드가 꺼지고 선택된 id �
   const a1 = { id: 'a1', name: '통장1' };
   const a2 = { id: 'a2', name: '통장2' };
   sandbox.DB = { assets: [a1, a2], recurrences: [] };
-  sandbox.ST = { aSel: { mode: true, ids: new Set(['a1', 'a2']) } };
+  sandbox.ST = { aSel: { mode: true, ids: new Set(['a1', 'a2']) }, catSel: { mode: false, ids: new Set() } };
   sandbox.confirmSheetCalls = [];
   sandbox.lastUndo = null;
   sandbox.assetDelSel();
@@ -33814,7 +34006,7 @@ test('openConfirmTransferList: 2건 이상이면 일반 이체와 반복 이체�
  * (app-evolve cycle157 advance) */
 test('openNegList: 부족 예상 통장이 없으면 안내 토스트만 뜨고, 정확히 1곳이면 목록 없이 바로 plan 탭으로 간다(app-evolve cycle157)', () => {
   setupHomeAlertsDB();
-  sandbox.ST = { plan: { owner: '전체' } };
+  sandbox.ST = { plan: { owner: '전체' }, catSel: { mode: false, ids: new Set() } };
   sandbox.goCalls = [];
   sandbox.closeSheetCalls = 0;
   sandbox.lastToast = null;
@@ -34614,6 +34806,249 @@ test('moveCat: 경계(맨 위를 위로, 맨 아래를 아래로)에서는 아�
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '교통'], '경계에서는 순서가 바뀌면 안 됨');
   sandbox.moveCat('expense', 1, 1);
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '교통'], '경계에서는 순서가 바뀌면 안 됨');
+});
+
+/* ---------- 카테고리 관리 선택모드(ST.catSel) — 거래내역/전체내역/자산목록/반복거래/목표관리 5곳이
+ * 이미 갖춘 선택모드+하단 일괄 액션바+단일 undoToast 패턴을 카테고리 관리에도 추가한 것
+ * (app-evolve cycle388 advance). 카테고리는 고유 id가 없어 ids는 DB.categories[kind] 안의
+ * 인덱스 집합이고, 그 kind는 _catMgmtKind 전역이 들고 있다. ---------- */
+test('openCatManage: 선택 토글 버튼이 뜨고, 누르면 선택모드로 다시 연다', () => {
+  setupCatManageDB();
+  sandbox.ST.catSel = { mode: false, ids: new Set() };
+  sandbox.openCatManage('expense');
+  assert.ok(sandbox.lastSheetHtml.includes("onclick=\"ST.catSel.mode=true;openCatManage('expense',true)\""), '선택 토글 버튼이 떠야 함');
+});
+test('openCatManage: 선택모드면 선택 토글 버튼·검색창·새 카테고리 추가 입력이 모두 숨겨진다(카테고리 개수가 검색 기준을 넘어도)', () => {
+  setupCatManageDB();
+  sandbox.DB.categories.expense = manyCats(sandbox.CAT_LIST_SEARCH_THRESHOLD + 1);
+  sandbox.ST.catSel = { mode: true, ids: new Set() };
+  sandbox.openCatManage('expense');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(!html.includes('id="catQ"'), '선택모드면 검색창이 뜨면 안 됨(검색 필터 없이 전체를 선택 대상으로 삼음)');
+  assert.ok(!html.includes("ST.catSel.mode=true"), '선택 토글 버튼은 뜨면 안 됨');
+  assert.ok(!html.includes('id="newCat"'), '선택모드면 새 카테고리 추가 입력도 뜨면 안 됨');
+});
+test('[실행형] catManageBody: 선택모드면 각 행에 체크박스(sel-check)가 뜨고 합치기/수정/삭제/변동전환/이월설정/순서이동 버튼은 사라진다', () => {
+  setupCatManageDB();
+  sandbox.ST.catSel = { mode: true, ids: new Set() };
+  const html = sandbox.catManageBody('expense', '');
+  assert.ok(html.includes('sel-check'), '선택모드면 체크박스(sel-check)가 떠야 함');
+  assert.ok(html.includes('onclick="catToggleSel(0)"') && html.includes('onclick="catToggleSel(1)"'), '행을 탭하면 catToggleSel(원본 인덱스)을 불러야 함');
+  assert.ok(!html.includes('row-acts'), '선택모드면 건당 액션 버튼(합치기/수정/삭제)이 없어야 함');
+  assert.ok(!html.includes('varpill'), '변동/고정·이월 토글 pill도 없어야 함');
+  assert.ok(!html.includes('grp-move'), '순서 이동 버튼도 없어야 함');
+});
+test('[실행형] catManageBody: 선택모드에서 선택된 항목은 sel-on 클래스와 aria-pressed="true"를 갖는다', () => {
+  setupCatManageDB();
+  sandbox.ST.catSel = { mode: true, ids: new Set([0]) };
+  const html = sandbox.catManageBody('expense', '');
+  assert.ok(html.includes('sel-on'), '선택된 항목(인덱스 0)은 sel-on 클래스가 있어야 함');
+  const onCount = (html.match(/sel-check on/g) || []).length;
+  assert.strictEqual(onCount, 1, '선택된 항목 하나만 체크된 상태(sel-check on)여야 함');
+  assert.ok(html.includes('aria-pressed="true"'));
+  assert.ok(html.includes('aria-pressed="false"'), '선택 안 된 항목(인덱스 1)은 aria-pressed="false"여야 함');
+});
+test('[실행형] catManageBody: 선택모드에서도 수입의 잔액 조정(ADJUST_CAT)은 체크박스 없이 "자동 생성"만 보여준다(선택 대상 아님)', () => {
+  setupCatManageDB();
+  sandbox.ST.catSel = { mode: true, ids: new Set() };
+  const html = sandbox.catManageBody('income', '');
+  assert.ok(html.includes('자동 생성'));
+  const checkCount = (html.match(/sel-check/g) || []).length;
+  assert.strictEqual(checkCount, 1, '급여에만 체크박스가 있어야 함(ADJUST_CAT엔 없음)');
+});
+test('[실행형] catManageBody: 선택모드가 아니면 여전히 기존처럼 체크박스 없이 합치기/수정/삭제 버튼이 뜬다(회귀 가드)', () => {
+  setupCatManageDB();
+  sandbox.ST.catSel = { mode: false, ids: new Set() };
+  const html = sandbox.catManageBody('expense', '');
+  assert.ok(!html.includes('sel-check'), '선택모드가 아니면 체크박스가 없어야 함');
+  assert.ok(html.includes('row-acts'), '선택모드가 아니면 건당 액션 버튼은 그대로 떠야 함');
+  assert.ok(html.includes("onclick=\"delCat('expense',0)\""));
+});
+test('catSelPartial: 선택한 인덱스를 추가하고, #catBody만 다시 그린다(openCatManage() 전체 재오픈 없음)', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST.catSel = { mode: true, ids: new Set() };
+  const catBodyEl = { innerHTML: 'old' };
+  const orig$ = sandbox.$, origOpenCatManage = sandbox.openCatManage;
+  let openCatManageCalls = 0;
+  sandbox.$ = (id) => (id === 'catBody' ? catBodyEl : null);
+  sandbox.openCatManage = () => { openCatManageCalls++; };
+  try {
+    sandbox.catToggleSel(0);
+    assert.ok(sandbox.ST.catSel.ids.has(0), '인덱스 0이 선택 목록에 추가돼야 함');
+    assert.strictEqual(openCatManageCalls, 0, '#catBody가 있으면 openCatManage() 전체를 다시 열면 안 됨');
+    assert.ok(catBodyEl.innerHTML.includes('sel-on'), '#catBody가 새 선택 상태(sel-on)로 갱신돼야 함');
+  } finally { sandbox.$ = orig$; sandbox.openCatManage = origOpenCatManage; }
+});
+test('catToggleSel: 같은 인덱스를 다시 호출하면 선택이 해제된다', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST.catSel = { mode: true, ids: new Set([0]) };
+  const catBodyEl = { innerHTML: 'old' };
+  const orig$ = sandbox.$;
+  sandbox.$ = (id) => (id === 'catBody' ? catBodyEl : null);
+  try {
+    sandbox.catToggleSel(0);
+    assert.ok(!sandbox.ST.catSel.ids.has(0), '인덱스 0이 선택 목록에서 제거돼야 함');
+    assert.ok(!catBodyEl.innerHTML.includes('sel-on'), '선택 해제 후에는 sel-on 클래스가 없어야 함');
+  } finally { sandbox.$ = orig$; }
+});
+test('catToggleSel: #catBody가 없으면(폴백) openCatManage()로 전체를 다시 연다', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST.catSel = { mode: true, ids: new Set() };
+  const orig$ = sandbox.$, origOpenCatManage = sandbox.openCatManage;
+  let openCatManageCalls = 0;
+  sandbox.$ = () => null;
+  sandbox.openCatManage = () => { openCatManageCalls++; };
+  try {
+    sandbox.catToggleSel(0);
+    assert.strictEqual(openCatManageCalls, 1, '#catBody가 없으면 폴백으로 openCatManage()를 불러야 함');
+  } finally { sandbox.$ = orig$; sandbox.openCatManage = origOpenCatManage; }
+});
+test('catSelAll: 전체선택되지 않은 상태에서 부르면 수입의 ADJUST_CAT을 뺀 나머지 전체가 선택된다', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'income';
+  sandbox.ST.catSel = { mode: true, ids: new Set() };
+  const orig$ = sandbox.$, origOpenCatManage = sandbox.openCatManage;
+  sandbox.$ = () => null;
+  sandbox.openCatManage = () => {};
+  try {
+    sandbox.catSelAll();
+    assert.strictEqual(sandbox.ST.catSel.ids.size, 1, 'ADJUST_CAT을 뺀 1건(급여)만 선택돼야 함');
+    assert.ok(sandbox.ST.catSel.ids.has(0));
+  } finally { sandbox.$ = orig$; sandbox.openCatManage = origOpenCatManage; }
+});
+test('catSelAll: 이미 전체선택된 상태에서 다시 부르면 전체 해제된다', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST.catSel = { mode: true, ids: new Set([0, 1]) };
+  const orig$ = sandbox.$, origOpenCatManage = sandbox.openCatManage;
+  sandbox.$ = () => null;
+  sandbox.openCatManage = () => {};
+  try {
+    sandbox.catSelAll();
+    assert.strictEqual(sandbox.ST.catSel.ids.size, 0);
+  } finally { sandbox.$ = orig$; sandbox.openCatManage = origOpenCatManage; }
+});
+test('catDelSel: 선택이 비어 있으면 안내 토스트만 띄우고 confirmSheet를 부르지 않는다', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST.catSel = { mode: true, ids: new Set() };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastToast = null;
+  sandbox.catDelSel();
+  assert.strictEqual(sandbox.lastToast, '선택된 카테고리가 없어요');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+});
+test('catDelSel: 확인을 누르면 선택 모드가 꺼지고 선택된 카테고리 전체가 doDeleteCatsUndo로 넘어간다', () => {
+  setupCatManageDB();
+  sandbox.DB.categories.expense = ['식비', '교통', '문화']; // 최소 1개 유지 가드와 겹치지 않도록 둘을 지워도 하나는 남게 해둠
+  sandbox.DB.recurrences = [];
+  sandbox.catAddDraft = { name: '', icon: '' };
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST.catSel = { mode: true, ids: new Set([0, 1]) };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.catDelSel();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('2개'), '선택 개수가 확인 메시지에 포함되어야 함');
+  assert.strictEqual(sandbox.ST.catSel.ids.size, 2, 'confirmSheet 콜백을 부르기 전에는 선택이 아직 유지되어야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.ST.catSel.mode, false, '삭제를 확정하면 선택 모드가 꺼져야 함');
+  assert.strictEqual(sandbox.ST.catSel.ids.size, 0, '삭제를 확정하면 선택 목록이 비워져야 함');
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['문화'], '선택된 카테고리(식비·교통) 둘 다 삭제되고 선택 밖(문화)만 남아야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함(doDeleteCatsUndo로 이어짐)');
+});
+test('catDelSel: 선택에 ADJUST_CAT만 들어 있으면 안내 토스트만 띄우고 confirmSheet를 부르지 않는다', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'income';
+  sandbox.ST.catSel = { mode: true, ids: new Set([1]) }; // 인덱스 1 == ADJUST_CAT
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastToast = null;
+  sandbox.catDelSel();
+  assert.strictEqual(sandbox.lastToast, '선택된 카테고리가 없어요');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+});
+test('catVarSel: 선택이 비어 있으면 안내 토스트만 띄우고 doBulkCatVarToggle을 부르지 않는다', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST.catSel = { mode: true, ids: new Set() };
+  sandbox.lastToast = null; sandbox.lastUndo = null;
+  sandbox.catVarSel(true);
+  assert.strictEqual(sandbox.lastToast, '선택된 카테고리가 없어요');
+  assert.strictEqual(sandbox.lastUndo, null);
+});
+test('catVarSel: 선택 모드를 바로 끝내고 doBulkCatVarToggle을 적용한다(피커를 거치지 않는 단일 동작)', () => {
+  setupCatManageDB();
+  sandbox.catAddDraft = { name: '', icon: '' };
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST.catSel = { mode: true, ids: new Set([0, 1]) };
+  sandbox.lastUndo = null;
+  sandbox.catVarSel(true);
+  assert.strictEqual(sandbox.ST.catSel.mode, false, '단일 동작이므로 바로 선택모드가 꺼져야 함');
+  assert.strictEqual(sandbox.ST.catSel.ids.size, 0);
+  assert.strictEqual(sandbox.isVarCat('expense', '식비'), true);
+  assert.strictEqual(sandbox.isVarCat('expense', '교통'), true);
+  assert.ok(sandbox.lastUndo, 'doBulkCatVarToggle의 undoToast까지 그대로 이어져야 함');
+});
+test('activeSel: 카테고리 관리 선택모드(ST.catSel)의 all/del은 catSelAll/catDelSel이고, total은 ADJUST_CAT을 뺀 전체 개수다', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'income';
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set() } };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.all, 'catSelAll()');
+  assert.strictEqual(s.del, 'catDelSel()');
+  assert.strictEqual(s.size, 0);
+  assert.strictEqual(s.total, 1, 'income은 급여 1건만 선택 대상(ADJUST_CAT 제외)');
+});
+test('activeSel: 선택된 카테고리가 전부 변동이면 catVarT가 [fixed](반대 상태로 토글하는 버튼 하나만)', () => {
+  setupCatManageDB();
+  sandbox.DB.catVar = { 'expense:식비': true, 'expense:교통': true };
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set([0, 1]) } };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.catVarT), ['fixed']);
+});
+test('activeSel: 선택된 카테고리가 전부 고정이면 catVarT가 [var](반대 상태로 토글하는 버튼 하나만)', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set([0, 1]) } };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.catVarT), ['var']);
+});
+test('activeSel: 선택된 카테고리의 변동/고정이 섞여 있으면 catVarT가 [var,fixed](둘 다 보여줌)', () => {
+  setupCatManageDB();
+  sandbox.DB.catVar = { 'expense:식비': true };
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set([0, 1]) } };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.catVarT), ['var', 'fixed']);
+});
+test('activeSel: 카테고리 관리 선택모드에서 선택이 비어 있으면 catVarT가 null이다(바꿀 대상 자체가 없음)', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set() } };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.catVarT, null);
+});
+test('activeSel: 저축(saving) 카테고리 관리는 변동/고정 구분이 없으므로 catVarT가 null이다', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'saving';
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set([0]) } };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.catVarT, null);
+});
+test('activeSel: 카테고리 관리 선택모드엔 incl/cat/move/ownerMove/recActive가 없다(이번 cycle 범위는 삭제·변동전환뿐)', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set([0]) } };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.incl, undefined);
+  assert.strictEqual(s.cat, undefined);
+  assert.strictEqual(s.move, undefined);
+  assert.strictEqual(s.ownerMove, undefined);
+  assert.strictEqual(s.recActive, undefined);
 });
 
 /* ---------- openCatPicker: 카테고리명 onclick 문자열보간 인젝션 봉합 회귀 (app-evolve cycle82 advance) ----------
@@ -35768,7 +36203,7 @@ function setupAssetsDB() {
   sandbox._recCache.clear();
   sandbox._lastNwOwner = null;
   sandbox.pageAssetsEl._html = '';
-  sandbox.ST = { editAssets: false, aSel: { mode: false, ids: new Set() }, assetOwner: 'all', assetQ: '' };
+  sandbox.ST = { editAssets: false, aSel: { mode: false, ids: new Set() }, assetOwner: 'all', assetQ: '', catSel: { mode: false, ids: new Set() } };
   sandbox.DB = {
     settings: { includeScheduled: true, groupOrder: sandbox.DEFAULT_GROUP_ORDER, assetSort: 'custom' },
     assets: [],
@@ -36328,6 +36763,7 @@ function setupLedgerDB() {
     ledger: { y: 2026, m: 6, sel: '2026-06-15' },
     lSel: { mode: false, ids: new Set() },
     hist: { cat: '전체', q: '' },
+    catSel: { mode: false, ids: new Set() },
   };
   sandbox.DB = {
     settings: { includeScheduled: true },
@@ -36606,6 +37042,7 @@ function setupHistoryDB() {
       cat: '전체', q: '', assetId: null, catExact: null, catExactType: null, owner: '전체', selMode: false, sel: new Set(), sortAsc: false,
       range: { from: '2026-01-01', to: '2026-12-31' }, preset: 'year', page: 1, avgMode: false,
     },
+    catSel: { mode: false, ids: new Set() },
   };
   sandbox.DB = {
     settings: { includeScheduled: true },
@@ -41495,7 +41932,7 @@ function closeSheetCtx() {
     window: {},
     $: (id) => dom.getElementById(id),
     history: { pushState: () => {}, back: () => {} },
-    ST: { recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() } },
+    ST: { recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: false, ids: new Set() } },
     updateSelBottom: () => { updateSelBottomCalls.push(true); },
     // closeSheet가 TAB_SYNC_PENDING을 null화한 "뒤에" applyForeignSave를 부르는지(재진입 안전성)
     // 확인하려면 스파이 자신이 호출 시점의 전역값을 함께 떠놔야 한다.
