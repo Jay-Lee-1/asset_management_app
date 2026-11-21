@@ -1,15 +1,12 @@
 {
   "cycle": 387,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "fmtAmt() 금액 입력 포맷팅이 매 입력마다 커서를 맨 끝으로 이동시켜 중간 편집이 불가능함",
+    "why": "fmtAmt(inp,allowNeg)(index.html:11396)은 oninput마다 inp.value를 toLocaleString('ko-KR')로 재포맷하는데, selectionStart/selectionEnd를 전혀 읽거나 복원하지 않는다. .value를 코드로 재대입하면 모든 주요 브라우저에서 커서가 끝으로 이동하므로, 숫자 중간을 고치는 모든 편집(예: '1,234,567'의 앞자리 수정, 중간에 빠진 숫자 삽입) 뒤에는 커서가 끝으로 튀어 그 다음 편집도 전부 엉뚱한 위치에서 일어난다. 거래 금액(txAmt)·분담 금액·반복거래 금액·자산 잔액/매입가·채무 추가상환·목표 금액·예산 한도·큰거래 임계값·빠른금액 등 앱에서 가장 자주 쓰는 입력 전부가 이 함수를 공유해 영향받는다. grep으로 fmtAmt 어디서도 selectionStart/selectionEnd/setSelectionRange를 다루지 않고, test/domstub.js의 input 스텁도 selection을 모델링하지 않아 지금까지 전혀 테스트되지 않았음을 확인.",
+    "approach": "1) index.html의 fmtAmt()에서 inp.value 재대입 전에 inp.selectionStart(없으면 value.length)를 캡처하고, 그 커서 앞의 기존 raw 값에서 숫자 개수를 센다. 2) 재포맷 후 새 문자열에서 같은 숫자 개수 지점을 찾아(쉼표 삽입/제거, allowNeg의 선행 '-' 고려) 위치를 구하는 순수 헬퍼 caretPosAfterFormat(oldValue, oldCaret, newValue)를 추가(logic.js 또는 index.html 내 다른 UI 헬퍼처럼 로컬)하고 fmtAmt()가 그 결과로 inp.setSelectionRange(pos,pos)를 try/catch로 감싸 호출. 3) test/domstub.js의 input 스텁에 selectionStart/selectionEnd/setSelectionRange 최소 지원을 추가해 '중간 삽입/삭제' 시나리오를 시뮬레이션 가능하게 함. 4) test/run.js에 회귀 테스트 추가: 중간 삽입 시 커서 보존, 중간 삭제 시(천단위 쉼표 개수가 바뀌는 경계 포함) 커서 보존, 맨 앞 위치, 기존 allowNeg/AMOUNT_MAX clamp 케이스에도 커서 단언 추가. 5) index.html을 수정하므로 APP_VERSION과 sw.js CACHE 버전을 올린다."
+  },
   "history": [
-    {
-      "cycle": 381,
-      "phase": "advance",
-      "timestamp": "2026-11-20T09:11:14.119Z",
-      "summary": "critique(cycle381)의 계획대로 debtsBehind()/debtsPaidOff()의 중복 전체 스캔을 debtPayoffStatuses() 공유 함수로 통합(txns/dates/assetBalanceSeries 각 1회만). 기존 함수는 thin wrapper로 시그니처 유지, homeAlerts()는 1회 호출로 교체. 테스트 3건 추가. node test/run.js 3709->3712/3712 통과. APP_VERSION 1.47.494->1.47.495, sw.js CACHE v761->v762. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 382,
       "phase": "develop",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-21T08:20:00.000Z",
       "summary": "develop(cycle387)의 검색창 6곳 Escape 즉시 지우기 핸들러를 검토. document.addEventListener('keydown',onSheetKeydown)가 버블 단계 리스너(11251행)이고, 입력 자신의 인라인 onkeydown은 타겟 단계에서 먼저 실행되므로 event.stopPropagation()이 실제로 onSheetKeydown 도달 전에 버블을 끊는다는 것을 overlayEscapeTarget/onSheetKeydown 코드로 직접 확인. assetQ는 시트가 아닌 renderAssets() 탭 화면에 있어 시트가 열려 있을 때는 syncOverlayInert()가 #app에 inert를 걸어 포커스를 받을 수 없고, 시트가 안 열려 있을 때는 overlayEscapeTarget이 null을 돌려줘 onSheetKeydown이 조기 return하므로 stopPropagation이 걸려도 부작용이 없음을 확인. clrInput()이 'input' 이벤트를 디스패치해 각 *QInput()의 기존 디바운스+빈문자열 즉시클리어 가드를 그대로 타고, 각 QInput이 전체 시트가 아닌 하위 #...Body만 다시 그려 입력 자체의 포커스가 끊기지 않음도 확인. 실제 버그는 발견하지 못함(IME 조합 중 Escape 같은 극히 드문 경계값은 네이티브 브라우저가 조합 자체를 취소하는 동작과 겹쳐 영향이 미미해 수정 대상으로 보지 않음). node test/run.js 3757/3757 통과. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 387,
+      "phase": "critique",
+      "timestamp": "2026-11-21T09:10:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-387에서 다룬 모든 주제(aria-label, debtPayoffStatuses 통합, anyRateSourceStale, acquiredAt 가드 롤백, 휴지통 전체비우기 7종, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트, commitTx undo, 검색창 Escape 6곳)를 배제 목록으로 주고 전략적 재검토시킴. fmtAmt(inp,allowNeg)(index.html:11396)가 금액 입력 oninput마다 inp.value를 toLocaleString('ko-KR')로 재포맷하면서 selectionStart/selectionEnd를 전혀 다루지 않아, 숫자 맨 끝이 아닌 중간을 고칠 때마다 커서가 끝으로 튀어버리는 버그를 발견. 거래/분담/반복/자산 잔액·매입가/채무 추가상환/목표/예산/큰거래 임계값/빠른금액 등 앱 전역 금액 입력이 전부 이 함수를 공유해 영향받는, 사용 빈도가 가장 높은 입력 중 하나. pending_advance_plan에 caretPosAfterFormat(oldValue,oldCaret,newValue) 순수 헬퍼 + fmtAmt() setSelectionRange 복원 + test/domstub.js selection 스텁 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
