@@ -1,15 +1,12 @@
 {
   "cycle": 389,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "공용 피커 시트(openPicker 계열)에 Escape 지우기·방향키 그리드 탐색 보강",
+    "why": "거래/반복/자산 입력 등 앱 최고빈도 플로우에서 열리는 openAssetPicker/openCatPicker/openTypePicker/openOwnerPicker/openCurrencyPicker(index.html:13499-13628, openPicker/pkChoose/pkFilteredAssets/catFilteredGrid 공유)가, 이미 다른 화면 6곳 검색창(goalQ 등)과 날짜 선택기에 적용된 Escape 즉시 지우기·방향키 그리드 탐색의 사각지대로 남아있다. 검증된 패턴을 제품에서 가장 트래픽이 높은 지점에 확장하는 것이라 리스크는 낮고 효과는 크다.",
+    "approach": "1) openAssetPicker(13554)/openCatPicker(13628)의 pkQ/pkCatQ input에 goalQ 등과 동일한 onkeydown Escape-clear 추가. 2) #pkGroup(.pk-item 목록, 상/하+Home/End)과 #catGrid(.pk-cat-grid, 상/하/좌/우+Home/End)에 dpGridKeydown을 참고한 방향키 핸들러 신설, roving tabindex로 구현. 3) refreshPkAssetList/refreshPkCatList(13546/13619)가 검색마다 DOM을 통째로 다시 그리므로 포커스 인덱스를 전역 상태로 분리해 재검색 후에도 포커스 위치 복원. 4) openTypePicker/openOwnerPicker/openCurrencyPicker는 검색바가 없으므로 방향키 탐색만 동일 핸들러 재사용. 범위 제외: aria-label 문구 변경, mergeCatInto/moveCat 등 피커가 호출하는 기능 자체 로직, 검색창 자동포커스, 피커 비주얼/애니메이션 변경."
+  },
   "history": [
-    {
-      "cycle": 384,
-      "phase": "advance",
-      "timestamp": "2026-11-20T21:13:44.185Z",
-      "summary": "critique(cycle384)의 계획대로 카테고리 관리(openCatManage)에 검색 추가. DB.categories[k]가 ID 없는 순수 문자열 배열이고 moveCat/delCat/renameCatSheet/toggleCatVarUI/toggleBudgetRolloverUI/openCatMergePicker가 모두 필터링 전 원본 인덱스를 onclick에 박아 넣는다는 함정을 피하려고, 행 렌더 블록을 catManageBody(k,qRaw)로 분리해 DB.categories[k].map((c,i)=>({c,i}))로 원본 인덱스를 먼저 고정한 뒤 matchCatQuery(c,q)(기존 카테고리 피커가 쓰는 시그니처 그대로)로 필터링하고, 각 행은 그 원본 i를 그대로 쓰게 했다. CAT_LIST_SEARCH_THRESHOLD=10(GOAL_LIST_SEARCH_THRESHOLD 패턴)을 넘을 때만 검색창을 보여주고, catQInput(k,v)는 recQInput/goalQInput과 동일한 220ms 디바운스+빈문자열 즉시클리어 가드로 #catBody만 다시 그린다. 테스트 8건 추가: 임계값 이하/초과 검색창 노출, 빈 검색어=전체, kind 내 필터, 매치없음 빈상태, 그리고 가장 중요한 \"검색으로 좁혀진 행도 delCat/renameCatSheet/moveCat/toggleCatVarUI/toggleBudgetRolloverUI가 전부 원본 인덱스(2)를 가리킨다\"는 인덱스 정합성 회귀 가드, catQInput 디바운스 2건. test/run.js의 FUNCTIONS에 catManageBody/catQInput, LETS에 _catQT, CONSTS에 CAT_LIST_SEARCH_THRESHOLD를 추가해야 기존 doRenameCat/doDeleteCat/mergeCatInto 등 공유 vm 컨텍스트가 깨지지 않음을 확인(처음엔 이 셋을 빼먹어 69건이 ReferenceError로 실패했다가 수정). node test/run.js 3731->3739/3739 통과, node --check(스크립트 블록 추출)/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.501->1.47.502, sw.js CACHE v768->v769. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 384,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-21T16:08:23.190Z",
       "summary": "develop(cycle389)의 카테고리 관리 일괄 선택에 예산 이월(bulkCatRolloverTargets/doBulkRolloverToggle/catRolloverSel) 전환 추가를 검토. bulkCatVarTargets/doBulkCatVarToggle/catVarSel과 1:1 대응되는 구조임을 코드로 확인: type!=='expense'면 notApplicable로 바로 거절(isBudgetRolloverCat/setBudgetRolloverCat 둘 다 내부적으로 catKey('expense',name)을 쓰므로 expense 전용 설정과 일치), DB.catBudgetRollover에 이름 기반으로 저장되므로 save()+undoToast로 되돌리는 패턴도 변동/고정과 동일. activeSel()의 catRolloverT가 _catMgmtKind==='expense'일 때만 계산되어 income/saving에는 영향 없고, updateSelBottom()의 catRolloverBtns가 catVarBtns 옆에 안전하게 이어붙여짐을 확인. svg('repeat') 아이콘이 이미 존재하는 키임을 확인. HTML 주석 안에 리터럴 '<script>' 문자열이 들어있어 주석 제거 없이 전체 파일에 단순 정규식으로 스크립트 블록을 추출하면 가짜 실패가 뜨는 것을 발견했으나, 이는 리뷰 스크립트 자체의 추출 방식 문제일 뿐 앱 코드의 버그가 아님(주석 제거 후 재검증하여 4개 블록 모두 정상 파싱 확인) — 코드 수정 대상 아님. 실제 버그는 발견하지 못함. node test/run.js 3829/3829 통과(재실행), 메인 <script> 블록들(HTML 주석 제거 후 추출) node --check 통과, logic.js/sw.js node --check 통과. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 389,
+      "phase": "critique",
+      "timestamp": "2026-11-21T17:10:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-389 전체 배제 목록(aria-label, debtPayoffStatuses, anyRateSourceStale, N인 정산, acquiredAt 가드 롤백, 휴지통 전체비우기, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트, commitTx undo, 검색창 Escape 6곳, fmtAmt 커서버그, 문의하기 메모 클램프, 카테고리 관리 일괄선택 삭제/변동전환/예산이월, 카테고리 합치기/순서이동)를 주고 전략적 재검토시킴. openAssetPicker/openCatPicker/openTypePicker/openOwnerPicker/openCurrencyPicker(index.html:13499-13628, openPicker/pkChoose/pkFilteredAssets/catFilteredGrid 공유) — 거래/반복/자산 입력 등 앱 최고빈도 플로우에서 열리는 공용 피커 시트 — 가 다른 화면 6곳 검색창(goalQ 등)에 적용된 Escape 즉시 지우기와 날짜 선택기에 적용된 방향키 그리드 탐색 모두의 사각지대로 남아있음을 발견(pkQ/pkCatQ에 onkeydown 없음, #pkGroup/#catGrid에 dpGridKeydown류 핸들러 없음, grep으로 확인). 이미 검증된 두 패턴을 가장 트래픽 높은 공용 컴포넌트에 확장하는 것이라 리스크 낮고 효과 큼. pending_advance_plan에 저장(approach: pkQ/pkCatQ Escape-clear, #pkGroup/#catGrid 방향키+roving tabindex, refreshPkAssetList/refreshPkCatList 재검색 후 포커스 복원, openTypePicker/openOwnerPicker/openCurrencyPicker는 방향키만 재사용; aria-label/피커 호출 로직/자동포커스/비주얼 변경은 범위 제외). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
