@@ -1,19 +1,8 @@
 {
-  "cycle": 386,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "거래(Transaction) 수정에 undo 없음 — commitTx()가 commitRec()와 달리 되돌리기 미지원",
-    "why": "commitTx()(index.html:6855-6874)는 d.id가 있어 기존 거래를 찾으면(i>=0) DB.txns[i]=d로 바로 덮어쓰고 평범한 toast만 띄운다. 거래 수정은 앱에서 가장 빈번한 사용자 행동이고 잔액에 직접 영향을 주는데, 실수로 금액/카테고리/자산/날짜를 잘못 바꿔 저장하면 이전 값이 그 즉시 사라진다. 같은 '기존 레코드 교체' 위험을 cycle293에서 commitRec()(index.html:7207-7240)은 orig=DB.recurrences[i]를 저장해두고 undoFn으로 되돌리는 패턴을 이미 갖췄는데(commitRec 쪽 주석에 '교체 경로에 undo가 없던' 위험성을 명시), commitTx()는 그 수정 때 같이 다뤄지지 않고 빠졌다. 삭제는 7개 휴지통으로 매우 두껍게 안전망이 있는데 수정은 전혀 없는 비대칭.",
-    "approach": "commitTx()만 범위로 한다(saveAsset()의 편집 분기는 hasAdj 잔액조정/시세평가 qty·원가·실현손익·정산거래/일반 balType 리베이스 세 갈래가 섞여 있어 더 큰 별도 사이클로 미룬다). 1) i>=0일 때 DB.txns[i]=d 직전에 const orig=DB.txns[i] 캡처. 2) 기존 toast(msg) 호출을 i>=0인 경우에만 undoToast(msg, ()=>{const j=DB.txns.findIndex(x=>x.id===orig.id); if(j>=0)DB.txns[j]=orig; else DB.txns.push(orig); touchSave(orig); renderCurrent(); toast('되돌렸어요')})로 교체(클라우드 머지/정산 이체 롤오버 등으로 i가 6초 undo 윈도우 중 바뀔 수 있어 commitRec처럼 i를 그대로 클로저하지 않고 undo 시점에 id로 다시 찾는다). 3) 신규 생성(i<0)은 기존 toast() 그대로 유지(생성은 트래시로 지우면 되므로 undo 불필요). 4) APP_VERSION(index.html:1427)/CACHE(sw.js:6) 올리고, test/run.js에서 'undoFn' 검색해 saveRec/commitRec undo 테스트와 같은 패턴으로 commitTx 편집 undo 회귀 테스트 추가. 예상 diff: commitTx() 10~15줄 + 테스트 1건, cycle293 commitRec() 수정과 비슷한 규모."
-  },
+  "cycle": 387,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 380,
-      "phase": "advance",
-      "timestamp": "2026-11-20T05:12:21.957Z",
-      "summary": "critique(cycle380)의 계획대로 N인 정산 재시도 중복생성 버그 수정. doSettleN()의 transfer에 settleTransfer:true 플래그, logic.js에 netOutSettledTransfers(byOwner,settleTxns) 추가, existingSettleTransfersN(from) 헬퍼로 confirmSettlementN/openSettlement N인 분기에서 적용. 테스트 5건 추가. node test/run.js 3700->3705/3705 통과. APP_VERSION 1.47.492->1.47.493, sw.js CACHE v759->v760. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 381,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-21T05:12:50.672Z",
       "summary": "general-purpose 서브에이전트에게 cycle380-386에서 다룬 모든 주제(N인 정산 재시도 중복이체, aria-label 4건, debtPayoffStatuses 통합, anyRateSourceStale, acquiredAt 가드 롤백, 휴지통 전체비우기 7종, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트)를 배제 목록으로 주고 전략적 재검토시킴. commitTx()(index.html:6855-6874)가 거래 수정 시 DB.txns[i]=d로 바로 덮어쓰고 평범한 toast만 띄워 undo가 없음을 발견: 같은 교체위험을 cycle293에서 commitRec()이 orig 캡처+undoToast로 이미 막았는데 commitTx()만 그 수정에서 빠졌다. 거래 수정이 앱에서 가장 빈번한 사용자 행동이라 가장 영향이 큰 사례. pending_advance_plan에 commitTx() i>=0 분기만 범위로, orig=DB.txns[i] 캡처 후 undoToast(id로 재탐색하는 undoFn) 적용 계획 저장(saveAsset()의 3갈래 편집 분기는 더 큰 별도 사이클로 미룸). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 386,
+      "phase": "advance",
+      "timestamp": "2026-11-21T07:10:00.000Z",
+      "summary": "critique(cycle386)의 계획대로 commitTx() 기존 거래 수정에 undo 추가. i>=0(기존 거래 교체) 분기에서 DB.txns[i]=d 직전에 orig=DB.txns[i]를 캡처하고, 성공 토스트를 orig가 있을 때만 undoToast(msg, undoFn)로 교체했다. commitRec()(7233행)과 달리 undoFn은 교체 당시의 배열 인덱스 i를 클로저하지 않고 undo 시점에 orig.id로 DB.txns를 다시 findIndex해 찾는다 — 거래 수정 후 6초 undo 윈도우 동안에도 백그라운드 클라우드 머지·정산 이체 생성 등이 배열 길이/순서를 바꿀 수 있어 고정 인덱스가 틀린 자리를 가리킬 위험이 있기 때문(정산/반복은 애초에 고정 인덱스라 그 위험이 없다). 신규 저장(d.id 없음, orig===null)은 트래시로 지우면 되므로 기존 toast() 그대로 유지. 테스트 3건 추가: 기존 거래 수정+undo 복원(금액/메모), 신규 저장은 undoToast 안 부름, undo 윈도우 중 배열 앞에 레코드가 끼어들어도 orig.id로 올바르게 되돌림(인덱스 클로저였다면 실패했을 케이스). node test/run.js 3753->3756/3756 통과, node --check(메인 script 블록 추출)/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.505->1.47.506, sw.js CACHE v772->v773. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

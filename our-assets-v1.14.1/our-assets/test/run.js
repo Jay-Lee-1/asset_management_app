@@ -24475,6 +24475,65 @@ test('commitTx: 저장 대상 id가 DB.txns에서 사라져 있어도(백그라�
   assert.ok(sandbox.toastCalls.includes('내역을 저장했어요'), '이제 실제로 저장됐으니 성공 토스트가 거짓이 아니어야 함');
 });
 
+/* ---------- commitTx: 기존 거래 수정에 undo 추가(app-evolve cycle386 advance). commitRec()(7233행)은
+ * 교체 직전의 레코드(orig)를 캡처해 undoToast로 되돌리는데, commitTx()만 이 수정에서 빠져 있었다 —
+ * 거래 수정은 앱에서 가장 빈번한 행동이고 잔액에 직접 영향을 주는데도 실수로 금액/카테고리 등을
+ * 잘못 바꿔 저장하면 이전 값이 그 즉시 사라졌다. ---------- */
+test('commitTx: 기존 거래를 수정하면 undoToast로 되돌릴 수 있어야 함(commitRec과 동일한 안전망)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = {
+    txns: [{ id: 't1', type: 'expense', date: '2026-01-10', category: '식비', memo: '원래메모', amount: 5000, fromAssetId: 'a1', toAssetId: null }],
+    settings: {},
+  };
+  sandbox.txDraft = {
+    id: 't1', type: 'expense', date: '2026-01-10', category: '식비', memo: '수정된메모',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.lastUndo = null; sandbox.toastCalls = []; sandbox.lastToast = null;
+  sandbox.commitTx();
+  assert.strictEqual(sandbox.DB.txns.length, 1);
+  assert.strictEqual(sandbox.DB.txns[0].amount, 9000, '수정이 실제로 반영되어야 함');
+  assert.ok(sandbox.lastUndo && typeof sandbox.lastUndo.undoFn === 'function', '기존 거래 수정은 undoToast를 불러야 함(평범한 toast가 아니라)');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.txns.length, 1, '되돌리기 후에도 레코드 개수는 유지되어야 함(교체, push 아님)');
+  assert.strictEqual(sandbox.DB.txns[0].amount, 5000, '되돌리기는 원래 금액을 복원해야 함');
+  assert.strictEqual(sandbox.DB.txns[0].memo, '원래메모', '되돌리기는 원래 메모를 복원해야 함');
+});
+test('commitTx: 신규 거래 저장은 되돌리기 없이 평범한 toast만 띄운다(트래시로 지울 수 있으므로 undo 불필요)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    type: 'expense', date: '2026-01-10', category: '식비', memo: '신규내역',
+    amount: 3000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.lastUndo = null; sandbox.toastCalls = []; sandbox.lastToast = null;
+  sandbox.commitTx();
+  assert.strictEqual(sandbox.DB.txns.length, 1);
+  assert.strictEqual(sandbox.lastUndo, null, '신규 저장(id 없음)은 undoToast를 부르면 안 됨');
+  assert.ok(sandbox.toastCalls.includes('내역을 저장했어요'));
+});
+test('commitTx: undo는 orig.id로 다시 찾아 복원한다(6초 undo 윈도우 중 배열 위치가 바뀌어도 안전, commitRec의 인덱스 클로저와 다른 이유)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = {
+    txns: [{ id: 't1', type: 'expense', date: '2026-01-10', category: '식비', memo: '원래', amount: 5000, fromAssetId: 'a1', toAssetId: null }],
+    settings: {},
+  };
+  sandbox.txDraft = {
+    id: 't1', type: 'expense', date: '2026-01-10', category: '식비', memo: '수정',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.lastUndo = null;
+  sandbox.commitTx();
+  // undo 윈도우 중 배경 경로(클라우드 머지·정산 이체 생성 등)가 앞에 새 레코드를 끼워 넣어 배열
+  // 위치를 바꾼 상황을 흉내낸다 — 고정 인덱스를 클로저했다면 엉뚱한 자리를 덮어썼을 것.
+  sandbox.DB.txns.unshift({ id: 'other', type: 'expense', date: '2026-01-05', category: '기타', memo: '다른거래', amount: 1000, fromAssetId: 'a1', toAssetId: null });
+  sandbox.lastUndo.undoFn();
+  const restored = sandbox.DB.txns.find(t => t.id === 't1');
+  assert.ok(restored, 'orig.id로 다시 찾아 복원해야 함');
+  assert.strictEqual(restored.amount, 5000);
+  assert.strictEqual(sandbox.DB.txns.length, 2, '배열 길이가 유지되어야 함(제자리 교체, push 아님)');
+});
+
 /* ---------- foreignSaveIsNewer: handleForeignStorage()가 다른 탭의 save()를 반영할지 판단하는 순수 로직
  * (탭 간 localStorage 미동기화로 조용히 데이터가 사라지던 버그의 감지 조건) ---------- */
 test('foreignSaveIsNewer: 다른 탭의 저장 시각이 이 탭이 마지막으로 알던 시각보다 나중이면 최신이다', () => {

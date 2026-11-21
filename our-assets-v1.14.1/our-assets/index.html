@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.505';
+const APP_VERSION='1.47.506';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -6869,8 +6869,16 @@ function commitTx(){
   * 조용히 통째로 사라졌다(app-evolve cycle353 critique가 pushCloud conflict merge 가드 누락과
   * 함께 발견). i<0이면 수정이 아니라 되살리는 신규 저장으로 처리해 push하면, 편집 내용이 실제로
   * 저장되어 뒤이은 성공 토스트가 더 이상 거짓이 되지 않는다. */
- if(d.id){const i=DB.txns.findIndex(x=>x.id===d.id);if(i>=0){if(DB.txns[i].date<fromDate)fromDate=DB.txns[i].date;DB.txns[i]=d}else{DB.txns.push(d)}}else{d.id=uid();DB.txns.push(d)}
- save({fromDate,recsChanged:false});closeSheet();renderCurrent();toast(isFuture(d.date)?'예정 내역으로 저장했어요':'내역을 저장했어요'); /* 이 분기는 반복 등록(위 4411행)과 달리 일회성 거래만 DB.txns에 저장하므로 _recCache는 보존해도 안전(app-evolve cycle207 advance) */
+ let orig=null;
+ if(d.id){const i=DB.txns.findIndex(x=>x.id===d.id);if(i>=0){orig=DB.txns[i];if(DB.txns[i].date<fromDate)fromDate=DB.txns[i].date;DB.txns[i]=d}else{DB.txns.push(d)}}else{d.id=uid();DB.txns.push(d)}
+ save({fromDate,recsChanged:false});closeSheet();renderCurrent(); /* 이 분기는 반복 등록(위 4411행)과 달리 일회성 거래만 DB.txns에 저장하므로 _recCache는 보존해도 안전(app-evolve cycle207 advance) */
+ const msg=isFuture(d.date)?'예정 내역으로 저장했어요':'내역을 저장했어요';
+ /* commitRec()(7233행)은 orig를 덮어쓴 그 인덱스 i를 그대로 클로저해 되돌리지만, 거래 수정은
+  * 6초 undo 윈도우 동안에도 백그라운드 클라우드 머지·정산 이체 생성 등이 DB.txns 배열 길이를
+  * 바꿀 수 있어 그 i가 더 이상 orig 자리를 가리키지 않을 수 있다 — undo 시점에 orig.id로
+  * 다시 찾는다(app-evolve cycle386 advance). 신규 생성(orig===null)은 트래시로 지우면 되므로
+  * undo를 제공하지 않는다. */
+ if(orig)undoToast(msg,()=>{const j=DB.txns.findIndex(x=>x.id===orig.id);if(j>=0)DB.txns[j]=orig;else DB.txns.push(orig);touchSave(orig);renderCurrent();toast('되돌렸어요')});else toast(msg);
 }
 function editTx(id,recId,date){
  if(recId){recEditScope(recId,date,'edit');return}
