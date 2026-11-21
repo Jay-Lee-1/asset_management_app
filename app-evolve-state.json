@@ -1,7 +1,12 @@
 {
   "cycle": 390,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "삭제한 데이터 메뉴 7종 진입점을 \"최근 삭제함\" 통합 허브로 합치기",
+    "why": "renderMenu()의 \"백업·데이터\" 그룹(index.html 8099-8111줄 근방)에 openTrashList/openAssetTrashList/openRecTrashList/openGoalTrashList/openAssetQtyLogTrashList/openCatTrashList/openInquiryTrashList 7개의 거의 동일한 메뉴 행이 나열돼 있다. 각 함수는 cycle133~333에 걸쳐 트래시 컬렉션이 하나씩 신설될 때마다 독립적으로 추가된 self-contained openSheet 화면으로 서로 참조가 없고, 비어 있어도 행이 사라지지 않아 설정 화면을 영구히 차지한다. 반면 openCatManage(kind)는 지출/수입/저축 3종을 .seg 탭 하나로 묶어 #catBody만 다시 그리는 패턴을 이미 확립했는데, 트래시 7종만 이 패턴이 적용되지 않은 채 메뉴 항목 증식으로 방치된 정보구조(IA) 부채다.",
+    "approach": "openCatManage/catManageBody와 동일한 패턴으로 openTrashHub(kind)를 신설. 상단에 7개 탭(거래/자산/반복/목표/수량기록/카테고리/메모)을 .seg 또는 가로 스크롤 chip 그룹으로 두고 #trashHubBody를 탭별 바디 렌더러로 교체. 기존 7개 openXTrashList() 함수의 openSheet(...) 호출부를 xTrashBody() 순수 렌더 함수로 쪼개고(undo/영구삭제 로직은 그대로, self-refresh 호출만 openTrashHub(kind)로 교체), openXTrashList()는 하위 호환용 얇은 래퍼로 남김. renderMenu()의 7개 행을 \"최근 삭제함\" 1개 행으로 교체하고 7개 컬렉션 길이 합계를 배지로 표시, 전체 0건이면 기존처럼 빈 라벨. test/run.js에 탭 전환 마크업, 각 xTrashBody 결과가 기존 바디와 동일한지, renderMenu 행 개수 축소 회귀 테스트 추가.",
+    "scope_exclusions": "각 트래시 화면 내부의 개별 복원/영구삭제/전체비우기 로직 변경, TRASH_MAX_AGE_DAYS 보존기간 정책 변경, 선택모드/일괄액션 추가는 범위 밖."
+  },
   "history": [
     {
       "cycle": 386,
@@ -113,6 +118,13 @@
       "phase": "review",
       "timestamp": "2026-11-21T20:40:00.000Z",
       "summary": "develop(cycle390)의 카테고리 아이콘 피커(.icon-grid) 방향키 그리드 탐색(iconCellKeydown) 추가를 검토. pkCatKeydown(카테고리 피커 그리드, cols=3)과 구조를 줄 단위로 대조해 완전히 동일한 가드 순서(key 목록 체크 -> closest('.icon-cell') -> closest('.icon-grid').querySelectorAll -> indexOf -> preventDefault -> focus)임을 확인했고, cols=5가 .icon-grid의 CSS grid-template-columns:repeat(5,1fr)(index.html:961)과 정확히 짝이 맞음을 확인했다(열이 바뀌면 같이 바꿔야 한다는 주석도 pkCatKeydown과 동일한 문구로 남아있음). .icon-cell이 네이티브 <button>이라 날짜 선택기/공용 피커와 동일하게 별도 tabindex 없이 포커스 가능함도 확인. 아이콘 피커는 정적 그리드(검색/재렌더 없음)라 pkCatKeydown처럼 프로퍼티 할당이 아니라 인라인 onkeydown 속성으로 배선한 선택도 pkItemKeydown과 일치해 타당함. 실제 버그는 발견하지 못함. node test/run.js 3841/3841 통과(재실행). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 390,
+      "phase": "critique",
+      "timestamp": "2026-11-21T22:05:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-390 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커 방향키, 카테고리 관리 일괄선택 3종(삭제/변동전환/예산이월), fmtAmt 커서버그, 문의하기 메모 클램프, commitTx undo 등)을 주고 전략적 재검토시킴. renderMenu()의 \"백업·데이터\" 그룹에 openTrashList/openAssetTrashList/openRecTrashList/openGoalTrashList/openAssetQtyLogTrashList/openCatTrashList/openInquiryTrashList 7개의 거의 동일한 트래시 메뉴 행이 cycle133~333에 걸쳐 하나씩 독립적으로 쌓여 self-contained openSheet 화면으로 나열돼 있고, 비어 있어도 사라지지 않아 설정 화면을 영구히 차지함을 발견. openCatManage(kind)가 지출/수입/저축 3종을 .seg 탭+#catBody로 묶는 패턴을 이미 확립해뒀는데 트래시 7종만 그 패턴이 빠진 IA 부채. pending_advance_plan에 openTrashHub(kind) 탭 통합 허브 신설 계획 저장(기존 openXTrashList()는 xTrashBody()로 쪼개 하위호환 래퍼로 유지, renderMenu 7행을 1행+배지로 교체; 트래시 내부 복원/영구삭제/전체비우기 로직 변경, 보존기간 정책, 일괄액션 추가는 범위 제외). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
