@@ -1,15 +1,12 @@
 {
   "cycle": 386,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "거래(Transaction) 수정에 undo 없음 — commitTx()가 commitRec()와 달리 되돌리기 미지원",
+    "why": "commitTx()(index.html:6855-6874)는 d.id가 있어 기존 거래를 찾으면(i>=0) DB.txns[i]=d로 바로 덮어쓰고 평범한 toast만 띄운다. 거래 수정은 앱에서 가장 빈번한 사용자 행동이고 잔액에 직접 영향을 주는데, 실수로 금액/카테고리/자산/날짜를 잘못 바꿔 저장하면 이전 값이 그 즉시 사라진다. 같은 '기존 레코드 교체' 위험을 cycle293에서 commitRec()(index.html:7207-7240)은 orig=DB.recurrences[i]를 저장해두고 undoFn으로 되돌리는 패턴을 이미 갖췄는데(commitRec 쪽 주석에 '교체 경로에 undo가 없던' 위험성을 명시), commitTx()는 그 수정 때 같이 다뤄지지 않고 빠졌다. 삭제는 7개 휴지통으로 매우 두껍게 안전망이 있는데 수정은 전혀 없는 비대칭.",
+    "approach": "commitTx()만 범위로 한다(saveAsset()의 편집 분기는 hasAdj 잔액조정/시세평가 qty·원가·실현손익·정산거래/일반 balType 리베이스 세 갈래가 섞여 있어 더 큰 별도 사이클로 미룬다). 1) i>=0일 때 DB.txns[i]=d 직전에 const orig=DB.txns[i] 캡처. 2) 기존 toast(msg) 호출을 i>=0인 경우에만 undoToast(msg, ()=>{const j=DB.txns.findIndex(x=>x.id===orig.id); if(j>=0)DB.txns[j]=orig; else DB.txns.push(orig); touchSave(orig); renderCurrent(); toast('되돌렸어요')})로 교체(클라우드 머지/정산 이체 롤오버 등으로 i가 6초 undo 윈도우 중 바뀔 수 있어 commitRec처럼 i를 그대로 클로저하지 않고 undo 시점에 id로 다시 찾는다). 3) 신규 생성(i<0)은 기존 toast() 그대로 유지(생성은 트래시로 지우면 되므로 undo 불필요). 4) APP_VERSION(index.html:1427)/CACHE(sw.js:6) 올리고, test/run.js에서 'undoFn' 검색해 saveRec/commitRec undo 테스트와 같은 패턴으로 commitTx 편집 undo 회귀 테스트 추가. 예상 diff: commitTx() 10~15줄 + 테스트 1건, cycle293 commitRec() 수정과 비슷한 규모."
+  },
   "history": [
-    {
-      "cycle": 380,
-      "phase": "critique",
-      "timestamp": "2026-11-20T04:12:02.000Z",
-      "summary": "doSettleN()의 N인 정산 부분 실패 후 재시도 시 confirmSettlementN()이 settlementSummaryN/settleUpTransfers로 transfers를 처음부터 다시 계산해 이미 성공한 이체 거래를 중복 생성하는 버그 발견. pending_advance_plan에 settleTransfer 플래그 + netOutSettledTransfers(logic.js) 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 380,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-21T06:00:00.000Z",
       "summary": "develop(cycle386)의 recNthDate/recCountUntil RECNTH_SHIFT_BUFFER_DAYS=10 버퍼 수정과 renderRecSheet() '다음 결제일' 힌트를 검토. recDates()의 push()가 'raw ds>=r.startDate' 게이트(호출부에서 이미 보장) 이후 'shiftWeekend(ds)>=from' 필터를 적용하는 구조를 재확인해, winFrom=startDate-10일로 넓혀도 shiftWeekend의 상한(n<10, 최대 10일 이동)과 정확히 맞아 새로운 원본 후보가 섞여 들어오지 않음(경계값 10일도 d>=winFrom로 포함됨)을 확인. monthly/yearly/daily/weekly/biweekly 각 분기 모두 버퍼가 freq에 무관하게 일반적으로 적용되고, daily/weekly/biweekly의 'target=addDays(from,-2)' 스캔 시작점 최적화도 winFrom이 더 과거라 target<=r.startDate가 되어 트리거되지 않아 회귀가 없음을 확인. recNthDate/recCountUntil을 호출하는 7개 지점(index.html: _applyCount/recalcEndCond/recSave/txSave 등)이 모두 base 객체를 그대로 넘기므로 함수 내부 수정만으로 전부 일관되게 고쳐짐. renderRecSheet() 힌트는 freq==='monthly' 가드로 weekly/biweekly/daily/yearly에는 영향 없고 fmtDateFull/recNthDate 기존 순수 함수만 재사용해 새 버그 표면이 없음. node test/run.js 3753/3753, node --check logic.js/sw.js 통과. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 386,
+      "phase": "critique",
+      "timestamp": "2026-11-21T05:12:50.672Z",
+      "summary": "general-purpose 서브에이전트에게 cycle380-386에서 다룬 모든 주제(N인 정산 재시도 중복이체, aria-label 4건, debtPayoffStatuses 통합, anyRateSourceStale, acquiredAt 가드 롤백, 휴지통 전체비우기 7종, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트)를 배제 목록으로 주고 전략적 재검토시킴. commitTx()(index.html:6855-6874)가 거래 수정 시 DB.txns[i]=d로 바로 덮어쓰고 평범한 toast만 띄워 undo가 없음을 발견: 같은 교체위험을 cycle293에서 commitRec()이 orig 캡처+undoToast로 이미 막았는데 commitTx()만 그 수정에서 빠졌다. 거래 수정이 앱에서 가장 빈번한 사용자 행동이라 가장 영향이 큰 사례. pending_advance_plan에 commitTx() i>=0 분기만 범위로, orig=DB.txns[i] 캡처 후 undoToast(id로 재탐색하는 undoFn) 적용 계획 저장(saveAsset()의 3갈래 편집 분기는 더 큰 별도 사이클로 미룸). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
