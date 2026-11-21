@@ -191,7 +191,7 @@ function extractMainScript() {
 // index.html이 아니라 logic.js에 있다 — 위 logicSrc로 직접 로드하므로 이 목록에는 없다
 // (app-evolve cycle97 advance, cycle111 advance).
 const FUNCTIONS = [
-  'addMonths', 'fetchWithTimeout', 'withTimeout',
+  'addMonths', 'dpStepDate', 'fetchWithTimeout', 'withTimeout',
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
@@ -1189,6 +1189,34 @@ test('addMonths: 롤오버가 없는 평범한 날짜는 그대로 이동한다'
 });
 test('addMonths: n이 양수면 앞으로 이동한다', () => {
   assert.strictEqual(sandbox.addMonths('2026-01-15', 2), '2026-03-15');
+});
+
+/* ---------- dpStepDate: 날짜 선택기 캘린더 그리드 방향키 탐색이 쓰는 순수 날짜 계산 ----------
+ * (app-evolve cycle385 critique → advance, 이 앱의 다른 모든 커스텀 위젯 — 차트 peek의
+ * ArrowLeft/Right+Home/End, 휠 피커 whTargetIdx의 ArrowUp/Down+Home/End — 와 같은 패턴을
+ * 날짜 선택기에도 적용). 실제 포커스 이동(dpFocusDate)과 그리드 이어붙이기(dpExtend)는 DOM을
+ * 직접 다뤄 whKeydown처럼 이 스위트에서 실행형으로 검증하지 않고, 그 두 함수가 공유하는 이
+ * 순수 날짜 계산만 고정해 둔다. */
+test('dpStepDate: ArrowLeft/ArrowRight는 하루씩 이동한다(월 경계 롤오버 포함)', () => {
+  assert.strictEqual(sandbox.dpStepDate('2026-03-15', 'ArrowLeft'), '2026-03-14');
+  assert.strictEqual(sandbox.dpStepDate('2026-03-01', 'ArrowLeft'), '2026-02-28');
+  assert.strictEqual(sandbox.dpStepDate('2026-03-15', 'ArrowRight'), '2026-03-16');
+});
+test('dpStepDate: ArrowUp/ArrowDown은 한 주(7일)씩 이동한다', () => {
+  assert.strictEqual(sandbox.dpStepDate('2026-03-15', 'ArrowUp'), '2026-03-08');
+  assert.strictEqual(sandbox.dpStepDate('2026-03-15', 'ArrowDown'), '2026-03-22');
+});
+test('dpStepDate: Home/End는 그 달의 1일/말일로 이동한다(윤년 2월 포함)', () => {
+  assert.strictEqual(sandbox.dpStepDate('2026-03-15', 'Home'), '2026-03-01');
+  assert.strictEqual(sandbox.dpStepDate('2026-03-15', 'End'), '2026-03-31');
+  assert.strictEqual(sandbox.dpStepDate('2024-02-10', 'End'), '2024-02-29');
+});
+test('dpStepDate: PageUp/PageDown은 한 달 이동하며 addMonths와 동일하게 월말로 clamp된다', () => {
+  assert.strictEqual(sandbox.dpStepDate('2026-05-31', 'PageUp'), '2026-04-30');
+  assert.strictEqual(sandbox.dpStepDate('2026-01-15', 'PageDown'), '2026-02-15');
+});
+test('dpStepDate: 모르는 key는 날짜를 그대로 돌려준다(호출부가 이동 없음으로 처리)', () => {
+  assert.strictEqual(sandbox.dpStepDate('2026-03-15', 'Tab'), '2026-03-15');
 });
 
 /* ---------- addMonthsStr(logic.js): addMonths와 이름은 비슷하지만 day를 clamp하지 않는 별도 함수 ----------

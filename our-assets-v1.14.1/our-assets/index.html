@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.503';
+const APP_VERSION='1.47.504';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -11460,6 +11460,20 @@ function dpPick(ds){ /* 날짜만 선택 — 창은 '확인'을 눌러야 닫힘
  moveDpBlob(true);
  if(navigator.vibrate)navigator.vibrate(8);
 }
+/* dpGridKeydown이 쓰는 순수 날짜 계산 — 포커스만 옮기고(dpFocusDate), 선택 커밋은 버튼의
+ * 기본 Enter/Space 동작(click→dpPick)에 맡긴다. addDays(logic.js)/addMonths(이 파일, 월말 clamp)를
+ * 그대로 재사용해 날짜 산술을 중복 구현하지 않는다. */
+function dpStepDate(ds,key){
+ if(key==='ArrowLeft')return addDays(ds,-1);
+ if(key==='ArrowRight')return addDays(ds,1);
+ if(key==='ArrowUp')return addDays(ds,-7);
+ if(key==='ArrowDown')return addDays(ds,7);
+ if(key==='PageUp')return addMonths(ds,-1);
+ if(key==='PageDown')return addMonths(ds,1);
+ if(key==='Home'){const b=ds.split('-');return `${b[0]}-${b[1]}-01`}
+ if(key==='End'){const b=ds.split('-');const y=+b[0],m=+b[1];return `${b[0]}-${b[1]}-${String(lastDay(y,m)).padStart(2,'0')}`}
+ return ds; /* 모르는 key는 그대로 돌려줘 호출부가 '이동 없음'으로 처리 */
+}
 function dpMonthBlock(y,m){
  const first=new Date(y,m-1,1),startDow=first.getDay(),daysIn=lastDay(y,m);
  const pd=lastDay(m===1?y-1:y,m===1?12:m-1);
@@ -11469,7 +11483,7 @@ function dpMonthBlock(y,m){
   const ds=`${y}-${String(m).padStart(2,'0')}-${String(dn).padStart(2,'0')}`;
   const sel=ds===_dpSel,isToday=ds===TODAY;
   const cls=['dp-cell'];if(sel)cls.push('sel');if(isToday)cls.push('today');
-  cells+=`<button class="${cls.join(' ')}" onclick="dpPick('${ds}')" aria-label="${y}년 ${m}월 ${dn}일"${isToday?' aria-current="date"':''} aria-pressed="${sel}">${dn}</button>`;
+  cells+=`<button class="${cls.join(' ')}" data-date="${ds}" onclick="dpPick('${ds}')" aria-label="${y}년 ${m}월 ${dn}일"${isToday?' aria-current="date"':''} aria-pressed="${sel}">${dn}</button>`;
  }
  /* 마지막 줄은 다음 달 블록이 이어받으므로 채우지 않음 (빈칸 없이 연속) */
  return `<div class="dp-month" data-ym="${y}-${m}" data-y="${y}" data-m="${m}"><div class="dp-grid">${cells}</div></div>`;
@@ -11492,7 +11506,7 @@ function renderDatePicker(){
     </div>
   </div>
   <div class="dp-week"><span class="sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="sat">토</span></div>
-  <div class="dp-scroll" id="dpScroll" onscroll="dpOnScroll(this)"><div class="dp-blob" id="dpBlob"></div>${months}</div>
+  <div class="dp-scroll" id="dpScroll" onscroll="dpOnScroll(this)" onkeydown="dpGridKeydown(event)"><div class="dp-blob" id="dpBlob"></div>${months}</div>
   `;
  $('dpModal').classList.add('show');$('dpScrim').classList.add('show');
  document.body.classList.add('dp-open'); /* 뒤 화면 스크롤 잠금 */
@@ -11549,6 +11563,28 @@ function dpOnScroll(sc){ /* 화면에 가장 많이 보이는 달을 상단에 �
   _dpYM={y,m};
   sc.querySelectorAll('.dp-month').forEach(mo=>mo.classList.toggle('dim',mo!==cur)); /* 보고 있는 달만 진하게 */
  });
+}
+/* 날짜 선택기 캘린더 그리드의 방향키 탐색 — 순자산/자산잔액/배분 차트 peek(ArrowLeft/Right+Home/End),
+ * 휠 피커(whKeydown, ArrowUp/Down+Home/End)와 같은 '커스텀 위젯은 방향키도 지원' 패턴을 날짜
+ * 선택기에도 적용한다. #dpScroll에 위임해 매 renderDatePicker() 재렌더 후에도(onscroll과 동일하게
+ * 인라인 속성으로 다시 걸림) 끊기지 않는다. 포커스 이동만 하고 선택 커밋(dpPick)은 버튼의 기본
+ * Enter/Space→click 동작에 맡긴다 — 탐색과 커밋을 분리해 실수로 엔터 전까지 눌러보기만 해도 안전하다. */
+function dpGridKeydown(e){
+ if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(e.key))return;
+ const cell=e.target.closest&&e.target.closest('.dp-cell[data-date]');
+ if(!cell)return;
+ e.preventDefault();
+ dpFocusDate(dpStepDate(cell.dataset.date,e.key));
+}
+function dpFocusDate(ds){ /* 목표 날짜가 아직 렌더 안 된 범위면 dpExtend로 이어붙인 뒤 포커스 */
+ const sc=$('dpScroll');if(!sc)return;
+ for(let tries=0;tries<4;tries++){
+  const cell=sc.querySelector(`.dp-cell[data-date="${ds}"]`);
+  if(cell){cell.focus();cell.scrollIntoView({block:'nearest'});return}
+  const months=[...sc.querySelectorAll('.dp-month')];if(!months.length)return;
+  const firstYM=`${months[0].dataset.y}-${String(months[0].dataset.m).padStart(2,'0')}-01`;
+  dpExtend(sc,ds<firstYM?-1:1);
+ }
 }
 /* 아이폰 시계 스타일 휠 — 연도·월 선택 팝업 */
 function dpToggleJump(){

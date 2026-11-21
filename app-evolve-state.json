@@ -1,19 +1,8 @@
 {
-  "cycle": 385,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "날짜 선택기(dpScroll/.dp-cell) 캘린더 그리드에 방향키 탐색 추가",
-    "why": "openFieldDatePicker()가 쓰는 dpMonthBlock()(index.html:11463-11475)의 날짜 셀은 전부 <button class=\"dp-cell\">...(aria-label만 있고 onkeydown 없음)</button>으로, 탭 키로만 한 칸씩 이동 가능하다. 반면 이 앱의 다른 모든 커스텀 위젯은 이미 방향키 동치를 구현했다: 순자산 차트 peek(index.html:3532-3537 nwChartPeekKey, ArrowLeft/Right+Home/End), 자산 잔액 차트 peek(3710), 자산배분 히스토리 차트 peek(3867), 귀속 캐러셀 스와이프(4763-4766, ArrowLeft/Right), 휠 피커(11591-11595, ArrowUp/Down+Home/End). 날짜 선택기는 거래 날짜, 자산 매입일/만기일, 목표 목표일 등 앱 전역에서 가장 많이 쓰이는 입력인데도 이 패턴에서 유일하게 빠져 스크린리더·키보드 전용 사용자가 예를 들어 '지난달 15일'로 가려면 일 단위로 최대 30번 이상 Tab을 눌러야 한다.",
-    "approach": "dpMonthBlock()이 만드는 각 .dp-cell 버튼에 data-date 속성(이미 ds 값 있음)을 추가하고, #dpScroll에 위임 키다운 핸들러(dpGridKeydown, 한 번만 등록)를 달아 ArrowLeft/Right(±1일)·ArrowUp/Down(±7일)·Home/End(그 달 1일/말일)·PageUp/PageDown(±1개월, 같은 날짜 유지 후 clamp)을 처리한다. 목표 날짜가 아직 렌더되지 않은 범위(스크롤 끝 근처)면 dpExtend()를 먼저 호출해 달을 이어붙인 뒤 해당 .dp-cell을 찾아 focus()하고 scrollIntoView({block:'nearest'})로 보이게 한다(선택 커밋은 하지 않음 — 기존 dpPick()처럼 Enter/Space만 커밋, 포커스 이동은 '탐색'만). renderDatePicker()가 매번 모달 내부를 통째로 innerHTML로 다시 그리므로 위임 핸들러는 #dpScroll 자체에 한 번만 걸면 재렌더 후에도 안 끊긴다(기존 onscroll=dpOnScroll(this)와 동일 패턴). 날짜 산술(다음/이전 날짜, 주 이동, 월말 클램프)은 가능하면 기존 addDays/addMonths(logic.js, 이미 테스트됨)를 재사용하고, 새 헬퍼가 필요하면 test/run.js에 유닛 테스트를 추가한다."
-  },
+  "cycle": 386,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 379,
-      "phase": "critique",
-      "timestamp": "2026-11-20T00:28:00.000Z",
-      "summary": "goalHistoryFor()(index.html:4044-4049)가 자산 연결형 목표에 대해 매 호출마다 캐싱 없이 allTxns 전체 스캔+assetBalanceSeries()를 재계산함을 발견(_balCache/_recCache/makeMonthCatCache 패턴이 이미 있는데 goals만 빠짐). pending_advance_plan에 _goalHistCache(LRU Map) 추가 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 379,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-21T00:11:10.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-385에서 다룬 모든 주제를 배제 목록으로 주고 전략적 재검토시킴. 날짜 선택기(openFieldDatePicker/dpMonthBlock, index.html:11454-11511)의 .dp-cell 버튼들이 aria-label만 갖고 onkeydown이 전혀 없어 방향키 탐색이 안 되는데, 이 앱의 다른 모든 커스텀 위젯(순자산/자산잔액/배분 차트 peek의 ArrowLeft/Right+Home/End, 귀속 캐러셀의 ArrowLeft/Right, 휠 피커의 ArrowUp/Down+Home/End)은 이미 이 패턴을 갖추고 있어 날짜 선택기만 빠진 사례를 발견. 거래 날짜/매입일/만기일/목표일 등 앱 전역에서 가장 자주 쓰는 입력인데도 키보드 전용 사용자는 Tab만으로 날짜 하나하나를 짚어가야 함. pending_advance_plan에 ArrowLeft/Right(±1일)·ArrowUp/Down(±7일)·Home/End(월초/월말)·PageUp/PageDown(±1개월) 방향키 탐색 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 385,
+      "phase": "advance",
+      "timestamp": "2026-11-21T01:10:00.000Z",
+      "summary": "critique(cycle385)의 계획대로 날짜 선택기 캘린더 그리드에 방향키 탐색 추가. dpMonthBlock()의 .dp-cell 버튼에 data-date 속성을 추가하고, #dpScroll에 onkeydown=\"dpGridKeydown(event)\"를 onscroll과 같은 인라인 속성 패턴으로 달아 매 renderDatePicker() 재렌더에도 끊기지 않게 했다. 순수 날짜 계산은 dpStepDate(ds,key)로 분리(ArrowLeft/Right=addDays(±1), ArrowUp/Down=addDays(±7), Home/End=그 달 1일/말일, PageUp/PageDown=addMonths(±1, 월말 clamp), 모르는 key는 그대로 반환) — whTargetIdx가 DOM 없이 순수 인덱스 계산만 테스트되는 것과 같은 분리 원칙. dpGridKeydown(e)은 e.target의 .dp-cell[data-date]를 찾아 dpStepDate로 다음 날짜를 구하고 dpFocusDate(ds)에 넘긴다. dpFocusDate는 대상 셀이 아직 렌더 안 됐으면(스크롤 끝 근처) dpExtend(sc,dir)로 최대 4번까지 이어붙인 뒤 focus()+scrollIntoView({block:'nearest'})한다. 선택 커밋(dpPick)은 건드리지 않음 — 포커스된 <button>의 기본 Enter/Space→click 동작에 그대로 맡겨 탐색과 커밋을 분리했다. dpStepDate에 테스트 6건 추가(ArrowLeft/Right 월경계 롤오버, ArrowUp/Down 7일, Home/End 윤년 2월 포함, PageUp/PageDown addMonths와 동일 clamp, 모르는 key). test/run.js FUNCTIONS에 'dpStepDate' 추가. node test/run.js 3742->3747/3747 통과, 메인 <script> 블록 node --check/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.503->1.47.504, sw.js CACHE v770->v771. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
