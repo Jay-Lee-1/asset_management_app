@@ -202,18 +202,24 @@ const FUNCTIONS = [
   // 자동으로 끌어와지므로 FUNCTIONS에 올릴 필요 없음), 이 목록엔 index.html에 남아있는 쪽만 올린다.
   'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
   'csvMapSetMode', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
-  'twActive', 'twGuard', 'deleteTxnsUndo', 'openTrashList', 'restoreTrashTxn', 'purgeTrashTxn', 'deleteRecsUndo', 'openRecTrashList', 'restoreTrashRec', 'purgeTrashRec', 'deleteAssetsUndo', 'openAssetTrashList', 'restoreTrashAsset', 'purgeTrashAsset', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
+  'twActive', 'twGuard', 'deleteTxnsUndo', 'txnsTrashBody', 'openTrashList', 'restoreTrashTxn', 'purgeTrashTxn', 'deleteRecsUndo', 'recsTrashBody', 'openRecTrashList', 'restoreTrashRec', 'purgeTrashRec', 'deleteAssetsUndo', 'assetsTrashBody', 'openAssetTrashList', 'restoreTrashAsset', 'purgeTrashAsset', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
   // purgeAllTrash: 휴지통 7종(거래/자산/반복/목표/카테고리/수량기록/메모) 공용 '전체 비우기'
   // (app-evolve cycle383 critique → advance) — 7개 open*TrashList() 모두 이 함수를 호출하므로
   // 그 sandbox들 전체에 함께 올라가야 한다.
   'purgeAllTrash',
+  // openTrashHub/trashHubBody/trashHubTotalCount: 휴지통 7종 진입점을 탭 1개로 합친 통합 허브
+  // (app-evolve cycle390 critique → advance) — restoreTrash*/purgeTrash* 각각의 self-refresh가
+  // 이제 openXTrashList() 대신 openTrashHub(kind)를 부르므로, 위 7개 sandbox 전체가 이 셋을
+  // 함께 가지고 있어야 한다. qtyLogTrashBody/catsTrashBody/goalsTrashBody/inquiriesTrashBody는
+  // 아래 각자의 deleteXUndo/openXTrashList 옆에서 함께 올린다.
+  'openTrashHub', 'trashHubBody', 'trashHubTotalCount',
   'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
   'doBulkRecActive', 'recSelPartial', 'recToggleSel', 'recSelAll', 'recDelSel', 'recActiveSel',
   // doBulkRecCat/bulkRecCatPickFor/recCatSel, doBulkRecAssetMove/bulkRecAssetMovePickFor/
   // recAssetMoveSel은 반복 내역 관리 선택모드(ST.recSel)에 거래/전체내역/자산 목록과 동일한 일괄
   // 카테고리 변경·계좌 이동을 추가한 것(app-evolve cycle378 critique → advance).
   'doBulkRecCat', 'bulkRecCatPickFor', 'recCatSel', 'doBulkRecAssetMove', 'bulkRecAssetMovePickFor', 'recAssetMoveSel',
-  'deleteGoalsUndo', 'openGoalTrashList', 'restoreTrashGoal', 'purgeTrashGoal', 'goalSelPartial', 'goalToggleSel', 'goalSelAll', 'goalDelSel', 'doBulkGoalOwnerMove', 'goalOwnerMovePickFor', 'goalOwnerMoveSel',
+  'deleteGoalsUndo', 'goalsTrashBody', 'openGoalTrashList', 'restoreTrashGoal', 'purgeTrashGoal', 'goalSelPartial', 'goalToggleSel', 'goalSelAll', 'goalDelSel', 'doBulkGoalOwnerMove', 'goalOwnerMovePickFor', 'goalOwnerMoveSel',
   // bulkCatVarTargets/doBulkCatVarToggle(변동/고정 일괄 전환), catSelPartial/catToggleSel/catSelAll/
   // catDelSel/catVarSel(카테고리 관리 선택모드 ST.catSel)은 recSel/goalSel과 동일한 선택모드+일괄
   // 액션+단일 undoToast 패턴을 카테고리 관리에 추가한 것(app-evolve cycle388 critique → advance).
@@ -267,7 +273,7 @@ const FUNCTIONS = [
   // 전혀 없던 공백이었다(app-evolve cycle373 critique/advance). debtPayoffPtsFor를 그대로
   // 재사용하므로 바로 위 줄과 같은 sandbox에 올려야 한다.
   'debtPlanDebts', 'debtPlanBodyHTML', 'openDebtPlan', 'debtPlanStrategySel', 'debtPlanUpdate',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'qtyLogTrashBody', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'catsTrashBody', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   // histEnsureRange/goLedgerTo는 가계부(ledger)의 날짜 행을 탭해 전체내역으로 드릴다운하는
   // 경로 — openCatHistory/openAssetHistory와 같은 "필터 리셋 후 화면 전환" 계열인데 여태
   // FUNCTIONS 밖이라 실행형 테스트가 전혀 없었다(app-evolve cycle377 develop).
@@ -358,7 +364,7 @@ const FUNCTIONS = [
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshAllocationHistoryCard', 'refreshInvestGainLossCard',
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
-  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry', 'inqTextInput',
+  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'inquiriesTrashBody', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry', 'inqTextInput',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -462,7 +468,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'CAT_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET',
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'CAT_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'TRASH_HUB_KINDS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET',
   // WK(주말·공휴일 조정 어휘)는 renderRecSheet가 d.freq==='monthly'일 때 WK[d.weekend||'none'][0]로
   // 직접 참조한다(app-evolve cycle372 advance, openTxSheet/openRecSheet 실행형 테스트 추가 — 이
   // 전까지 renderRecSheet() 자체가 한 번도 실행된 적이 없어 빠져 있었다).
@@ -13060,6 +13066,77 @@ test('openTrashList: 분할이 아닌(splits 없는) 거래는 기존처럼 t.ca
   sandbox.lastSheetHtml = null;
   sandbox.openTrashList();
   assert.ok(sandbox.lastSheetHtml.includes('· 식비'), '분할이 없으면 회귀 없이 기존처럼 단일 카테고리가 그대로 보여야 함');
+});
+/* ---------- openTrashHub/trashHubBody/trashHubTotalCount: 메뉴 › '최근 삭제함' — 트래시 7종
+ * (거래/자산/반복/목표/수량기록/카테고리/메모) 진입점을 탭 1개로 합친 통합 허브(app-evolve cycle390
+ * critique → advance). openCatManage의 구분 세그먼트 테스트(34722행 근방)와 동일한 패턴으로
+ * aria-pressed/on 클래스 일치를 확인한다. ---------- */
+function emptyTrashHubDB(extra) {
+  return Object.assign({
+    trashTxns: [], trashAssets: [], trashRecs: [], trashGoals: [], trashQtyLog: [], trashCats: [], trashInquiries: [],
+    assets: [], recurrences: [],
+  }, extra || {});
+}
+test('openTrashHub: kind를 생략하면(기본값) 거래 탭이 active고 txnsTrashBody와 같은 내용을 보여준다', () => {
+  sandbox.DB = emptyTrashHubDB({ trashTxns: [{ id: 't1', amount: 1000, date: '2026-01-01', category: '식비', _deletedAt: 100 }] });
+  sandbox.lastSheetHtml = null;
+  sandbox.openTrashHub();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('<h3>최근 삭제함</h3>'), '허브 제목이 있어야 함');
+  assert.ok(html.includes(sandbox.comma(1000)), '기본 탭(txns)의 내용(거래 트래시)이 그려져야 함');
+  assert.ok(html.includes('id="trashHubBody"'), '탭 바디 래퍼 id가 있어야 함');
+});
+test('openTrashHub: 탭 세그먼트가 7개 모두 렌더되고, 현재 kind와 일치하는 버튼에만 on/aria-pressed="true"가 붙는다', () => {
+  sandbox.DB = emptyTrashHubDB();
+  sandbox.lastSheetHtml = null;
+  sandbox.openTrashHub('cats');
+  const html = sandbox.lastSheetHtml;
+  const buttons = [...html.matchAll(/<button class="([^"]*)" style="flex:0 0 auto;padding:0 14px;white-space:nowrap" aria-pressed="(true|false)" onclick="openTrashHub\('(\w+)'\)">([^<]*)<\/button>/g)];
+  assert.strictEqual(buttons.length, 7, '거래/자산/반복/목표/수량기록/카테고리/메모 7개 탭 버튼이 모두 렌더돼야 함');
+  buttons.forEach(([, cls, pressed, k]) => {
+    assert.strictEqual(cls === 'on', pressed === 'true', `${k} 버튼의 on 클래스(${cls})와 aria-pressed(${pressed})가 일치하지 않음`);
+    assert.strictEqual(pressed === 'true', k === 'cats', `kind="cats"일 때는 ${k} 버튼의 aria-pressed가 (${k === 'cats'})이어야 함`);
+  });
+  assert.ok(/<div class="seg" role="group" aria-label="삭제한 항목 종류 선택" style="overflow-x:auto">/.test(html), '탭 세그먼트 래퍼에 role="group"/aria-label/가로 스크롤 스타일이 없음');
+});
+test('openTrashHub: 알 수 없는 kind가 오면 거래(txns) 탭으로 폴백한다', () => {
+  sandbox.DB = emptyTrashHubDB({ trashTxns: [{ id: 't1', amount: 1000, date: '2026-01-01', category: '식비', _deletedAt: 100 }] });
+  sandbox.lastSheetHtml = null;
+  sandbox.openTrashHub('nope');
+  assert.ok(sandbox.lastSheetHtml.includes(sandbox.comma(1000)), '알 수 없는 kind는 기본 거래 탭 내용을 보여줘야 함');
+});
+test('openTrashHub: assets/recs/goals/qtyLog/cats/inquiries 탭 각각 해당 xTrashBody와 같은 내용을 그린다', () => {
+  const cases = [
+    ['assets', { trashAssets: [{ id: 'a1', name: '내 통장', type: 'cash' }] }, '내 통장'],
+    ['recs', { trashRecs: [{ id: 'r1', memo: '월세', category: '주거', amount: 500000 }] }, '월세'],
+    ['goals', { trashGoals: [{ id: 'g1', name: '비상금', type: 'net' }] }, '비상금'],
+    ['qtyLog', { trashQtyLog: [{ id: 'q1', assetId: 'missing', assetName: '없어진 자산', prevQty: 1, newQty: 2 }] }, '없어진 자산'],
+    ['cats', { trashCats: [{ id: 'c1', name: '식비', type: 'expense' }] }, '식비'],
+    ['inquiries', { trashInquiries: [{ id: 'i1', text: '문의 내용', date: '2026-01-01' }] }, '문의 내용'],
+  ];
+  cases.forEach(([kind, extra, needle]) => {
+    sandbox.DB = emptyTrashHubDB(extra);
+    sandbox.lastSheetHtml = null;
+    sandbox.openTrashHub(kind);
+    assert.ok(sandbox.lastSheetHtml.includes(sandbox.esc(needle)), `${kind} 탭이 해당 트래시 내용(${needle})을 보여줘야 함`);
+  });
+});
+test('trashHubTotalCount: 7종 트래시 길이를 모두 더한다', () => {
+  sandbox.DB = emptyTrashHubDB({
+    trashTxns: [{ id: 't1' }, { id: 't2' }], trashAssets: [{ id: 'a1' }], trashCats: [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }],
+  });
+  assert.strictEqual(sandbox.trashHubTotalCount(), 6);
+});
+test('trashHubTotalCount: 7종 모두 비어 있으면 0이다', () => {
+  sandbox.DB = emptyTrashHubDB();
+  assert.strictEqual(sandbox.trashHubTotalCount(), 0);
+});
+test('restoreTrashTxn: 복구 후 self-refresh가 openTrashHub(\'txns\')를 불러 거래 탭이 active인 허브를 다시 그린다(openTrashList 단독 화면으로 되돌아가지 않음)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = emptyTrashHubDB({ txns: [], trashTxns: [{ id: 't1', amount: 1000, date: '2026-01-01', category: '식비', _deletedAt: 123 }], deletedIds: { t1: 123 } });
+  sandbox.lastSheetHtml = null;
+  sandbox.restoreTrashTxn('t1');
+  assert.ok(sandbox.lastSheetHtml.includes('<h3>최근 삭제함</h3>') && sandbox.lastSheetHtml.includes('id="trashHubBody"'), '복구 후에도 7탭 허브로 다시 열려야 함(기존 openTrashList 단독 화면이 아님)');
 });
 test('restoreTrashTxn: 트래시 항목을 DB.txns로 되돌리고 트래시·톰스톤에서 제거한다', () => {
   sandbox.TWi = -1;

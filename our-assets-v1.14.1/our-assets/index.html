@@ -1424,8 +1424,15 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.513';
+const APP_VERSION='1.47.514';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
+/* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
+ * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
+ * (app-evolve cycle390 critique/advance, openCatManage의 ['expense','income','saving'] 고정 배열과
+ * 동일한 역할). */
+const TRASH_HUB_KINDS=[['txns','trashTxns','거래'],['assets','trashAssets','자산'],['recs','trashRecs','반복'],['goals','trashGoals','목표'],['qtyLog','trashQtyLog','수량기록'],['cats','trashCats','카테고리'],['inquiries','trashInquiries','메모']];
+/* renderMenu '최근 삭제함' 배지(7종 합계)와 openTrashHub 둘 다 이 숫자가 필요해 공용 함수로 뺀다. */
+function trashHubTotalCount(){return TRASH_HUB_KINDS.reduce((sum,[,key])=>sum+((DB[key]||[]).length),0)}
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7435,7 +7442,9 @@ function delAssetQtyLog(id){
  * manage-row 목록 패턴(app-evolve cycle324 critique/advance). 자산이 이미 영구 삭제됐어도(기록
  * 자체는 assetId만 보존하는 의도된 동작, openAssetQtyLog 바로 위 주석 참고) 목록에선 보여줘야
  * 하므로 assetName 스냅샷으로 폴백한다. */
-function openAssetQtyLogTrashList(){
+/* openTrashHub('qtyLog')와 하위호환 openAssetQtyLogTrashList() 둘 다 쓰는 순수 렌더부(app-evolve
+ * cycle390 critique/advance, openCatManage/catManageBody와 동일하게 openSheet 호출부만 분리). */
+function qtyLogTrashBody(){
  const items=[...(DB.trashQtyLog||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
  const row=q=>{
   const a=(DB.assets||[]).find(x=>x.id===q.assetId);
@@ -7449,10 +7458,13 @@ function openAssetQtyLogTrashList(){
     <div class="msub">${q.date||''} · ${commaQty(q.prevQty)} → ${commaQty(q.newQty)}${unit?' '+esc(unit):''}${q.addedAmount>0?` · 투입 ${comma(q.addedAmount)}원`:''}${q.saleProceeds>0?` · 매도 ${comma(q.saleProceeds)}원${gainTxt}`:''} · ${daysLeft}일 후 자동삭제</div></div>
    <div class="row-acts"><button class="act-btn" aria-label="기록 복구" onclick="restoreTrashQtyLog('${q.id}')">${svg('restore')}</button><button class="act-btn" aria-label="영구 삭제" onclick="purgeTrashQtyLog('${q.id}')">${svg('trash')}</button></div></div>`;
  };
- openSheet(`<h3>삭제한 수량기록</h3><div class="desc">삭제한 보유수량 변경/매도 기록이에요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+ return `<div class="desc">삭제한 보유수량 변경/매도 기록이에요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 기록이 없어요</div></div>`}
-  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashQtyLog',openAssetQtyLogTrashList,'수량기록')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`);
+  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashQtyLog',()=>openTrashHub('qtyLog'),'수량기록')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`;
 }
+/* 메뉴 7종이 openTrashHub('최근 삭제함' 통합 허브)로 합쳐진 뒤에도(app-evolve cycle390) 다른 곳에서
+ * 부르던 호출이 남아있을 수 있어 하위호환용 얇은 래퍼로 남긴다. */
+function openAssetQtyLogTrashList(){openSheet(`<h3>삭제한 수량기록</h3>${qtyLogTrashBody()}`)}
 function restoreTrashQtyLog(id){
  if(twGuard())return;
  const q=(DB.trashQtyLog||[]).find(x=>x.id===id);if(!q)return;
@@ -7460,13 +7472,13 @@ function restoreTrashQtyLog(id){
  DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[id];
  const item=Object.assign({},q);delete item._deletedAt;
  DB.assetQtyLog=DB.assetQtyLog||[];DB.assetQtyLog.push(item);
- touchSave(item);openAssetQtyLogTrashList();toast('되돌렸어요');
+ touchSave(item);openTrashHub('qtyLog');toast('되돌렸어요');
 }
 /* purgeTrashTxn과 동일한 '영구 삭제'(app-evolve cycle331 critique/advance). */
 function purgeTrashQtyLog(id){
  if(twGuard())return;
  confirmSheet('영구 삭제','이 기록을 영구 삭제할까요? 복구할 수 없어요.','영구 삭제',()=>{
-  DB.trashQtyLog=removeTrashItem(DB.trashQtyLog,id);save();openAssetQtyLogTrashList();toast('영구 삭제했어요');
+  DB.trashQtyLog=removeTrashItem(DB.trashQtyLog,id);save();openTrashHub('qtyLog');toast('영구 삭제했어요');
  });
 }
 /* 지출 분석 카테고리 행의 '내역' 버튼 → 전체내역을 해당 카테고리(지출)+이번 달+해당 귀속으로 필터해서 연다.
@@ -8100,13 +8112,7 @@ function renderMenu(){
    {ic:'download',l:'데이터 내보내기',v:'iCloud·파일',a:"exportData()"},
    {ic:'restore',l:'데이터 복원',a:"importData()"},
    {ic:'bell',l:'저축 만기 알림',v:maturitySoon()+'건',a:"openMaturity()"},
-   {ic:'restore',l:'최근 삭제함',v:(DB.trashTxns&&DB.trashTxns.length)?DB.trashTxns.length+'건':'',a:"openTrashList()"},
-   {ic:'restore',l:'삭제한 자산',v:(DB.trashAssets&&DB.trashAssets.length)?DB.trashAssets.length+'건':'',a:"openAssetTrashList()"},
-   {ic:'restore',l:'삭제한 반복',v:(DB.trashRecs&&DB.trashRecs.length)?DB.trashRecs.length+'건':'',a:"openRecTrashList()"},
-   {ic:'restore',l:'삭제한 목표',v:(DB.trashGoals&&DB.trashGoals.length)?DB.trashGoals.length+'건':'',a:"openGoalTrashList()"},
-   {ic:'restore',l:'삭제한 수량기록',v:(DB.trashQtyLog&&DB.trashQtyLog.length)?DB.trashQtyLog.length+'건':'',a:"openAssetQtyLogTrashList()"},
-   {ic:'restore',l:'삭제한 카테고리',v:(DB.trashCats&&DB.trashCats.length)?DB.trashCats.length+'건':'',a:"openCatTrashList()"},
-   {ic:'restore',l:'삭제한 메모',v:(DB.trashInquiries&&DB.trashInquiries.length)?DB.trashInquiries.length+'건':'',a:"openInquiryTrashList()"},
+   {ic:'restore',l:'최근 삭제함',v:trashHubTotalCount()?trashHubTotalCount()+'건':'',a:"openTrashHub('txns')"},
    {ic:'trash',l:'오래된 데이터 정리',a:"openArchiveOld()"},
   ]},
   {cap:'화면 · 지원',items:[
@@ -9305,17 +9311,18 @@ function delInquiry(id){
  * 복구할 수 있는 화면. openGoalTrashList/openAssetQtyLogTrashList와 동일한 manage-row 목록
  * 패턴(app-evolve cycle327 critique/advance). inquiries는 active 플래그나 자산/귀속 연동이 없는
  * 가장 단순한 구조라 restoreTrashRec/restoreTrashCat류의 재활성화 가드가 전혀 필요 없다. */
-function openInquiryTrashList(){
+function inquiriesTrashBody(){
  const items=[...(DB.trashInquiries||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
  const row=q=>{
   const preview=q.text&&q.text.length>40?q.text.slice(0,40)+'…':(q.text||'');
   const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(q._deletedAt||0))/86400000));
   return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0"><div class="mn" style="white-space:pre-wrap;word-break:break-word">${esc(preview)}</div><div class="msub">${q.date||''} · ${daysLeft}일 후 자동삭제</div></div><div class="row-acts"><button class="act-btn" aria-label="메모 복구" onclick="restoreTrashInquiry('${q.id}')">${svg('restore')}</button><button class="act-btn" aria-label="영구 삭제" onclick="purgeTrashInquiry('${q.id}')">${svg('trash')}</button></div></div>`;
  };
- openSheet(`<h3>삭제한 메모</h3><div class="desc">삭제한 문의하기 메모예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+ return `<div class="desc">삭제한 문의하기 메모예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 메모가 없어요</div></div>`}
-  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashInquiries',openInquiryTrashList,'메모')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`);
+  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashInquiries',()=>openTrashHub('inquiries'),'메모')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`;
 }
+function openInquiryTrashList(){openSheet(`<h3>삭제한 메모</h3>${inquiriesTrashBody()}`)}
 function restoreTrashInquiry(id){
  if(twGuard())return;
  const q=(DB.trashInquiries||[]).find(x=>x.id===id);if(!q)return;
@@ -9323,13 +9330,13 @@ function restoreTrashInquiry(id){
  DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[id];
  const item=Object.assign({},q);delete item._deletedAt;
  DB.inquiries=DB.inquiries||[];DB.inquiries.push(item);
- touchSave(item);openInquiryTrashList();toast('되돌렸어요');
+ touchSave(item);openTrashHub('inquiries');toast('되돌렸어요');
 }
 /* purgeTrashTxn과 동일한 '영구 삭제'(app-evolve cycle331 critique/advance). */
 function purgeTrashInquiry(id){
  if(twGuard())return;
  confirmSheet('영구 삭제','이 메모를 영구 삭제할까요? 복구할 수 없어요.','영구 삭제',()=>{
-  DB.trashInquiries=removeTrashItem(DB.trashInquiries,id);save();openInquiryTrashList();toast('영구 삭제했어요');
+  DB.trashInquiries=removeTrashItem(DB.trashInquiries,id);save();openTrashHub('inquiries');toast('영구 삭제했어요');
  });
 }
 
@@ -12984,7 +12991,7 @@ function purgeAllTrash(key,reopenFn,label){
  * 화면. undoToast의 6초 창을 넘기거나 앱을 완전히 닫았다 다시 열어도 TRASH_MAX_AGE_DAYS만큼은
  * 복구할 수 있다(app-evolve cycle319 critique/advance) — openInquiryList/openAssetQtyLog와 같은
  * manage-row 목록 패턴을 그대로 따른다. */
-function openTrashList(){
+function txnsTrashBody(){
  const items=[...(DB.trashTxns||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
  const row=t=>{
   const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(t._deletedAt||0))/86400000));
@@ -12996,17 +13003,18 @@ function openTrashList(){
     <div class="msub">${t.date||''}${catLbl?' · '+esc(catLbl):''}${t.memo?' · '+esc(t.memo):''} · ${daysLeft}일 후 자동삭제</div></div>
    <div class="row-acts"><button class="act-btn" aria-label="거래 복구" onclick="restoreTrashTxn('${t.id}')">${svg('restore')}</button><button class="act-btn" aria-label="영구 삭제" onclick="purgeTrashTxn('${t.id}')">${svg('trash')}</button></div></div>`;
  };
- openSheet(`<h3>최근 삭제함</h3><div class="desc">삭제한 거래예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+ return `<div class="desc">삭제한 거래예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 거래가 없어요</div></div>`}
-  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashTxns',openTrashList,'거래')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`);
+  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashTxns',()=>openTrashHub('txns'),'거래')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`;
 }
+function openTrashList(){openSheet(`<h3>최근 삭제함</h3>${txnsTrashBody()}`)}
 function restoreTrashTxn(id){
  if(twGuard())return;
  const t=(DB.trashTxns||[]).find(x=>x.id===id);if(!t)return;
  DB.trashTxns=(DB.trashTxns||[]).filter(x=>x.id!==id);
  DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[id];
  const txn=Object.assign({},t);delete txn._deletedAt;
- DB.txns.push(txn);touchSave(txn);openTrashList();renderCurrent();toast('되돌렸어요');
+ DB.txns.push(txn);touchSave(txn);openTrashHub('txns');renderCurrent();toast('되돌렸어요');
 }
 /* 보존기간(TRASH_MAX_AGE_DAYS)을 기다리지 않고 사용자가 직접 바로 완전히 지우는 버튼 — restoreTrashTxn
  * 옆의 '영구 삭제'(app-evolve cycle331 critique/advance). removeTrashItem(logic.js)이 DB.deletedIds
@@ -13014,7 +13022,7 @@ function restoreTrashTxn(id){
 function purgeTrashTxn(id){
  if(twGuard())return;
  confirmSheet('영구 삭제','이 내역을 영구 삭제할까요? 복구할 수 없어요.','영구 삭제',()=>{
-  DB.trashTxns=removeTrashItem(DB.trashTxns,id);save();openTrashList();toast('영구 삭제했어요');
+  DB.trashTxns=removeTrashItem(DB.trashTxns,id);save();openTrashHub('txns');toast('영구 삭제했어요');
  });
 }
 /* 오래된 데이터 정리(archiveMonthPicked) 실행부. deleteTxnsUndo()와 달리 cutoffDate 이전 거래를
@@ -13272,7 +13280,7 @@ function deleteAssetsUndo(ids){if(twGuard())return;
 /* 메뉴 › '삭제한 자산' — deleteAssetsUndo가 DB.trashAssets에 담아둔 삭제된 자산을 보여주고 복구할 수
  * 있는 화면. openTrashList/restoreTrashTxn(거래 쪽, cycle319)과 동일한 manage-row 목록 패턴
  * (app-evolve cycle320 critique/advance). */
-function openAssetTrashList(){
+function assetsTrashBody(){
  const items=[...(DB.trashAssets||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
  const row=a=>{
   const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(a._deletedAt||0))/86400000));
@@ -13281,10 +13289,11 @@ function openAssetTrashList(){
     <div class="msub">${a.type?ASSET_TYPES[a.type].label:''} · ${daysLeft}일 후 자동삭제</div></div>
    <div class="row-acts"><button class="act-btn" aria-label="자산 복구" onclick="restoreTrashAsset('${a.id}')">${svg('restore')}</button><button class="act-btn" aria-label="영구 삭제" onclick="purgeTrashAsset('${a.id}')">${svg('trash')}</button></div></div>`;
  };
- openSheet(`<h3>삭제한 자산</h3><div class="desc">삭제한 자산이에요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+ return `<div class="desc">삭제한 자산이에요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 자산이 없어요</div></div>`}
-  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashAssets',openAssetTrashList,'자산')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`);
+  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashAssets',()=>openTrashHub('assets'),'자산')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`;
 }
+function openAssetTrashList(){openSheet(`<h3>삭제한 자산</h3>${assetsTrashBody()}`)}
 /* restoreTrashAsset: 원래 id 그대로 복구하므로(snapshotAssetName이 남긴 fromAssetName/toAssetName은
  * id가 계속 유효하게 가리키고 있던 참조라 unsnapshotAssetName만 부르면 됨, relinkDeletedAsset과
  * 달리 재연결 자체는 불필요) deleteAssetsUndo의 즉시 undo와 같은 모양으로 복구한다. 다만 반복거래
@@ -13316,7 +13325,7 @@ function restoreTrashAsset(id){
  recs.forEach(r=>{r.active=true;delete r._autoDeactivatedByAssetDelete});
  const trashRecs=(DB.trashRecs||[]).filter(canRevive);
  trashRecs.forEach(r=>{r.active=true;delete r._autoDeactivatedByAssetDelete});
- touchSave(asset,...recs,...trashRecs);openAssetTrashList();renderCurrent();toast('되돌렸어요');
+ touchSave(asset,...recs,...trashRecs);openTrashHub('assets');renderCurrent();toast('되돌렸어요');
 }
 /* purgeTrashTxn과 동일한 '영구 삭제'(app-evolve cycle331 critique/advance) — 트래시에 보관된
  * 자산 자체만 지운다. restoreTrashAsset처럼 비활성화된 반복거래를 되살리는 로직은 없어도 된다:
@@ -13325,14 +13334,14 @@ function restoreTrashAsset(id){
 function purgeTrashAsset(id){
  if(twGuard())return;
  confirmSheet('영구 삭제','이 자산을 영구 삭제할까요? 복구할 수 없어요.','영구 삭제',()=>{
-  DB.trashAssets=removeTrashItem(DB.trashAssets,id);save();openAssetTrashList();toast('영구 삭제했어요');
+  DB.trashAssets=removeTrashItem(DB.trashAssets,id);save();openTrashHub('assets');toast('영구 삭제했어요');
  });
 }
 /* 메뉴 › '삭제한 반복' — deleteRecsUndo가 DB.trashRecs에 담아둔 삭제된 반복거래를 보여주고 복구할 수
  * 있는 화면. openTrashList/restoreTrashTxn(거래 쪽, cycle319)과 동일한 manage-row 목록 패턴
  * (app-evolve cycle321 critique/advance). 요약 표시는 openRecManage()와 동일하게 memo(없으면
  * category)를 제목으로, category·주기·금액을 보조줄로 보여준다(7066행 recFreqLabel 사용부와 동일). */
-function openRecTrashList(){
+function recsTrashBody(){
  const items=[...(DB.trashRecs||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
  const row=r=>{
   const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(r._deletedAt||0))/86400000));
@@ -13342,10 +13351,11 @@ function openRecTrashList(){
     <div class="msub">${(r.memo&&r.memo!==r.category)?esc(r.category)+' · ':''}${recFreqLabel(r)} · ${comma(r.amount||0)}원 · ${daysLeft}일 후 자동삭제</div></div>
    <div class="row-acts"><button class="act-btn" aria-label="반복거래 복구" onclick="restoreTrashRec('${r.id}')">${svg('restore')}</button><button class="act-btn" aria-label="영구 삭제" onclick="purgeTrashRec('${r.id}')">${svg('trash')}</button></div></div>`;
  };
- openSheet(`<h3>삭제한 반복</h3><div class="desc">삭제한 반복거래예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+ return `<div class="desc">삭제한 반복거래예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 반복거래가 없어요</div></div>`}
-  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashRecs',openRecTrashList,'반복거래')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`);
+  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashRecs',()=>openTrashHub('recs'),'반복거래')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`;
 }
+function openRecTrashList(){openSheet(`<h3>삭제한 반복</h3>${recsTrashBody()}`)}
 /* restoreTrashRec: deleteAssetsUndo(11566행 activeRecsForAssets)는 '지금 DB.recurrences에 있는'
  * 활성 반복거래만 찾아 자산 삭제 시 비활성화하므로, 이 반복거래가 먼저 트래시에 들어간(DB.recurrences에서
  * 이미 빠진) 뒤에 연결된 자산이 지워지는 경우는 그 가드를 타지 않는다 — 트래시에 보관된 fromAssetId/
@@ -13365,14 +13375,14 @@ function restoreTrashRec(id){
  const live=aid=>DB.assets.some(x=>x.id===aid);
  const assetsGone=rec.active&&((rec.fromAssetId&&!live(rec.fromAssetId))||(rec.toAssetId&&!live(rec.toAssetId)));
  if(assetsGone){rec.active=false;rec._autoDeactivatedByAssetDelete=true;}
- DB.recurrences.push(rec);touchSave(rec);openRecTrashList();renderCurrent();
+ DB.recurrences.push(rec);touchSave(rec);openTrashHub('recs');renderCurrent();
  toast(assetsGone?'되돌렸어요 · 연결된 자산이 없어 일시중지됐어요':'되돌렸어요');
 }
 /* purgeTrashTxn과 동일한 '영구 삭제'(app-evolve cycle331 critique/advance). */
 function purgeTrashRec(id){
  if(twGuard())return;
  confirmSheet('영구 삭제','이 반복거래를 영구 삭제할까요? 복구할 수 없어요.','영구 삭제',()=>{
-  DB.trashRecs=removeTrashItem(DB.trashRecs,id);save();openRecTrashList();toast('영구 삭제했어요');
+  DB.trashRecs=removeTrashItem(DB.trashRecs,id);save();openTrashHub('recs');toast('영구 삭제했어요');
  });
 }
 /* 목표 관리 선택모드(ST.goalSel)의 '삭제' 바닥바 버튼이 호출 — deleteRecsUndo/deleteAssetsUndo와
@@ -13392,7 +13402,7 @@ function deleteGoalsUndo(ids){
 /* 메뉴 › '삭제한 목표' — deleteGoalsUndo가 DB.trashGoals에 담아둔 삭제된 목표를 보여주고 복구할 수
  * 있는 화면. openRecTrashList/restoreTrashRec과 동일한 manage-row 목록 패턴(app-evolve cycle322
  * critique/advance). 요약은 목표 유형(자산연동/순자산)과 목표액·목표일을 보여준다. */
-function openGoalTrashList(){
+function goalsTrashBody(){
  const items=[...(DB.trashGoals||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
  const row=g=>{
   const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(g._deletedAt||0))/86400000));
@@ -13402,10 +13412,11 @@ function openGoalTrashList(){
     <div class="msub">${sub}${sub?' · ':''}${daysLeft}일 후 자동삭제</div></div>
    <div class="row-acts"><button class="act-btn" aria-label="목표 복구" onclick="restoreTrashGoal('${g.id}')">${svg('restore')}</button><button class="act-btn" aria-label="영구 삭제" onclick="purgeTrashGoal('${g.id}')">${svg('trash')}</button></div></div>`;
  };
- openSheet(`<h3>삭제한 목표</h3><div class="desc">삭제한 목표예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+ return `<div class="desc">삭제한 목표예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 목표가 없어요</div></div>`}
-  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashGoals',openGoalTrashList,'목표')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`);
+  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashGoals',()=>openTrashHub('goals'),'목표')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`;
 }
+function openGoalTrashList(){openSheet(`<h3>삭제한 목표</h3>${goalsTrashBody()}`)}
 /* asset형 목표는 "owner는 항상 연결 자산의 owner와 같다"는 불변식을 doBulkOwnerMove(11595행)·
  * saveAsset(5108행)·mergeAssetInto(4609행)가 지키는데, 이 세 군데 모두 DB.goals만 훑고 DB.trashGoals는
  * 건드리지 않는다(트래시에 있는 동안은 화면에 보이지 않아 당장 맞출 필요가 없으므로 의도된 생략).
@@ -13423,13 +13434,13 @@ function restoreTrashGoal(id){
  DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[id];
  const goal=Object.assign({},g);delete goal._deletedAt;
  if(goal.type==='asset'){const a=(DB.assets||[]).find(x=>x.id===goal.linkedAssetId);if(a)goal.owner=a.owner;}
- DB.goals.push(goal);touchSave(goal);openGoalTrashList();renderCurrent();toast('되돌렸어요');
+ DB.goals.push(goal);touchSave(goal);openTrashHub('goals');renderCurrent();toast('되돌렸어요');
 }
 /* purgeTrashTxn과 동일한 '영구 삭제'(app-evolve cycle331 critique/advance). */
 function purgeTrashGoal(id){
  if(twGuard())return;
  confirmSheet('영구 삭제','이 목표를 영구 삭제할까요? 복구할 수 없어요.','영구 삭제',()=>{
-  DB.trashGoals=removeTrashItem(DB.trashGoals,id);save();openGoalTrashList();toast('영구 삭제했어요');
+  DB.trashGoals=removeTrashItem(DB.trashGoals,id);save();openTrashHub('goals');toast('영구 삭제했어요');
  });
 }
 /* 메뉴 › '삭제한 카테고리' — doDeleteCat이 DB.trashCats에 담아둔 삭제된 카테고리(아이콘·변동비·예산·
@@ -13438,7 +13449,7 @@ function purgeTrashGoal(id){
  * 요약은 유형(지출/수입/저축)과, 트래시 기간 중 사용자가 직접 손대지 않아 지금도 _autoDeactivatedByCatDelete
  * 플래그가 남아있는(=복구 시 함께 재활성화될) 반복거래 개수만 센다 — 사용자가 트래시에 있는 동안
  * 그 반복거래를 직접 다시 켠 경우는 플래그가 이미 지워져 있어 중복으로 세지 않는다. */
-function openCatTrashList(){
+function catsTrashBody(){
  const items=[...(DB.trashCats||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
  const row=g=>{
   const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(g._deletedAt||0))/86400000));
@@ -13449,10 +13460,11 @@ function openCatTrashList(){
     <div class="msub">${sub}${sub?' · ':''}${daysLeft}일 후 자동삭제</div></div>
    <div class="row-acts"><button class="act-btn" aria-label="카테고리 복구" onclick="restoreTrashCat('${g.id}')">${svg('restore')}</button><button class="act-btn" aria-label="영구 삭제" onclick="purgeTrashCat('${g.id}')">${svg('trash')}</button></div></div>`;
  };
- openSheet(`<h3>삭제한 카테고리</h3><div class="desc">삭제한 카테고리예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+ return `<div class="desc">삭제한 카테고리예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 카테고리가 없어요</div></div>`}
-  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashCats',openCatTrashList,'카테고리')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`);
+  <div style="height:12px"></div>${items.length?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="purgeAllTrash('trashCats',()=>openTrashHub('cats'),'카테고리')">${svg('trash')} 전체 비우기</button><button class="btn btn-primary" onclick="closeSheet()">닫기</button></div>`:`<button class="btn btn-primary" onclick="closeSheet()">닫기</button>`}`;
 }
+function openCatTrashList(){openSheet(`<h3>삭제한 카테고리</h3>${catsTrashBody()}`)}
 /* 복구 시 같은 이름의 카테고리가 이미 재생성돼 있을 수 있다(사용자가 트래시 복구 전에 직접 같은
  * 이름으로 새로 만든 경우) — 그 경우 DB.categories[k]에 이름을 중복 추가하지 않고 카테고리 자체는
  * 건너뛰되, 아이콘/변동비/예산/이월설정과 반복거래 재활성화는 doDeleteCat의 즉시 undo 콜백과
@@ -13488,7 +13500,7 @@ function restoreTrashCat(id){
   if(assetsGone){r.active=false;r._autoDeactivatedByAssetDelete=true;assetBlocked++}
   else r.active=true;
  });
- touchSave(...recs);openCatTrashList();renderCurrent();
+ touchSave(...recs);openTrashHub('cats');renderCurrent();
  const reactivated=recs.length-assetBlocked;
  let msg='되돌렸어요';
  if(reactivated)msg+=` · 반복거래 ${reactivated}개 재활성화`;
@@ -13501,8 +13513,35 @@ function restoreTrashCat(id){
 function purgeTrashCat(id){
  if(twGuard())return;
  confirmSheet('영구 삭제','이 카테고리를 영구 삭제할까요? 복구할 수 없어요.','영구 삭제',()=>{
-  DB.trashCats=removeTrashItem(DB.trashCats,id);save();openCatTrashList();toast('영구 삭제했어요');
+  DB.trashCats=removeTrashItem(DB.trashCats,id);save();openTrashHub('cats');toast('영구 삭제했어요');
  });
+}
+/* 메뉴 › '최근 삭제함' — 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 진입점을 하나로
+ * 합친 탭 허브. renderMenu() "백업·데이터" 그룹에 openTrashList/openAssetTrashList/openRecTrashList/
+ * openGoalTrashList/openAssetQtyLogTrashList/openCatTrashList/openInquiryTrashList 7개가 cycle133~333에
+ * 걸쳐 하나씩 독립적으로 쌓여 나열돼 있었고, 비어 있어도 행이 사라지지 않아 설정 화면을 영구히
+ * 차지하던 정보구조 부채를 해소한다(app-evolve cycle390 critique/advance). openCatManage(k)가
+ * 지출/수입/저축 3종을 .seg 탭+#catBody로 묶는 패턴과 동일하되, 탭이 7개라 .seg를 가로 스크롤
+ * 가능하게(overflow-x:auto, 버튼 flex:0 0 auto) 써서 글자가 눌려 찌그러지지 않게 한다 — moveSegBlobs()는
+ * offsetLeft/offsetWidth만 읽으므로 탭 개수나 스크롤 여부와 무관하게 그대로 동작한다. 7개
+ * xTrashBody() 각각은 기존 openXTrashList()가 openSheet에 넘기던 내용(desc+목록+전체비우기/닫기
+ * 버튼) 그대로이고, openXTrashList()는 하위 호환용 얇은 래퍼로 남겨둔다. */
+function trashHubBody(kind){
+ switch(kind){
+  case 'assets':return assetsTrashBody();
+  case 'recs':return recsTrashBody();
+  case 'goals':return goalsTrashBody();
+  case 'qtyLog':return qtyLogTrashBody();
+  case 'cats':return catsTrashBody();
+  case 'inquiries':return inquiriesTrashBody();
+  default:return txnsTrashBody();
+ }
+}
+function openTrashHub(kind){
+ const k=TRASH_HUB_KINDS.some(x=>x[0]===kind)?kind:'txns';
+ openSheet(`<h3>최근 삭제함</h3>
+  <div class="seg" role="group" aria-label="삭제한 항목 종류 선택" style="overflow-x:auto"><div class="seg-blob"></div>${TRASH_HUB_KINDS.map(([kk,,label])=>`<button class="${k===kk?'on':''}" style="flex:0 0 auto;padding:0 14px;white-space:nowrap" aria-pressed="${k===kk}" onclick="openTrashHub('${kk}')">${label}</button>`).join('')}</div>
+  <div id="trashHubBody">${trashHubBody(k)}</div>`);
 }
 window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 
