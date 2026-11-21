@@ -218,6 +218,9 @@ const FUNCTIONS = [
   // catDelSel/catVarSel(카테고리 관리 선택모드 ST.catSel)은 recSel/goalSel과 동일한 선택모드+일괄
   // 액션+단일 undoToast 패턴을 카테고리 관리에 추가한 것(app-evolve cycle388 critique → advance).
   'bulkCatVarTargets', 'doBulkCatVarToggle', 'catSelPartial', 'catToggleSel', 'catSelAll', 'catDelSel', 'catVarSel',
+  // bulkCatRolloverTargets/doBulkRolloverToggle/catRolloverSel: 위 변동/고정 일괄 전환과 동일한 패턴을
+  // 예산 이월(expense 전용) 전환에도 추가한 것(app-evolve cycle389 develop).
+  'bulkCatRolloverTargets', 'doBulkRolloverToggle', 'catRolloverSel',
   'assetMergeCounts', 'assetMergeSubKey', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
@@ -14208,6 +14211,77 @@ test('doBulkCatVarToggle: bulkCatVarTargets이 실패(빈 선택)로 판정하�
   sandbox.DB = { categories: { expense: ['식비'] }, catVar: {} };
   sandbox.lastUndo = null;
   sandbox.doBulkCatVarToggle('expense', new Set(), true);
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+});
+
+/* ---------- bulkCatRolloverTargets/doBulkRolloverToggle: 위 bulkCatVarTargets/doBulkCatVarToggle과
+ * 동일한 패턴이지만 예산 이월은 지출(expense) 카테고리에만 있는 설정이라(rollPill) type이 expense가
+ * 아니면 notApplicable로 바로 거절한다(app-evolve cycle389 develop). ---------- */
+test('bulkCatRolloverTargets: expense가 아니면 reason:notApplicable(선택이 있어도)', () => {
+  sandbox.DB = { categories: { income: ['급여'] }, catBudgetRollover: {} };
+  const r1 = sandbox.bulkCatRolloverTargets('income', new Set([0]));
+  assert.strictEqual(r1.ok, false);
+  assert.strictEqual(r1.reason, 'notApplicable');
+  sandbox.DB = { categories: { saving: ['적금'] }, catBudgetRollover: {} };
+  const r2 = sandbox.bulkCatRolloverTargets('saving', new Set([0]));
+  assert.strictEqual(r2.ok, false);
+  assert.strictEqual(r2.reason, 'notApplicable');
+});
+test('bulkCatRolloverTargets: 선택이 비었으면 reason:empty', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catBudgetRollover: {} };
+  assert.strictEqual(sandbox.bulkCatRolloverTargets('expense', new Set()).ok, false);
+});
+test('bulkCatRolloverTargets: 선택된 카테고리가 전부 이월이면 allOn:true, mixed:false', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catBudgetRollover: { 'expense:식비': true, 'expense:교통': true } };
+  const r = sandbox.bulkCatRolloverTargets('expense', new Set([0, 1]));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.allOn, true);
+  assert.strictEqual(r.mixed, false);
+});
+test('bulkCatRolloverTargets: 선택된 카테고리가 전부 이월 안함이면 allOn:false, mixed:false', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catBudgetRollover: {} };
+  const r = sandbox.bulkCatRolloverTargets('expense', new Set([0, 1]));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.allOn, false);
+  assert.strictEqual(r.mixed, false);
+});
+test('bulkCatRolloverTargets: 선택된 카테고리의 이월 설정이 섞여 있으면 mixed:true', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catBudgetRollover: { 'expense:식비': true } };
+  const r = sandbox.bulkCatRolloverTargets('expense', new Set([0, 1]));
+  assert.strictEqual(r.mixed, true);
+});
+test('doBulkRolloverToggle: 선택한 카테고리들의 예산 이월을 일괄로 바꾼다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catBudgetRollover: {} };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRolloverToggle('expense', new Set([0, 1]), true);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), true);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('교통'), true);
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+});
+test('doBulkRolloverToggle: undo 콜백을 부르면 각 카테고리의 원래 이월 설정으로 정확히 복원한다(섞여 있던 선택도)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catBudgetRollover: { 'expense:식비': true } };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRolloverToggle('expense', new Set([0, 1]), false);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), false);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('교통'), false);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), true, '원래 이월이었던 카테고리는 다시 이월로 돌아와야 함');
+  assert.strictEqual(sandbox.isBudgetRolloverCat('교통'), false, '원래 이월 아니었던 카테고리는 이월 안함으로 남아야 함');
+});
+test('doBulkRolloverToggle: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { categories: { expense: ['식비'] }, catBudgetRollover: {} };
+  sandbox.doBulkRolloverToggle('expense', new Set([0]), true);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), false);
+  sandbox.TWi = -1;
+});
+test('doBulkRolloverToggle: bulkCatRolloverTargets이 실패(빈 선택)로 판정하면 아무 것도 바꾸지 않는다(catRolloverSel이 먼저 걸러내므로 여기선 안전망)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { categories: { expense: ['식비'] }, catBudgetRollover: {} };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRolloverToggle('expense', new Set(), true);
   assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
 });
 
@@ -34992,6 +35066,28 @@ test('catVarSel: 선택 모드를 바로 끝내고 doBulkCatVarToggle을 적용�
   assert.strictEqual(sandbox.isVarCat('expense', '교통'), true);
   assert.ok(sandbox.lastUndo, 'doBulkCatVarToggle의 undoToast까지 그대로 이어져야 함');
 });
+test('catRolloverSel: 선택이 비어 있으면 안내 토스트만 띄우고 doBulkRolloverToggle을 부르지 않는다', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST.catSel = { mode: true, ids: new Set() };
+  sandbox.lastToast = null; sandbox.lastUndo = null;
+  sandbox.catRolloverSel(true);
+  assert.strictEqual(sandbox.lastToast, '선택된 카테고리가 없어요');
+  assert.strictEqual(sandbox.lastUndo, null);
+});
+test('catRolloverSel: 선택 모드를 바로 끝내고 doBulkRolloverToggle을 적용한다(catVarSel과 동일한 단일 동작 배선)', () => {
+  setupCatManageDB();
+  sandbox.catAddDraft = { name: '', icon: '' };
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST.catSel = { mode: true, ids: new Set([0, 1]) };
+  sandbox.lastUndo = null;
+  sandbox.catRolloverSel(true);
+  assert.strictEqual(sandbox.ST.catSel.mode, false, '단일 동작이므로 바로 선택모드가 꺼져야 함');
+  assert.strictEqual(sandbox.ST.catSel.ids.size, 0);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), true);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('교통'), true);
+  assert.ok(sandbox.lastUndo, 'doBulkRolloverToggle의 undoToast까지 그대로 이어져야 함');
+});
 test('activeSel: 카테고리 관리 선택모드(ST.catSel)의 all/del은 catSelAll/catDelSel이고, total은 ADJUST_CAT을 뺀 전체 개수다', () => {
   setupCatManageDB();
   sandbox._catMgmtKind = 'income';
@@ -35039,7 +35135,32 @@ test('activeSel: 저축(saving) 카테고리 관리는 변동/고정 구분이 �
   const s = sandbox.activeSel();
   assert.strictEqual(s.catVarT, null);
 });
-test('activeSel: 카테고리 관리 선택모드엔 incl/cat/move/ownerMove/recActive가 없다(이번 cycle 범위는 삭제·변동전환뿐)', () => {
+test('activeSel: 선택된 카테고리가 전부 이월이면 catRolloverT가 [off](반대 상태로 토글하는 버튼 하나만, expense만 내려줌)', () => {
+  setupCatManageDB();
+  sandbox.DB.catBudgetRollover = { 'expense:식비': true, 'expense:교통': true };
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set([0, 1]) } };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.catRolloverT), ['off']);
+});
+test('activeSel: 선택된 카테고리의 이월 설정이 섞여 있으면 catRolloverT가 [on,off](둘 다 보여줌)', () => {
+  setupCatManageDB();
+  sandbox.DB.catBudgetRollover = { 'expense:식비': true };
+  sandbox._catMgmtKind = 'expense';
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set([0, 1]) } };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.catRolloverT), ['on', 'off']);
+});
+test('activeSel: income/saving 카테고리 관리는 예산 이월 자체가 없으므로 catRolloverT가 null이다(선택이 있어도)', () => {
+  setupCatManageDB();
+  sandbox._catMgmtKind = 'income';
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set([0]) } };
+  assert.strictEqual(sandbox.activeSel().catRolloverT, null);
+  sandbox._catMgmtKind = 'saving';
+  sandbox.ST.catSel = { mode: true, ids: new Set([0]) };
+  assert.strictEqual(sandbox.activeSel().catRolloverT, null);
+});
+test('activeSel: 카테고리 관리 선택모드엔 incl/cat/move/ownerMove/recActive가 없다(이번 cycle 범위는 삭제·변동전환·이월전환뿐)', () => {
   setupCatManageDB();
   sandbox._catMgmtKind = 'expense';
   sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: true, ids: new Set([0]) } };

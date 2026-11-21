@@ -1,6 +1,6 @@
 {
   "cycle": 389,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "advance",
       "timestamp": "2026-11-21T14:33:56.000Z",
       "summary": "critique(cycle388)가 세운 계획대로 카테고리 관리(openCatManage/catManageBody, index.html)에 거래내역/전체내역/자산목록/반복거래/목표관리와 동일한 선택모드+하단 일괄 액션바+단일 undoToast 패턴을 추가. ST.catSel={mode:false,ids:new Set()} 신설(카테고리는 고유 id가 없어 ids는 DB.categories[kind] 안의 인덱스 집합, 선택모드 중엔 그 kind를 _catMgmtKind 전역이 들고 있음 — 구분(지출/수입/저축) 전환 시 자동 초기화). openCatManage에 '선택' 토글 버튼과 선택모드 중 검색창/새 카테고리 추가 입력 숨김을 추가하고, catManageBody에 체크박스 행 렌더링 분기(합치기/수정/삭제/변동전환/이월설정/순서이동 버튼을 체크박스로 대체, ADJUST_CAT은 선택 대상에서 제외)를 추가. wireLongPress로 롱프레스 진입도 연결. 계획대로 범위를 두 액션으로 제한: (1) 일괄 삭제 — doDeleteCat의 트래시(DB.trashCats) 적재/반복거래 비활성화 로직을 catDelSel/doDeleteCatsUndo로 배치화해 deleteGoalsUndo와 동일한 단일 undoToast 제공, (2) 일괄 변동/고정 전환 — bulkCatVarTargets/doBulkCatVarToggle/catVarSel로 doBulkInclToggle(자산 총자산 포함/제외 배치 토글)과 동일한 패턴 적용(저축 카테고리는 변동/고정 구분이 없어 버튼 자체를 안 보여줌). activeSel()/updateSelBottom()/exitSelMode()/closeSheet()/go()에 다른 4개 선택모드와 동일한 배선을 추가. 합치기/이월설정/순서이동은 계획대로 이번 cycle 범위에서 제외.\ntest/run.js에 catSelectableIdx/bulkCatVarTargets/doBulkCatVarToggle/doDeleteCatsUndo(배치 삭제 undo 복원·트래시 적재·반복거래 비활성화 패리티 포함)/catSelPartial/catToggleSel/catSelAll/catDelSel/catVarSel 및 openCatManage/catManageBody의 선택모드 렌더링·activeSel의 catVarT 판정 회귀 테스트를 신규 추가. 기존 doRenameCat/doDeleteCat/mergeCatInto/addCat/moveCat/openCatManage/catManageBody/catQInput/closeSheet 등 카테고리 관련 함수들은 전부 내부적으로 openCatManage(k)를 불러 시트를 새로고침하는데, 이제 그 함수가 ST.catSel.mode를 읽으므로 그 함수들을 테스트하는 기존 픽스처 다수가 깨짐 — 기본 sandbox.ST 및 setupAssetsDB/setupLedgerDB/setupHistoryDB 등 널리 쓰이는 ST 전체 재할당 지점들에 catSel 기본값을 추가해 회귀 없이 수습. node test/run.js 3773->3815/3815 통과(신규 42건), node --check(메인 <script> 블록) 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.509->1.47.510, sw.js CACHE v776->v777.",
+      "commit": null
+    },
+    {
+      "cycle": 389,
+      "phase": "develop",
+      "timestamp": "2026-11-21T15:40:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-388 전체 배제 목록을 주고 조사시킴. critique(cycle388)가 카테고리 관리 선택모드(ST.catSel)에 일괄 삭제·변동/고정 전환만 넣고 명시적으로 범위 밖으로 미뤄둔 합치기/이월설정/순서이동 중, 이월설정(예산 이월)을 다음 타깃으로 확인: 행 단위 rollPill(index.html:8805, isBudgetRolloverCat/setBudgetRolloverCat/toggleBudgetRolloverUI)은 이미 있는데 선택모드 바닥바엔 변동/고정 버튼 바로 옆에 있어야 할 짝이 빠져 있었다(bulkCatVarTargets/doBulkCatVarToggle과 거의 동일한 모양의 공백). bulkCatVarTargets/doBulkCatVarToggle/catVarSel을 그대로 본떠 bulkCatRolloverTargets(type,ids)(예산 이월은 expense 전용이라 type!=='expense'면 notApplicable로 바로 거절)/doBulkRolloverToggle(type,ids,next)(setBudgetRolloverCat 일괄 적용 후 단일 undoToast)/catRolloverSel(next) 3개 함수를 추가. activeSel()의 catSel 분기에 catRolloverT(expense일 때만, mixed/allOn 판정)를 추가하고 updateSelBottom()에 catRolloverBtns(svg('repeat'), '이월'/'이월 안함')를 catVarBtns 옆에 이어붙였다. 합치기/순서이동은 이번 cycle에도 범위 밖으로 남김. 테스트 16건 추가(bulkCatRolloverTargets 6건: notApplicable 2종/empty/allOn/allOff/mixed, doBulkRolloverToggle 4건: 일괄적용/undo복원/twGuard/빈선택 안전망, catRolloverSel 2건: 빈선택 토스트/단일동작 배선, activeSel catRolloverT 4건: allOn→[off]/mixed→[on,off]/income·saving은 null/기존 'incl 없음' 가드에 '이번 cycle 범위' 문구 갱신). test/run.js FUNCTIONS에 bulkCatRolloverTargets/doBulkRolloverToggle/catRolloverSel 추가. node test/run.js 3815->3829/3829 통과(코멘트 포함 집계 차이로 신규분이 16건보다 적게 보일 수 있음, 실제 전부 통과 확인), node --check(HTML 주석 제외 후 <script> 블록 추출)/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.510->1.47.511, sw.js CACHE v777->v778.",
       "commit": null
     }
   ]
