@@ -1,15 +1,12 @@
 {
   "cycle": 388,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "카테고리 관리(openCatManage)에 일괄 선택(다중 삭제/변동·고정 전환) 추가",
+    "why": "거래내역(ST.lSel)/전체내역(ST.hist.selMode)/자산목록(ST.aSel)/반복거래(ST.recSel)/목표관리(ST.goalSel) 5곳은 모두 선택모드+하단 일괄 액션바+단일 undoToast 패턴을 갖췄는데 카테고리 관리(catManageBody, index.html:8752-8789)만 전부 행 단위(합치기/수정/삭제/변동전환/이월설정/순서이동)라 ST.catSel 자체가 없다. CAT_LIST_SEARCH_THRESHOLD=10이 이미 카테고리 10개 초과 사용자를 전제하는데, 그런 사용자가 여러 카테고리를 한꺼번에 정리하려면 N번의 확인창+개별 6초 undo를 반복해야 한다.",
+    "approach": "ST.catSel={mode:false,ids:new Set()}를 ST.recSel/ST.goalSel과 동일 구조로 추가. openCatManage에 다른 4개 화면과 동일한 선택 토글 버튼 + catManageBody에 체크박스 행 렌더링 분기, wireLongPress로 롱프레스 진입 연결. 하단 선택바는 이번 cycle 범위를 두 액션으로 제한: (1) 일괄 삭제 - delCat의 반복거래 비활성화/트래시 적재/톰스톤 처리를 배치로 적용해 deleteGoalsUndo(13243-13250)와 동일 패턴의 단일 undoToast 제공, (2) 일괄 변동/고정 전환 - isVarCat을 배치 적용(자산의 총자산 포함/제외 배치 토글(13048)과 동일 패턴). 합치기/이월설정/순서이동은 이번 cycle에서 제외. test/run.js에 배치 삭제 undo 복원/트래시 적재/반복거래 비활성화 패리티 회귀 테스트 추가."
+  },
   "history": [
-    {
-      "cycle": 383,
-      "phase": "develop",
-      "timestamp": "2026-11-20T14:15:00.000Z",
-      "summary": "saveAsset()이 maturityDate(매입일 아님, 만기일)에는 RANGE_FROM/RANGE_TO 가드를 두는데 acquiredAt(매입일, annualizedReturn()의 보유기간 계산에 쓰임)에는 없었음을 발견(saveGoal의 targetDate와 같은 클래스, cycle319에서 고친 버그). 매입일 피커가 무한 스크롤이라 미래만 막고 과거 하한은 안 걸러 비정상적으로 먼 과거 날짜(예: 1000년)가 저장될 수 있었다. saveAsset()에 dateBelowRangeFloor/dateAboveRangeCeil 가드 쌍 추가(index.html, maturityDate 가드 바로 아래). 테스트 4건 추가(하한 미달/상한 초과/정상범위/필드없음 회귀). node test/run.js 3719->3723/3723 통과, node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.497->1.47.498, sw.js CACHE v764->v765.",
-      "commit": "601349d"
-    },
     {
       "cycle": 383,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-21T12:20:00.000Z",
       "summary": "develop(cycle388)의 문의하기 메모 MEMO_MAX 클램프 추가를 검토. inqText/inqEditText textarea maxlength+inqTextInput 핸들러가 txMemoInput(6586줄)/recMemoInput(7038줄)과 동일한 'maxlength 속성 + oninput에서 한 번 더 slice' 패턴을 정확히 따르고, sendInquiry/saveInquiryEdit의 저장 직전 clamp와 sanitizeBackup()의 inquiries/trashInquiries d.text clamp가 d.memo(10165/10272줄) 블록과 1:1 대응됨을 코드로 직접 확인. editInquiry()의 esc(q.text) 렌더링, uid/touch/touchSave 등 기존 저장 경로는 그대로이고 새로 추가된 clamp 지점들이 서로 중복되거나 충돌하지 않음을 확인. node test/run.js 3773/3773 통과(재실행), 메인 <script> 블록 node --check(Function 생성자로 파싱) 통과. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 388,
+      "phase": "critique",
+      "timestamp": "2026-11-21T13:14:22.045Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-388 전체 배제 목록(aria-label, debtPayoffStatuses, anyRateSourceStale, N인 정산, acquiredAt 가드 롤백, 휴지통 전체비우기, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트, commitTx undo, 검색창 Escape 6곳, fmtAmt 커서버그, 문의하기 메모 클램프)를 주고 전략적 재검토시킴. 거래내역/전체내역/자산목록/반복거래/목표관리 5곳이 모두 갖춘 선택모드+일괄액션+단일undoToast 패턴이 카테고리 관리(catManageBody, index.html:8752-8789)에만 전혀 없음(ST.catSel grep 0건, 합치기/수정/삭제/변동전환/이월설정/순서이동 전부 행 단위)을 발견. CAT_LIST_SEARCH_THRESHOLD=10이 카테고리 다수 사용자를 이미 전제하는 것과 대비됨. pending_advance_plan에 ST.catSel 추가 + 일괄 삭제/일괄 변동전환 2개 액션만 범위로 둔 계획 저장(합치기/이월설정/순서이동은 제외). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
