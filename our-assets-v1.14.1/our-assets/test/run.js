@@ -247,6 +247,11 @@ const FUNCTIONS = [
   'clampDay', 'saveTx', 'commitTx', 'commitTxAsRec', 'duplicateTx', 'editTx', 'delTx', 'openAdjustEdit', 'delAdjust', 'recEditScope', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers', 'resetStaleDebtPayoffAcks',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'interestRateField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'openOwnerPicker', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
+  // pkStepIdx/pkListKeydown/catGridKeydown/pkFocusedIdx/pkRestoreFocus: 공용 피커 시트(openAssetPicker/
+  // openTypePicker/openOwnerPicker/openCurrencyPicker의 #pkGroup, openCatPicker의 #catGrid)에
+  // 날짜 선택기(dpGridKeydown류)와 같은 방향키 그리드 탐색을 추가한 것(app-evolve cycle389 advance).
+  // openOwnerPicker/openTypePicker/openCurrencyPicker가 모두 이 sandbox에 있으므로 함께 올린다.
+  'pkStepIdx', 'pkListKeydown', 'catGridKeydown', 'pkFocusedIdx', 'pkRestoreFocus',
   // 정산(settlement, app-evolve cycle314 critique/advance): settlementSummary(logic.js)를 둘러싼
   // 설정 폼/화면/완료처리. firstCashForOwner/settleConfigured는 doSettle/renderTxSheet/renderMenu가
   // 공유하는 작은 헬퍼라 그 호출부들과 같은 sandbox에 항상 함께 올라가야 한다.
@@ -462,7 +467,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'CAT_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET',
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'PK_CAT_COLS', 'GOAL_LIST_SEARCH_THRESHOLD', 'CAT_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET',
   // WK(주말·공휴일 조정 어휘)는 renderRecSheet가 d.freq==='monthly'일 때 WK[d.weekend||'none'][0]로
   // 직접 참조한다(app-evolve cycle372 advance, openTxSheet/openRecSheet 실행형 테스트 추가 — 이
   // 전까지 renderRecSheet() 자체가 한 번도 실행된 적이 없어 빠져 있었다).
@@ -29254,6 +29259,137 @@ test('openAssetPicker: 고를 자산이 애초에 0개면(기존 .empty CTA만 �
       assert.ok(grp.innerHTML.includes("일치하는 자산이 없어요"), '검색으로 0건이 되면 #pkGroup이 empty 패턴으로 바뀌어야 함');
     } finally { sandbox.$ = $orig; sandbox._pkOpts = null; sandbox._pkQ = ''; }
   });
+  // 공용 피커(openAssetPicker/openTypePicker/openOwnerPicker/openCurrencyPicker)의 #pkGroup 방향키
+  // 탐색(pkListKeydown/pkStepIdx) — 날짜 선택기 dpGridKeydown/dpStepDate와 같은 분리 원칙 검증
+  // (app-evolve cycle389 advance).
+  test('pkStepIdx: cols=1(목록)이면 ArrowUp/Down만 ±1이고, ArrowLeft/Right는 적용되지 않아 현재 인덱스를 그대로 돌려준다', () => {
+    assert.strictEqual(sandbox.pkStepIdx(1, 'ArrowDown', 3, 1), 2);
+    assert.strictEqual(sandbox.pkStepIdx(1, 'ArrowUp', 3, 1), 0);
+    assert.strictEqual(sandbox.pkStepIdx(1, 'ArrowLeft', 3, 1), 1, 'cols=1에선 ArrowLeft가 적용되지 않아야 함');
+    assert.strictEqual(sandbox.pkStepIdx(1, 'ArrowRight', 3, 1), 1, 'cols=1에선 ArrowRight가 적용되지 않아야 함');
+  });
+  test('pkStepIdx: 목록/그리드 경계를 넘는 이동은 wrap 없이 그대로 멈추고, 모르는 key는 현재 인덱스를 돌려준다', () => {
+    assert.strictEqual(sandbox.pkStepIdx(0, 'ArrowUp', 3, 1), 0);
+    assert.strictEqual(sandbox.pkStepIdx(2, 'ArrowDown', 3, 1), 2);
+    assert.strictEqual(sandbox.pkStepIdx(2, 'Tab', 5, 1), 2);
+  });
+  test('pkStepIdx: Home/End는 목록이든 그리드든 첫/마지막 인덱스로 이동한다', () => {
+    assert.strictEqual(sandbox.pkStepIdx(1, 'Home', 5, 1), 0);
+    assert.strictEqual(sandbox.pkStepIdx(1, 'End', 5, 1), 4);
+    assert.strictEqual(sandbox.pkStepIdx(4, 'Home', 7, 3), 0);
+    assert.strictEqual(sandbox.pkStepIdx(4, 'End', 7, 3), 6);
+  });
+  test('pkStepIdx: cols>1(그리드)이면 ArrowLeft/Right는 ±1, ArrowUp/Down은 ±cols로 이동하고, 마지막 줄이 짝이 안 맞아도 범위를 벗어나면 멈춘다', () => {
+    // 3열 그리드(인덱스 0~6, 마지막 줄엔 6번만 있음). 인덱스4 = 2번째 줄 2번째 칸.
+    assert.strictEqual(sandbox.pkStepIdx(4, 'ArrowLeft', 7, 3), 3);
+    assert.strictEqual(sandbox.pkStepIdx(4, 'ArrowRight', 7, 3), 5);
+    assert.strictEqual(sandbox.pkStepIdx(4, 'ArrowUp', 7, 3), 1);
+    assert.strictEqual(sandbox.pkStepIdx(4, 'ArrowDown', 7, 3), 4, '범위를 벗어나면(7>=len) 그대로 현재 인덱스');
+    assert.strictEqual(
+      sandbox.pkStepIdx(3, 'ArrowLeft', 7, 3), 2,
+      '행 경계에서 ArrowLeft는 벽에 막히지 않고 이전 행 마지막 칸으로 자연스럽게 넘어간다(원형이 아니라 1차원 인덱스 이동)'
+    );
+  });
+  test('pkListKeydown: ArrowDown/Up/Home/End로 #pkGroup의 .pk-item 사이를 포커스만 이동한다(선택 커밋은 하지 않음)', () => {
+    const dom = domstub.createDocument();
+    const grp = dom.createElement('div'); grp.id = 'pkGroup';
+    const items = ['지갑', '적금', '삼성전자'].map(() => { const b = dom.createElement('button'); b.classList.add('pk-item'); grp.appendChild(b); return b; });
+    dom.body.appendChild(grp);
+    let prevented = 0;
+    const pd = () => { prevented++; };
+    items[0].focus();
+    sandbox.pkListKeydown({ key: 'ArrowDown', target: items[0], preventDefault: pd });
+    assert.strictEqual(dom.activeElement, items[1]);
+    sandbox.pkListKeydown({ key: 'ArrowUp', target: items[1], preventDefault: pd });
+    assert.strictEqual(dom.activeElement, items[0]);
+    sandbox.pkListKeydown({ key: 'End', target: items[0], preventDefault: pd });
+    assert.strictEqual(dom.activeElement, items[2]);
+    sandbox.pkListKeydown({ key: 'Home', target: items[2], preventDefault: pd });
+    assert.strictEqual(dom.activeElement, items[0]);
+    assert.strictEqual(prevented, 4);
+  });
+  test('pkListKeydown: 처리하지 않는 key나 .pk-item 밖에서 일어난 keydown은 무시한다(preventDefault도 안 부름)', () => {
+    const dom = domstub.createDocument();
+    const grp = dom.createElement('div'); grp.id = 'pkGroup';
+    const item = dom.createElement('button'); item.classList.add('pk-item'); grp.appendChild(item);
+    const input = dom.createElement('input'); grp.appendChild(input); // .pk-item이 아닌 자식(검색창이 #pkGroup 밖이라 실제로는 안 섞이지만, 방어 확인용)
+    dom.body.appendChild(grp);
+    let prevented = 0;
+    const pd = () => { prevented++; };
+    sandbox.pkListKeydown({ key: 'Escape', target: item, preventDefault: pd }); // 처리하지 않는 key
+    assert.strictEqual(prevented, 0);
+    sandbox.pkListKeydown({ key: 'ArrowDown', target: input, preventDefault: pd }); // .pk-item 밖
+    assert.strictEqual(prevented, 0);
+  });
+  test('pkFocusedIdx/pkRestoreFocus: 포커스된 .pk-item의 인덱스를 찾고, 재렌더로 항목이 줄어도 clamp된 자리로 포커스를 되돌린다', () => {
+    const dom = domstub.createDocument();
+    const grp = dom.createElement('div'); grp.id = 'pkGroup';
+    const items = [0, 1, 2].map(() => { const b = dom.createElement('button'); b.classList.add('pk-item'); grp.appendChild(b); return b; });
+    dom.body.appendChild(grp);
+    items[2].focus();
+    const docOrig = sandbox.document;
+    sandbox.document = dom;
+    try {
+      assert.strictEqual(sandbox.pkFocusedIdx(grp, '.pk-item'), 2);
+      grp.innerHTML = '<button class="pk-item"></button>'; // 재렌더로 1개만 남았다고 가정
+      sandbox.pkRestoreFocus(grp, '.pk-item', 2);
+      assert.strictEqual(dom.activeElement, grp.querySelector('.pk-item'), '인덱스가 범위를 넘으면 마지막 항목으로 clamp');
+    } finally { sandbox.document = docOrig; }
+  });
+  test('pkFocusedIdx: 포커스가 컨테이너 안의 .pk-item이 아니면(검색 입력 등) -1을 돌려주고, pkRestoreFocus(-1)는 포커스를 건드리지 않는다', () => {
+    const dom = domstub.createDocument();
+    const grp = dom.createElement('div'); grp.id = 'pkGroup';
+    const item = dom.createElement('button'); item.classList.add('pk-item'); grp.appendChild(item);
+    dom.body.appendChild(grp); // 포커스는 기본값인 document.body에 있음(= #pkGroup 밖)
+    const docOrig = sandbox.document;
+    sandbox.document = dom;
+    try {
+      assert.strictEqual(sandbox.pkFocusedIdx(grp, '.pk-item'), -1);
+      sandbox.pkRestoreFocus(grp, '.pk-item', -1);
+      assert.strictEqual(dom.activeElement, dom.body, 'idx<0이면 포커스를 건드리면 안 됨');
+    } finally { sandbox.document = docOrig; }
+  });
+  test('refreshPkAssetList: 방향키로 .pk-item에 포커스가 있던 중 검색 재렌더가 일어나면 같은 자리(필터로 줄면 clamp)로 포커스를 되돌린다', () => {
+    setupAssetPickerDB();
+    const dom = domstub.createDocument();
+    const grp = dom.createElement('div'); grp.id = 'pkGroup'; dom.body.appendChild(grp);
+    const blob = fakePkBlob();
+    const $orig = sandbox.$, docOrig = sandbox.document;
+    sandbox.$ = (id) => (id === 'pkGroup' ? grp : id === 'pkBlob' ? blob : null);
+    sandbox.document = dom;
+    sandbox._pkOpts = {};
+    sandbox._pkQ = '';
+    try {
+      sandbox.refreshPkAssetList();
+      const items = grp.querySelectorAll('.pk-item');
+      assert.strictEqual(items.length, 5, '자산 5개가 모두 그려져야 함');
+      items[3].focus();
+      sandbox._pkQ = '달러'; // 1건만 남도록 검색
+      sandbox.refreshPkAssetList();
+      const filtered = grp.querySelectorAll('.pk-item');
+      assert.strictEqual(filtered.length, 1);
+      assert.strictEqual(dom.activeElement, filtered[0], '필터로 항목이 줄어도 clamp돼 포커스가 유지돼야 함');
+    } finally { sandbox.$ = $orig; sandbox.document = docOrig; sandbox._pkOpts = null; sandbox._pkQ = ''; }
+  });
+  test('refreshPkAssetList: 검색창(#pkGroup 밖)에 포커스가 있던 일반적인 타이핑 경로는 재렌더 후에도 포커스를 건드리지 않는다', () => {
+    setupAssetPickerDB();
+    const dom = domstub.createDocument();
+    const grp = dom.createElement('div'); grp.id = 'pkGroup'; dom.body.appendChild(grp);
+    const searchInput = dom.createElement('input'); dom.body.appendChild(searchInput);
+    const blob = fakePkBlob();
+    const $orig = sandbox.$, docOrig = sandbox.document;
+    sandbox.$ = (id) => (id === 'pkGroup' ? grp : id === 'pkBlob' ? blob : null);
+    sandbox.document = dom;
+    sandbox._pkOpts = {};
+    sandbox._pkQ = '';
+    try {
+      sandbox.refreshPkAssetList();
+      searchInput.focus();
+      sandbox._pkQ = '삼성';
+      sandbox.refreshPkAssetList();
+      assert.strictEqual(dom.activeElement, searchInput, '검색 입력에 포커스가 있던 경로는 재렌더 후에도 그대로 유지돼야 함');
+    } finally { sandbox.$ = $orig; sandbox.document = docOrig; sandbox._pkOpts = null; sandbox._pkQ = ''; }
+  });
 })();
 (() => {
   // pkAssetQInput은 assetQInput/histQInput과 동일한 220ms 디바운스 패턴을 따라야 한다
@@ -35288,6 +35424,65 @@ test('openCatPicker: 카테고리가 CAT_PICKER_SEARCH_THRESHOLD를 넘으면 �
       assert.doesNotThrow(() => sandbox.refreshPkCatList());
       assert.ok(grid.innerHTML.includes('일치하는 카테고리가 없어요'), '검색으로 0건이 되면 #catGrid가 empty 패턴으로 바뀌어야 함');
     } finally { sandbox.$ = $orig; sandbox._pkOpts = null; sandbox._pkQ = ''; }
+  });
+  // openCatPicker의 #catGrid(.pk-cat-grid, 3열) 방향키 탐색(catGridKeydown) — pkListKeydown과 같은
+  // 구조지만 2차원 그리드라 ArrowLeft/Right도 검증한다(app-evolve cycle389 advance).
+  test('catGridKeydown: 3열 그리드에서 ArrowLeft/Right/Up/Down으로 .pk-cat 사이를 이동하고, 그리드 경계에서는 멈춘다', () => {
+    const dom = domstub.createDocument();
+    const grid = dom.createElement('div'); grid.id = 'catGrid';
+    const cats = ['식비', '교통', '문화', '의료', '통신', '기타', '건강'].map(() => { const b = dom.createElement('button'); b.classList.add('pk-cat'); grid.appendChild(b); return b; });
+    dom.body.appendChild(grid);
+    let prevented = 0;
+    const pd = () => { prevented++; };
+    cats[4].focus(); // 2번째 줄 2번째 칸
+    sandbox.catGridKeydown({ key: 'ArrowRight', target: cats[4], preventDefault: pd });
+    assert.strictEqual(dom.activeElement, cats[5]);
+    sandbox.catGridKeydown({ key: 'ArrowUp', target: cats[5], preventDefault: pd });
+    assert.strictEqual(dom.activeElement, cats[2]);
+    sandbox.catGridKeydown({ key: 'ArrowDown', target: cats[2], preventDefault: pd });
+    assert.strictEqual(dom.activeElement, cats[5]);
+    sandbox.catGridKeydown({ key: 'ArrowDown', target: cats[6], preventDefault: pd }); // 마지막 줄(짝 안 맞는 칸)에서 더 내려가면 경계
+    assert.strictEqual(dom.activeElement, cats[6]);
+    assert.strictEqual(prevented, 4, '경계에서 멈춰도 처리한 key이므로 preventDefault는 호출돼야 함');
+    sandbox.catGridKeydown({ key: 'Home', target: cats[6], preventDefault: pd });
+    assert.strictEqual(dom.activeElement, cats[0]);
+    sandbox.catGridKeydown({ key: 'End', target: cats[0], preventDefault: pd });
+    assert.strictEqual(dom.activeElement, cats[6]);
+  });
+  test('catGridKeydown: 처리하지 않는 key나 .pk-cat 밖에서 일어난 keydown은 무시한다', () => {
+    const dom = domstub.createDocument();
+    const grid = dom.createElement('div'); grid.id = 'catGrid';
+    const cell = dom.createElement('button'); cell.classList.add('pk-cat'); grid.appendChild(cell);
+    const input = dom.createElement('input'); grid.appendChild(input);
+    dom.body.appendChild(grid);
+    let prevented = 0;
+    const pd = () => { prevented++; };
+    sandbox.catGridKeydown({ key: 'Escape', target: cell, preventDefault: pd });
+    assert.strictEqual(prevented, 0);
+    sandbox.catGridKeydown({ key: 'ArrowRight', target: input, preventDefault: pd });
+    assert.strictEqual(prevented, 0);
+  });
+  test('refreshPkCatList: 방향키로 .pk-cat에 포커스가 있던 중 검색 재렌더가 일어나면 같은 자리(필터로 줄면 clamp)로 포커스를 되돌린다', () => {
+    sandbox.DB = { categories: { expense: ['식비', '교통', '문화'] }, catIcon: {}, catVar: {} };
+    const dom = domstub.createDocument();
+    const grid = dom.createElement('div'); grid.id = 'catGrid'; dom.body.appendChild(grid);
+    const blob = fakeCatBlob();
+    const $orig = sandbox.$, docOrig = sandbox.document;
+    sandbox.$ = (id) => (id === 'catGrid' ? grid : id === 'catBlob' ? blob : null);
+    sandbox.document = dom;
+    sandbox._pkOpts = { kind: 'expense', current: '' };
+    sandbox._pkQ = '';
+    try {
+      sandbox.refreshPkCatList();
+      const cats = grid.querySelectorAll('.pk-cat');
+      assert.strictEqual(cats.length, 3);
+      cats[2].focus();
+      sandbox._pkQ = '문화';
+      sandbox.refreshPkCatList();
+      const filtered = grid.querySelectorAll('.pk-cat');
+      assert.strictEqual(filtered.length, 1);
+      assert.strictEqual(dom.activeElement, filtered[0], '필터로 항목이 줄어도 clamp돼 포커스가 유지돼야 함');
+    } finally { sandbox.$ = $orig; sandbox.document = docOrig; sandbox._pkOpts = null; sandbox._pkQ = ''; }
   });
 })();
 (() => {

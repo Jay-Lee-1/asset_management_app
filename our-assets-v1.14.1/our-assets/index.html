@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.511';
+const APP_VERSION='1.47.512';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -13503,6 +13503,62 @@ function openPicker(title,bodyHtml,back){window._pkBack=back||null;
  openSheet(`<div class="pk-h">${title}</div>`+bodyHtml, back?topBtn:undefined);}
 let _pkQ='',_pkQT=null,_pkOpts=null;
 function pkBack(){const b=window._pkBack;window._pkBack=null;_pkQ='';clearTimeout(_pkQT);_pkQT=null;_pkOpts=null;if(b)sheetSlideBack(b);else closeSheet()}
+/* pkListKeydown(#pkGroup, 1열)/catGridKeydown(#catGrid, 3열)이 쓰는 순수 인덱스 계산 — dpStepDate와
+ * 같은 분리 원칙(포커스를 어디로 옮길지는 DOM 없이 결정하고, 실제 focus()는 호출부가 한다). cols===1이면
+ * 1차원 목록(ArrowUp/Down만 ±1, ArrowLeft/Right는 무시), cols>1이면 2차원 그리드(ArrowLeft/Right ±1,
+ * ArrowUp/Down ±cols). 범위를 벗어나는 이동이나 모르는 key는 wrap 없이 현재 인덱스를 그대로 돌려줘
+ * 호출부가 '이동 없음'으로 처리한다(dpStepDate가 모르는 key를 그대로 돌려주는 것과 동일). */
+function pkStepIdx(i,key,len,cols){
+ let ni=i;
+ if(key==='ArrowUp')ni=cols>1?i-cols:i-1;
+ else if(key==='ArrowDown')ni=cols>1?i+cols:i+1;
+ else if(key==='ArrowLeft'&&cols>1)ni=i-1;
+ else if(key==='ArrowRight'&&cols>1)ni=i+1;
+ else if(key==='Home')ni=0;
+ else if(key==='End')ni=len-1;
+ else return i;
+ if(ni<0||ni>=len)return i;
+ return ni;
+}
+/* 공용 피커 시트(openAssetPicker/openTypePicker/openOwnerPicker/openCurrencyPicker가 공유하는 #pkGroup)의
+ * 방향키 탐색 — 날짜 선택기 dpGridKeydown과 동일하게 포커스만 옮기고 선택 커밋(pkChoose)은 버튼의 기본
+ * Enter/Space→click 동작에 맡긴다. #pkGroup에 위임해 refreshPkAssetList()가 매 검색마다 innerHTML을
+ * 다시 그려도(onscroll처럼 인라인 속성으로 걸려 있어) 끊기지 않는다. */
+function pkListKeydown(e){
+ if(!['ArrowUp','ArrowDown','Home','End'].includes(e.key))return;
+ const item=e.target.closest&&e.target.closest('.pk-item');if(!item)return;
+ const grp=item.closest('#pkGroup');if(!grp)return;
+ const items=[...grp.querySelectorAll('.pk-item')];
+ const i=items.indexOf(item);if(i<0)return;
+ e.preventDefault();
+ items[pkStepIdx(i,e.key,items.length,1)].focus();
+}
+/* openCatPicker의 #catGrid(.pk-cat-grid, CSS grid-template-columns:repeat(3,1fr)) 방향키 탐색 —
+ * pkListKeydown과 같은 구조지만 2차원 그리드라 ArrowLeft/Right도 지원한다. PK_CAT_COLS는 그 CSS의
+ * 열 수와 반드시 맞춰야 한다. */
+const PK_CAT_COLS=3;
+function catGridKeydown(e){
+ if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key))return;
+ const cell=e.target.closest&&e.target.closest('.pk-cat');if(!cell)return;
+ const grid=cell.closest('#catGrid');if(!grid)return;
+ const items=[...grid.querySelectorAll('.pk-cat')];
+ const i=items.indexOf(cell);if(i<0)return;
+ e.preventDefault();
+ items[pkStepIdx(i,e.key,items.length,PK_CAT_COLS)].focus();
+}
+/* refreshPkAssetList/refreshPkCatList가 검색 debounce마다 #pkGroup/#catGrid의 innerHTML을 통째로 다시
+ * 그리는데, 그 직전에 포커스가 그 안의 .pk-item/.pk-cat에 있었다면(방향키로 들어간 뒤 그대로 타이핑한
+ * 경우) 재렌더 후 같은 자리(필터링으로 길이가 줄면 clamp)로 포커스를 되돌린다. */
+function pkFocusedIdx(container,sel){
+ try{return [...container.querySelectorAll(sel)].indexOf(document.activeElement)}catch(e){return -1} /* querySelectorAll 없는 최소 테스트 더블도 조용히 넘어가게 */
+}
+function pkRestoreFocus(container,sel,idx){
+ if(idx<0)return;
+ try{
+  const items=[...container.querySelectorAll(sel)];if(!items.length)return;
+  items[Math.min(idx,items.length-1)].focus();
+ }catch(e){}
+}
 /* 자산 피커(openAssetPicker) 목록 — matchAssetQuery(logic.js)로 필터링. _pkOpts(cashOnly/cashOrDebt/
  * excludeMarketValued/excludeDebt/excludeId)는 피커를 처음 열 때 고른 조건이라 검색 중에도 그대로 유지해야
  * 하므로 전역에 보관해 두고 refreshPkAssetList()가 매 입력마다 다시 읽는다(assetQInput이 ST.assetQ를 쓰는
@@ -13544,15 +13600,17 @@ function pkEmptyHtml(q,any){
 function pkAssetQInput(v){_pkQ=v;clearTimeout(_pkQT);if(v.trim()===''){refreshPkAssetList();return}_pkQT=setTimeout(refreshPkAssetList,220);}
 function refreshPkAssetList(){
  const grp=$('pkGroup');if(!grp)return; /* 디바운스 타이머가 피커를 닫은 뒤 늦게 발화할 수 있어 방어 */
+ const focusIdx=pkFocusedIdx(grp,'.pk-item');
  const{html,any}=pkFilteredAssets(_pkOpts||{},_pkQ);
  grp.innerHTML='<div class="pk-blob" id="pkBlob"></div>'+(html||pkEmptyHtml(_pkQ,any));
  movePkBlob(false);
+ pkRestoreFocus(grp,'.pk-item',focusIdx);
 }
 function openAssetPicker(o){o=o||{};_pkOpts=o;_pkQ='';clearTimeout(_pkQT);_pkQT=null;
  const{html,any}=pkFilteredAssets(o,'');
  const body=html||pkEmptyHtml('',any);
- const searchBar=any?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="pkQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="" oninput="pkAssetQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('pkQ')">✕</button></div></div>`:'';
- window._pkPick=o.onPick;openPicker(o.title||'통장 선택',searchBar+'<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+body+'</div>',o.back);
+ const searchBar=any?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="pkQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="" oninput="pkAssetQInput(this.value)" onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('pkQ')}"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('pkQ')">✕</button></div></div>`:'';
+ window._pkPick=o.onPick;openPicker(o.title||'통장 선택',searchBar+'<div class="pk-group" id="pkGroup" onkeydown="pkListKeydown(event)"><div class="pk-blob" id="pkBlob"></div>'+body+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function movePkBlob(animate){
  const grp=$('pkGroup'),blob=$('pkBlob');if(!grp||!blob)return;
@@ -13580,17 +13638,17 @@ function pkChoose(val){ /* 물방울 이동 → 잠깐 멈춤 → 닫기 */
 }
 function pkPickAsset(id){pkChoose(id)}
 function openTypePicker(o){const html=DEFAULT_GROUP_ORDER.map(k=>{const ty=ASSET_TYPES[k];return `<button class="pk-item ${k===o.current?'on':''}" data-val="${k}" onclick="pkPickType('${k}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${ty.label}</div></div></button>`}).join('');
- window._pkPick=o.onPick;openPicker('자산 종류','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
+ window._pkPick=o.onPick;openPicker('자산 종류','<div class="pk-group" id="pkGroup" onkeydown="pkListKeydown(event)"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function pkPickType(k){pkChoose(k)}
 function openOwnerPicker(o){const exclude=o.exclude||[]; /* 귀속 합치기 피커(openOwnerMergePicker)가 합칠 귀속 자신을 대상 목록에서 빼기 위해 씀(app-evolve cycle309 advance) — catFilteredGrid의 exclude와 동일한 역할이지만 인덱스 기반 pkPickOwner(i)를 그대로 쓰므로 필터링은 렌더링만 건너뛰고 인덱스는 원래 DB.owners 위치를 그대로 쓴다 */
  let html=DB.owners.map((ow,i)=>exclude.includes(ow)?'':`<button class="pk-item ${ow===o.current?'on':''}" data-val="${esc(ow)}" onclick="pkPickOwner(${i})"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${esc(ow)}</div></div></button>`).join('');
  html+=`<button class="pk-item" onclick="openOwnerManage()"><div class="pav" style="background:var(--brand-tint);color:var(--brand-ink)">${svg('gear')}</div><div class="pbody"><div class="pn" style="color:var(--brand-ink)">귀속 추가·관리</div></div></button>`;
- window._pkPick=o.onPick;openPicker('귀속 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
+ window._pkPick=o.onPick;openPicker('귀속 선택','<div class="pk-group" id="pkGroup" onkeydown="pkListKeydown(event)"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function pkPickOwner(i){pkChoose(DB.owners[i])}
 function openCurrencyPicker(o){const html=CURRENCY_LIST.map(c=>`<button class="pk-item ${c.code===o.current?'on':''}" data-val="${c.code}" onclick="pkPickCurrency('${c.code}')"><div class="pav a-fx">${svg('fx')}</div><div class="pbody"><div class="pn">${c.code}</div><div class="psub">${esc(c.label)}</div></div></button>`).join('');
- window._pkPick=o.onPick;openPicker('통화 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
+ window._pkPick=o.onPick;openPicker('통화 선택','<div class="pk-group" id="pkGroup" onkeydown="pkListKeydown(event)"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function pkPickCurrency(c){pkChoose(c)}
 /* 카테고리 피커(openCatPicker) 그리드 — matchCatQuery(logic.js)로 필터링. pkFilteredAssets와 같은
@@ -13617,17 +13675,19 @@ const CAT_PICKER_SEARCH_THRESHOLD=8;
 function pkCatQInput(v){_pkQ=v;clearTimeout(_pkQT);if(v.trim()===''){refreshPkCatList();return}_pkQT=setTimeout(refreshPkCatList,220);}
 function refreshPkCatList(){
  const grid=$('catGrid');if(!grid)return; /* 디바운스 타이머가 피커를 닫은 뒤 늦게 발화할 수 있어 방어 */
+ const focusIdx=pkFocusedIdx(grid,'.pk-cat');
  const opts=_pkOpts||{};
  const{html}=catFilteredGrid(opts.kind,opts.current,_pkQ,opts.exclude);
  grid.innerHTML='<div class="cat-blob" id="catBlob"></div>'+(html||catEmptyHtml(_pkQ));
  moveCatBlob(false);
+ pkRestoreFocus(grid,'.pk-cat',focusIdx);
 }
 function openCatPicker(o){_pkOpts=o;_pkQ='';clearTimeout(_pkQT);_pkQT=null;
  const{html}=catFilteredGrid(o.kind,o.current,'',o.exclude);
  const showSearch=catListOf(o.kind).length>CAT_PICKER_SEARCH_THRESHOLD;
- const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="pkCatQ" aria-label="카테고리 검색" placeholder="카테고리 검색" value="" oninput="pkCatQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('pkCatQ')">✕</button></div></div>`:'';
+ const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="pkCatQ" aria-label="카테고리 검색" placeholder="카테고리 검색" value="" oninput="pkCatQInput(this.value)" onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('pkCatQ')}"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('pkCatQ')">✕</button></div></div>`:'';
  window._pkPick=o.onPick;
- openPicker((CAT_LABEL[o.kind]||'')+' 카테고리',searchBar+`<div class="pk-cat-grid" id="catGrid"><div class="cat-blob" id="catBlob"></div>${html}</div><div style="height:14px"></div><button class="btn btn-soft" onclick="openCatManage('${o.kind}')">카테고리 추가·관리</button>`,o.back);
+ openPicker((CAT_LABEL[o.kind]||'')+' 카테고리',searchBar+`<div class="pk-cat-grid" id="catGrid" onkeydown="catGridKeydown(event)"><div class="cat-blob" id="catBlob"></div>${html}</div><div style="height:14px"></div><button class="btn btn-soft" onclick="openCatManage('${o.kind}')">카테고리 추가·관리</button>`,o.back);
  const catGridEl=$('catGrid'); /* 카테고리명을 onclick 문자열에 보간하면 인젝션이 되므로, data-cat만 이스케이프해 심고 위임 클릭으로 읽는다(refreshPkCatList가 #catGrid의 innerHTML만 바꿔도 이 위임은 그대로 살아있음) */
  if(catGridEl)catGridEl.onclick=e=>{const b=e.target.closest('.pk-cat');if(b)pkPickCat(b.dataset.cat)};
  requestAnimationFrame(()=>requestAnimationFrame(()=>moveCatBlob(false)));
