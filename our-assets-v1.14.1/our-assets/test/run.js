@@ -351,7 +351,7 @@ const FUNCTIONS = [
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshAllocationHistoryCard', 'refreshInvestGainLossCard',
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
-  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry',
+  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry', 'inqTextInput',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -7457,6 +7457,31 @@ test('sendInquiry: 저장하면 id와 touch()로 찍은 updatedAt을 채운 레�
   assert.strictEqual(sandbox.DB.inquiries[0].updatedAt, 'test-updatedAt');
   assert.strictEqual(sandbox.DB.inquiries[0].text, '다크모드에 OLED 블랙 옵션도 있으면 좋겠어요');
 });
+/* txMemoInput/recMemoInput처럼 inqText도 maxlength 속성만으론 부족하다(백업 복원·클라우드 풀로
+ * 들어온 과거 미클램프 레코드, 혹은 maxlength를 무시하는 환경) — sendInquiry()도 push 직전에
+ * 한 번 더 MEMO_MAX로 clamp한다(app-evolve cycle388 develop). */
+test('sendInquiry: MEMO_MAX를 넘는 내용은 잘려서 저장된다', () => {
+  sandbox.DB = { inquiries: [] };
+  sandbox.inqTextValue = '메'.repeat(sandbox.MEMO_MAX + 50);
+  sandbox.sendInquiry();
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '메'.repeat(sandbox.MEMO_MAX));
+});
+test('sendInquiry: MEMO_MAX 이하 내용은 그대로 저장된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.DB = { inquiries: [] };
+  sandbox.inqTextValue = '다크모드에 OLED 블랙 옵션도 있으면 좋겠어요';
+  sandbox.sendInquiry();
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '다크모드에 OLED 블랙 옵션도 있으면 좋겠어요');
+});
+test('inqTextInput: MEMO_MAX를 넘는 입력은 keystroke마다 즉시 잘린다(txMemoInput과 동일한 패턴)', () => {
+  const el = { value: '메'.repeat(sandbox.MEMO_MAX + 50) };
+  sandbox.inqTextInput(el);
+  assert.strictEqual(el.value, '메'.repeat(sandbox.MEMO_MAX));
+});
+test('inqTextInput: MEMO_MAX 이하 입력은 그대로 유지된다(정상 케이스는 회귀 없음)', () => {
+  const el = { value: '점심 김밥' };
+  sandbox.inqTextInput(el);
+  assert.strictEqual(el.value, '점심 김밥');
+});
 test('openInquiryList: 최신(updatedAt이 큰) 메모가 먼저 나오도록 정렬된다', () => {
   sandbox.DB = { inquiries: [
     { id: 'old', text: '오래된메모', updatedAt: 100 },
@@ -7631,6 +7656,12 @@ test('saveInquiryEdit: 내용을 바꿔 저장하면 text가 갱신되고 touchS
   assert.strictEqual(sandbox.DB.inquiries[0].text, '고친 내용', '앞뒤 공백은 trim되어야 함');
   assert.strictEqual(sandbox.DB.inquiries[0].updatedAt, 'test-updatedAt');
   assert.strictEqual(sandbox.DB.inquiries[0].date, '2026-01-01', '작성일(date)은 수정해도 그대로 유지돼야 함');
+});
+test('saveInquiryEdit: MEMO_MAX를 넘는 내용으로 고치면 잘려서 저장된다(sendInquiry와 동일한 clamp, app-evolve cycle388 develop)', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '원래 내용', updatedAt: 1 }] };
+  sandbox.inqEditTextValue = '메'.repeat(sandbox.MEMO_MAX + 50);
+  sandbox.saveInquiryEdit('q1');
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '메'.repeat(sandbox.MEMO_MAX));
 });
 test('saveInquiryEdit: 존재하지 않는 id를 넘기면 아무 일도 하지 않는다', () => {
   sandbox.DB = { inquiries: [{ id: 'q1', text: '원래 내용', updatedAt: 1 }] };
@@ -18015,6 +18046,17 @@ test('sanitizeBackup: text가 정상 문자열인 문의 메모는 그대로 둔
   assert.strictEqual(data.inquiries[0].id, 'q1');
   assert.strictEqual(fixedCount, 0);
 });
+/* d.memo(10165/10272줄)와 동일한 clamp — inqText/inqEditText의 maxlength는 이 기기의 UI 경로만
+ * 막고, 백업 복원/클라우드 풀로 들어오는 다른 기기의 과거 미클램프 레코드는 못 막는다
+ * (app-evolve cycle388 develop). */
+test('sanitizeBackup: MEMO_MAX를 넘는 문의 메모 text는 잘리고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    inquiries: [{ id: 'q1', date: '2026-01-01', text: '메'.repeat(sandbox.MEMO_MAX + 50) }],
+  });
+  assert.strictEqual(data.inquiries[0].text, '메'.repeat(sandbox.MEMO_MAX));
+  assert.strictEqual(fixedCount, 1);
+});
 
 /* ---------- sanitizeBackup: DB.assetQtyLog(fx/gold/stock 수량 변경 기록, app-evolve cycle138)도
  * txns/assets/recurrences/goals/inquiries와 동일하게 백업 복원·클라우드 풀 경로에서 검증돼야
@@ -18454,6 +18496,14 @@ test('sanitizeBackup: 트래시 메모의 text가 문자열이 아니면 문자�
     trashInquiries: [{ id: 'q1', text: null, _deletedAt: 100 }],
   });
   assert.strictEqual(data.trashInquiries[0].text, '');
+  assert.ok(fixedCount >= 1);
+});
+test('sanitizeBackup: MEMO_MAX를 넘는 트래시 메모 text도 잘리고 fixedCount를 센다(위 srcInquiries 블록과 동일, app-evolve cycle388 develop)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashInquiries: [{ id: 'q1', text: '메'.repeat(sandbox.MEMO_MAX + 50), _deletedAt: 100 }],
+  });
+  assert.strictEqual(data.trashInquiries[0].text, '메'.repeat(sandbox.MEMO_MAX));
   assert.ok(fixedCount >= 1);
 });
 test('sanitizeBackup: 트래시 메모의 _deletedAt이 유한수가 아니면 now로 보정하되, 정상 복구 대상을 통째로 버리지 않는다', () => {

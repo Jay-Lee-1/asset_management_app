@@ -1,22 +1,8 @@
 {
   "cycle": 388,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 382,
-      "phase": "critique",
-      "timestamp": "2026-11-20T12:14:00.000Z",
-      "summary": "syncRates()의 전역 R.failStreak가 fx/stock/crypto 중 하나라도 성공하면 즉시 0으로 리셋돼, 혼합 포트폴리오(주식+코인)에서 코인 API만 지속 실패해도 homeAlerts()의 staleRates 카드가 영원히 안 뜨는 버그 발견. pending_advance_plan에 소스별 개별 failStreak + anyRateSourceStale(logic.js) 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 382,
-      "phase": "advance",
-      "timestamp": "2026-11-20T13:14:00.000Z",
-      "summary": "critique(cycle382)의 계획대로 혼합 포트폴리오 시세 소스별 지속 실패 미경보 버그 수정. syncRates()에 R.fxFailStreak/stockFailStreak/cryptoFailStreak 개별 추적 추가(기존 R.failStreak는 호환 유지), logic.js에 anyRateSourceStale(streaks,threshold=3) 추가, homeAlerts() staleRates 조건을 이 헬퍼로 교체. sanitizeBackup() 숫자 클램프에 새 필드 3개 추가. 테스트 6건 추가. node test/run.js 3715->3719/3719 통과. APP_VERSION 1.47.496->1.47.497, sw.js CACHE v763->v764. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 383,
       "phase": "develop",
@@ -141,6 +127,13 @@
       "phase": "advance",
       "timestamp": "2026-11-21T10:10:00.000Z",
       "summary": "critique(cycle387)의 계획대로 fmtAmt() 금액 입력 커서 끝 이동 버그 수정. index.html에 순수 헬퍼 caretPosAfterFormat(oldValue,oldCaret,newValue) 추가 — oldCaret 앞의 숫자 개수만을 좌표로 써서 newValue(콤마 삽입/제거로 길이가 달라져도)에서 같은 자리를 되찾고, 숫자 0개 구간은 minusConsumed(부호를 이미 지났는지)로 따로 갈라 allowNeg의 선행 '-' 앞/뒤 커서를 구분한다. fmtAmt()는 inp.value 대입 전에 oldValue/oldCaret(selectionStart, 없으면 value.length로 폴백)을 캡처해두고, 대입 후 caretPosAfterFormat 결과로 inp.setSelectionRange(pos,pos)를 호출하되 전체를 try/catch로 감싸 selectionStart/setSelectionRange가 없는 객체(기존 fmtAmt 테스트들이 쓰는 평범한 { value } 객체, 그리고 narrower vm 컨텍스트에 caretPosAfterFormat이 없을 때의 ReferenceError까지)에서도 조용히 넘어가게 했다. test/domstub.js의 DomNode에 selectionStart/selectionEnd/setSelectionRange를 추가했는데, .value setter가 실제 <input>처럼 대입 즉시 커서를 끝으로 옮기도록 만들어(고치기 전 버그를 그대로 재현) setSelectionRange 복원 호출이 빠지면 테스트가 실제로 깨지게 했다. test/run.js FUNCTIONS에 caretPosAfterFormat 추가, caretPosAfterFormat 순수 테스트 6건(쉼표 삽입/끝 입력/중간 삽입으로 쉼표 그룹 재배치/부호 앞·뒤 커서/AMOUNT_MAX 클램프로 숫자 개수가 사라진 경우의 끝 폴백) + domstub input으로 fmtAmt 전체를 실행하는 통합 테스트 3건(중간 삽입 후 커서 복원, allowNeg '-' 뒤 커서 보존, selectionStart 없는 평범한 객체도 안 터짐) 추가. node test/run.js 3757->3766/3766 통과, 메인 <script> 블록 node --check(함수로 파싱)/sw.js/logic.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.507->1.47.508, sw.js CACHE v774->v775. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 388,
+      "phase": "develop",
+      "timestamp": "2026-11-21T11:30:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 fmtAmt/commitTx/Escape검색 등 최근 cycle 주제를 배제 목록으로 주고 조사시켜, 문의하기(DB.inquiries[].text) 메모 입력에 길이 상한이 전혀 없음을 발견(앱의 다른 모든 메모 입력 txMemo/splitMemo/rMemo는 MEMO_MAX=200 maxlength+oninput clamp를 갖춤, sanitizeBackup()도 d.memo는 클램프하지만 같은 함수의 d.text(문의)는 타입만 코어션하고 길이는 안 봄). inqText/inqEditText textarea에 maxlength=\"${MEMO_MAX}\" 추가하고, 신규 oninput 핸들러 inqTextInput(txMemoInput과 동일 패턴)을 둘 다에 연결. sendInquiry()/saveInquiryEdit()도 DB에 push/저장하기 직전에 한 번 더 MEMO_MAX로 clamp(브라우저 간 maxlength 처리 차이에 대한 방어선, 기존 메모 입력 핸들러들의 '한 번 더 clamp' 관례와 동일). sanitizeBackup()의 inquiries/trashInquiries 블록 둘 다에 d.memo(10165/10272줄)와 동일한 'd.text.length>MEMO_MAX면 slice+fixedCount++' clamp를 추가해, 백업 복원/클라우드 풀로 들어오는 다른 기기의 과거 미클램프 레코드(megabyte급 메모가 매 백업/동기화마다 반복 왕복되는 문제)도 막음. 테스트 7건 추가: inqTextInput clamp/정상유지, sendInquiry clamp/정상유지, saveInquiryEdit clamp, sanitizeBackup inquiries/trashInquiries text clamp. test/run.js FUNCTIONS에 inqTextInput 추가. node test/run.js 3766->3773/3773 통과, node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.508->1.47.509, sw.js CACHE v775->v776.",
       "commit": null
     }
   ]

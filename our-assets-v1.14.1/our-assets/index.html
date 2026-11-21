@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.508';
+const APP_VERSION='1.47.509';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -9157,14 +9157,18 @@ function setRate(kind,key,val){const n=Number(String(val).replace(/[^0-9.]/g,'')
 function openInquiry(){
  const n=(DB.inquiries||[]).length;
  openSheet(`<h3>문의하기</h3><div class="desc">불편한 점이나 필요한 기능을 적어두면 이 기기에 저장돼요(백업에도 포함돼요)</div>
-  <div class="field"><textarea id="inqText" placeholder="내용을 입력해 주세요 (예: 이런 기능이 있으면 좋겠어요)"></textarea></div>
+  <div class="field"><textarea id="inqText" maxlength="${MEMO_MAX}" oninput="inqTextInput(this)" placeholder="내용을 입력해 주세요 (예: 이런 기능이 있으면 좋겠어요)"></textarea></div>
   <button class="btn btn-primary" onclick="sendInquiry()">저장하기</button>
   ${n?`<button class="btn btn-soft" style="margin-top:9px" onclick="openInquiryList()">저장한 메모 보기 (${n})</button>`:''}`);
  setTimeout(()=>{const t=$('inqText');t&&t.focus()},300);
 }
+/* txMemoInput(6586줄)·recMemoInput(7038줄)과 동일하게, maxlength 속성과 별개로 oninput에서도
+ * 한 번 더 clamp한다(브라우저별 maxlength 처리 차이에 대한 방어선, app-evolve cycle388 develop). */
+function inqTextInput(el){if(el.value.length>MEMO_MAX)el.value=el.value.slice(0,MEMO_MAX)}
 function sendInquiry(){
- const t=$('inqText');const v=(t&&t.value||'').trim();
+ const t=$('inqText');let v=(t&&t.value||'').trim();
  if(!v){toast('메모 내용을 입력해 주세요');return}
+ if(v.length>MEMO_MAX)v=v.slice(0,MEMO_MAX);
  DB.inquiries=DB.inquiries||[];
  DB.inquiries.push(touch({id:uid(),date:TODAY,text:v})); /* id/updatedAt 없이는 mergeRemoteDataIntoLocal()의 mergeCollection()에 등록할 수 없음(goals/catIcon과 동일한 '최상위 DB 필드 병합 누락' 버그 클래스) */
  save();closeSheet();toast('저장했어요');
@@ -9186,14 +9190,15 @@ function openInquiryList(){
 function editInquiry(id){
  const q=(DB.inquiries||[]).find(x=>x.id===id);if(!q)return;
  openSheet(`<h3>메모 수정</h3><div class="desc">내용을 고쳐서 저장해요.</div>
-  <div class="field"><textarea id="inqEditText" placeholder="내용을 입력해 주세요">${esc(q.text)}</textarea></div>
+  <div class="field"><textarea id="inqEditText" maxlength="${MEMO_MAX}" oninput="inqTextInput(this)" placeholder="내용을 입력해 주세요">${esc(q.text)}</textarea></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openInquiryList()">취소</button><button class="btn btn-primary" onclick="saveInquiryEdit('${id}')">저장</button></div>`);
  setTimeout(()=>{const t=$('inqEditText');t&&t.focus()},300);
 }
 function saveInquiryEdit(id){
  const q=(DB.inquiries||[]).find(x=>x.id===id);if(!q)return;
- const t=$('inqEditText');const v=(t&&t.value||'').trim();
+ const t=$('inqEditText');let v=(t&&t.value||'').trim();
  if(!v){toast('메모 내용을 입력해 주세요');return}
+ if(v.length>MEMO_MAX)v=v.slice(0,MEMO_MAX);
  q.text=v;touchSave(q);closeSheet();openInquiryList();toast('메모를 수정했어요');
 }
 function delInquiry(id){
@@ -10443,6 +10448,7 @@ function sanitizeBackup(obj){
   if(!q||!q.id){droppedCount++;return}
   const d=Object.assign({},q);
   if(typeof d.text!=='string'){d.text=d.text==null?'':String(d.text);fixedCount++}
+  if(d.text.length>MEMO_MAX){d.text=d.text.slice(0,MEMO_MAX);fixedCount++} /* d.memo(10165/10272줄)와 동일한 clamp — inqText/inqEditText의 maxlength는 이 기기의 UI 경로만 막고, 백업 복원/클라우드 풀로 들어오는 다른 기기의 과거 미클램프 레코드는 못 막는다(app-evolve cycle388 develop) */
   inquiries.push(d);
  });
  /* DB.trashInquiries(문의 메모 삭제 '삭제한 메모', app-evolve cycle327 critique/advance)도 바로 위
@@ -10457,6 +10463,7 @@ function sanitizeBackup(obj){
   if(!q||!q.id){droppedCount++;return}
   const d=Object.assign({},q);
   if(typeof d.text!=='string'){d.text=d.text==null?'':String(d.text);fixedCount++}
+  if(d.text.length>MEMO_MAX){d.text=d.text.slice(0,MEMO_MAX);fixedCount++} /* 위 srcInquiries 블록과 동일한 이유(app-evolve cycle388 develop) */
   if(!Number.isFinite(d._deletedAt)){d._deletedAt=Date.now();fixedCount++}
   trashInquiries.push(d);
  });
