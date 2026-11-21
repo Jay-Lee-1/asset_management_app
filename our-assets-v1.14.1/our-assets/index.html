@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.504';
+const APP_VERSION='1.47.505';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -7105,6 +7105,15 @@ function renderRecSheet(){
   * shared를 스케줄 변경 필드로 보지 않아 토글만으로 recSaveScopeConfirm이 불필요하게 뜨지도 않는다
   * (app-evolve cycle315 advance). */
  const sharedChip=(d.type==='expense'&&settleConfigured())?`<button class="sch-chip ${d.shared?'on':''}" onclick="recToggleShared()"><span class="dot"></span>같이 냈어요</button>`:'';
+ /* 매월 반복은 반복일이 그 달 말일을 넘기면 Math.min으로 당월 말일까지 당겨지고(recDates 주석
+  * 참고), 여기에 주말·공휴일 조정(earlier/later)까지 겹치면 실제 첫 결제일이 방금 고른 시작일/
+  * 반복일과 달라질 수 있는데, 지금까지 저장 전엔 이를 미리 볼 방법이 전혀 없어 저장 후 전체내역에
+  * 가서야 "왜 날짜가 다르지"를 알게 됐다(app-evolve cycle386 develop). weekly/biweekly/daily/yearly는
+  * 첫 회차가 항상 시작일 그대로라(recDates의 freq별 분기, weekend 조정은 UI가 monthly에만 노출)
+  * 미리보기가 줄 정보가 없으므로 monthly일 때만 계산한다. recNthDate(base,1)은 이미 검증된 순수
+  * 함수라 새 계산식 없이 그대로 재사용한다. */
+ const nextDue=d.freq==='monthly'?recNthDate({freq:d.freq,day:d.day,startDate:d.startDate,weekend:d.weekend},1):null;
+ const nextDueHint=nextDue?`<div class="psub" style="margin:-10px 0 14px 2px">다음 결제일: ${fmtDateFull(nextDue)}${nextDue!==d.startDate?' (말일/주말·공휴일 조정됨)':''}</div>`:'';
  openFormSheet(`<div class="tx-head"><h3>${editing?'반복 수정':'반복 설정'}</h3>${sharedChip}</div><div class="desc">고정지출·정기수입·이체·저축을 자동 기록해요</div>
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${typeSeg}</div>
   ${catField}
@@ -7117,6 +7126,7 @@ function renderRecSheet(){
   <div class="field"><label>시작일</label><button class="pick" onclick="syncRecInputs();openFieldDatePicker(recDraft.startDate,ds=>{recDraft.startDate=ds;recalcEndCond(recDraft,ds);renderRecSheet(!!recDraft.id)})">
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.startDate)}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="rStart" type="hidden" value="${d.startDate}"></div>
+  ${nextDueHint}
   ${endCondFields(d,'rec')}
   ${(d.type==='transfer'&&DB.settings.confirmTransfers)?`<div class="card" style="box-shadow:none;margin-bottom:14px"><div class="toggle-row"><div><div class="tl">이체 자동 확인</div><div style="font-size:12px;color:var(--text-3);margin-top:2px">끄면 이체일마다 완료 확인을 받아요</div></div><button type="button" class="switch ${d.autoConfirm!==false?'on':''}" role="switch" aria-checked="${d.autoConfirm!==false?'true':'false'}" aria-label="이체 자동 확인" onclick="recDraft.autoConfirm=!(recDraft.autoConfirm!==false);this.classList.toggle('on');this.setAttribute('aria-checked',this.classList.contains('on'))"><i></i></button></div></div>`:''}
   ${d.freq==='monthly'?`<div class="field"><label>주말·공휴일이면</label><button class="pick" onclick="recOpenWeekend()">

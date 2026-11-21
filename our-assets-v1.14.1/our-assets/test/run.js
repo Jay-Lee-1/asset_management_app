@@ -1488,12 +1488,20 @@ test('recNthDate/recCountUntil: 주말 조정이 없는 경우는 영향받지 �
  * 약속하는 순수 함수이므로 그 전제에 기대지 않고 정확해야 한다. */
 test('recNthDate: freq=daily+weekend=earlier에서 버퍼(n+2일)를 넘는 n도 recDates 결과와 정확히 일치한다', () => {
   const base = { freq: 'daily', startDate: '2026-01-01', weekend: 'earlier' };
+  // startDate(2026-01-01) 자체가 KR_FIXED_HOLIDAYS의 신정이라 weekend='earlier'가 첫 원본 후보를
+  // startDate보다 앞(2025-12-31)으로 당긴다 — recNthDate가 이제 그 날짜를 올바르게 포함하므로(아래
+  // 'recNthDate/recCountUntil: earlier가 첫 회차를 startDate 이전으로 당기면...' 테스트 참고),
+  // 비교용 recDates 호출도 recNthDate 내부와 동일한 from(startDate-10일, RECNTH_SHIFT_BUFFER_DAYS)을
+  // 써야 같은 날짜를 센다 — base.startDate를 그대로 from으로 쓰면 그 첫 날짜가 다시 빠져 1개 적게
+  // 세어 n번째 날짜가 하루 밀린다(app-evolve cycle386 develop이 recNthDate/recCountUntil 자체를
+  // 고치며 함께 맞춘 테스트, 이 테스트가 원래 검증하던 "버퍼 두 배 증가" 로직 자체는 그대로다).
+  const wideFrom = sandbox.addDays(base.startDate, -10);
   for (const n of [11, 20, 31]) { // 옛 버퍼(n+2일)로는 모두 null을 반환하던 n들
     const got = sandbox.recNthDate(base, n);
     assert.ok(got, `n=${n}에서 null을 반환함(버퍼 부족 회귀)`);
     const generated = sandbox.recDates(
       { freq: 'daily', startDate: base.startDate, endDate: null, weekend: 'earlier' },
-      base.startDate, got
+      wideFrom, got
     );
     assert.strictEqual(generated.length, n, `n=${n}: recDates가 실제로 만드는 개수와 일치해야 함`);
     assert.strictEqual(generated[generated.length - 1], got, `n=${n}: recNthDate 결과가 recDates의 n번째 날짜여야 함`);
@@ -1513,11 +1521,44 @@ test('recNthDate: freq=daily+weekend=later도 동일하게 큰 n에서 null을 �
 });
 test('recNthDate: 옛 버퍼로도 이미 맞던 작은 n(회귀 가드)과 weekend=none(영향 없음)은 그대로 정확하다', () => {
   const small = sandbox.recNthDate({ freq: 'daily', startDate: '2026-01-01', weekend: 'earlier' }, 3);
+  // 위 테스트와 동일한 이유로 from을 startDate-10일로 넓혀야 한다(2026-01-01이 신정이라 earlier가
+  // 첫 후보를 2025-12-31로 당김, app-evolve cycle386 develop).
   assert.strictEqual(small, sandbox.recDates(
-    { freq: 'daily', startDate: '2026-01-01', endDate: null, weekend: 'earlier' }, '2026-01-01', '2026-01-10'
+    { freq: 'daily', startDate: '2026-01-01', endDate: null, weekend: 'earlier' }, sandbox.addDays('2026-01-01', -10), '2026-01-10'
   )[2]);
   const none = sandbox.recNthDate({ freq: 'daily', startDate: '2026-01-01', weekend: 'none' }, 20);
   assert.strictEqual(none, '2026-01-20', 'weekend=none이면 n번째는 그냥 startDate+19일');
+});
+/* ---------- recNthDate/recCountUntil: earlier가 '첫' 회차를 startDate 이전으로 당기면 통째로
+ * 유실되는 버그 (app-evolve cycle386 develop) ----------
+ * recNthDate/recCountUntil이 recDates(r,from,to)를 부를 때 from으로 base.startDate 자체를 썼다 —
+ * weekend='earlier'인 반복의 원본(미조정) 첫 후보가 바로 startDate이므로(그 뒤 후보는 전부 미래),
+ * startDate 자체가 주말·공휴일이면 shiftWeekend가 그 첫 후보를 startDate보다 이전 평일로 당기고,
+ * push() 내부의 'd>=from' 검사(d=조정된 날짜, from=startDate)에 걸려 그 날짜가 통째로 버려진다.
+ * 반면 실제 원장(expandRec가 넓은 과거 from으로 부르는 recDates)에는 그 당겨진 날짜가 정확히
+ * 찍힌다 — 그래서 recNthDate(base,1)이 실제 원장의 '진짜 첫 회차'가 아니라 그 다음 회차를
+ * 돌려주고, recCountUntil도 같은 구간에서 1개 적게 센다. "횟수" 입력(_applyCount/recalcEndCond)이
+ * 이 값으로 endDate를 역산하므로, 예컨대 "딱 1번만 반복"을 저장해도 실제로는 2번 생성되는 금전
+ * 정확성 버그였다. 2025-11-01은 토요일이라 monthly day=1+earlier가 바로 이 경로를 탄다. */
+test('recNthDate: weekend=earlier가 startDate 자체(토요일)를 이전 평일로 당기면, 그 조정된 날짜를 1번째 회차로 올바르게 돌려준다(이전엔 다음 달로 건너뛰어 통째로 유실됨)', () => {
+  const base = { freq: 'monthly', day: 1, startDate: '2025-11-01', weekend: 'earlier' }; // 2025-11-01은 토요일
+  const first = sandbox.recNthDate(base, 1);
+  assert.strictEqual(first, '2025-10-31', '토요일(2025-11-01)을 앞당긴 금요일이 실제 1번째 회차여야 함(다음 달인 2025-12-01로 건너뛰면 회귀)');
+  const ledger = sandbox.recDates(
+    { freq: 'monthly', day: 1, startDate: '2025-11-01', endDate: null, weekend: 'earlier' },
+    '2020-01-01', '2026-01-01' // 실제 원장이 쓰는 것처럼 넉넉히 넓은 from
+  );
+  assert.strictEqual(first, ledger[0], 'recNthDate(base,1)은 실제 원장에 찍히는 첫 회차와 정확히 같아야 함');
+});
+test('recCountUntil: weekend=earlier로 당겨진 첫 회차도 구간 횟수에 포함해 센다(이전엔 1개 적게 셈)', () => {
+  const base = { freq: 'monthly', day: 1, startDate: '2025-11-01', weekend: 'earlier' };
+  assert.strictEqual(sandbox.recCountUntil(base, '2025-10-31'), 1, '당겨진 첫 회차(10/31) 자신까지는 1회여야 함');
+  assert.strictEqual(sandbox.recCountUntil(base, '2025-12-01'), 2, '10/31(당겨진 1회차)+12/1(2회차)=2회여야 함(이전엔 12/1만 세어 1이 나왔음)');
+});
+test('recNthDate/recCountUntil: 같은 구조라도 weekend=later는 항상 미래로만 밀어 영향이 없다(회귀 가드 — earlier만 고치고 later를 건드리지 않았는지 확인)', () => {
+  const base = { freq: 'monthly', day: 1, startDate: '2025-11-01', weekend: 'later' }; // 토요일 → 월요일(11/3)로
+  assert.strictEqual(sandbox.recNthDate(base, 1), '2025-11-03');
+  assert.strictEqual(sandbox.recCountUntil(base, '2025-11-03'), 1);
 });
 test('recNthDate/recCountUntil: biweekly도 recDates 결과와 정확히 일치한다', () => {
   const base = { freq: 'biweekly', startDate: '2026-01-05', weekend: 'none' };
@@ -34664,6 +34705,31 @@ test('[실행형] renderRecSheet: rMemo(recDraft.memo)에 &/"가 있어도 esc()
   const html = sandbox.lastSheetHtml;
   assert.ok(html.includes(`id="rMemo" maxlength="${sandbox.MEMO_MAX}" value="R&amp;D &quot;테스트&quot;"`), 'rMemo의 value가 esc(d.memo)로 이스케이프되지 않음(풀린 &가 그대로 남아 디코드 드리프트 위험)');
   assert.ok(!html.includes('value="R&D'), 'rMemo의 value에 이스케이프 안 된 생 &가 남아있으면 안 됨');
+});
+/* renderRecSheet: '다음 결제일' 미리보기 (app-evolve cycle386 develop) — 매월 반복은 반복일이
+ * 그 달 말일을 넘기면 당월 말일까지 당겨지고(Math.min clamp), 여기에 주말·공휴일 조정까지 겹치면
+ * 실제 첫 결제일이 방금 고른 시작일/반복일과 달라질 수 있는데, 지금까지 저장 전엔 이를 미리 볼
+ * 방법이 전혀 없었다. recNthDate(base,1)(logic.js, 이미 검증된 순수 함수)을 재사용해 보여준다. */
+test('[실행형] renderRecSheet: 반복일이 시작일과 정확히 일치하는 매월 반복은 "다음 결제일" 힌트에 조정 안내 없이 시작일 그대로를 보여준다', () => {
+  setupTxSheetDB();
+  sandbox.recDraft = { id: null, type: 'expense', category: '식비', memo: '', amount: 0, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 10, startDate: '2026-03-10', endDate: null, count: null, skip: [], edits: {} };
+  sandbox.renderRecSheet();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes(`다음 결제일: ${sandbox.fmtDateFull('2026-03-10')}`), '시작일과 반복일이 일치하면 다음 결제일도 시작일 그대로여야 함');
+  assert.ok(!html.includes('조정됨'), '조정이 없는데 조정 안내가 뜨면 안 됨');
+});
+test('[실행형] renderRecSheet: 반복일(31일)이 그 달 말일을 넘겨 당겨지면(4월=30일) "다음 결제일" 힌트가 실제 조정된 날짜와 조정 안내를 함께 보여준다', () => {
+  setupTxSheetDB();
+  sandbox.recDraft = { id: null, type: 'expense', category: '식비', memo: '', amount: 0, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 31, startDate: '2026-04-05', endDate: null, count: null, skip: [], edits: {} };
+  sandbox.renderRecSheet();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes(`다음 결제일: ${sandbox.fmtDateFull('2026-04-30')} (말일/주말·공휴일 조정됨)`), '4월엔 31일이 없어 30일로 당겨진 실제 날짜와 조정 안내가 함께 보여야 함');
+});
+test('[실행형] renderRecSheet: monthly가 아닌 주기(weekly 등)는 "다음 결제일" 힌트를 보여주지 않는다(첫 회차가 항상 시작일과 같아 알려줄 정보가 없음)', () => {
+  setupTxSheetDB();
+  sandbox.recDraft = { id: null, type: 'expense', category: '식비', memo: '', amount: 0, fromAssetId: 'a1', toAssetId: null, freq: 'weekly', day: null, startDate: '2026-03-10', endDate: null, count: null, skip: [], edits: {} };
+  sandbox.renderRecSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('다음 결제일'), 'weekly는 weekend 조정 UI 자체가 없어(freq==monthly 전용) 힌트가 불필요한 정보만 반복하므로 숨겨야 함');
 });
 test('renderTxSheet: type별로 자산 필드가 from/to 중 올바른 조합으로 나온다', () => {
   setupTxSheetDB();

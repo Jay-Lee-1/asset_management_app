@@ -135,10 +135,27 @@ function monthlyEquivalent(r){
 }
 /* 반복 종료 조건: 횟수 ↔ 종료일 (엔진 recDates 재사용 → 규칙 100% 일치) */
 function addMonthsStr(ds,m){const d=new Date(ds+'T00:00:00');d.setMonth(d.getMonth()+m);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+/* recNthDate/recCountUntil가 recDates(r,from,to)를 호출할 때 from으로 base.startDate 자체를 그대로
+ * 썼었다 — weekend='earlier'인 반복의 '첫' 원본 후보가 바로 startDate라서(그 뒤 후보는 전부 그보다
+ * 미래), shiftWeekend가 그 첫 후보를 이전 평일로 당기면(예: monthly day=1+earlier, startDate가
+ * 토요일 → 그 전 금요일로) push() 내부의 'd>=from' 검사(d=조정된 날짜, from=startDate)에 걸려
+ * 통째로 버려진다. recDates()의 monthly/yearly/daily/weekly/biweekly 루프는 이미 원본(미조정)
+ * 후보가 raw>=r.startDate일 때만 push()를 부르므로(recDates 위 주석과 동일한 불변식), from을
+ * 더 낮춰도 새로운 원본 후보가 섞여 들어오지 않는다 — shiftWeekend가 당길 수 있는 최대 폭(아래
+ * RECNTH_SHIFT_BUFFER_DAYS, shiftWeekend의 n<10 상한과 동일)만큼만 from을 앞당기면 '조정된' 첫
+ * 날짜가 안전하게 포함된다. 그 결과 recNthDate(base,1)이 실제 원장(expandRec가 넓은 from으로
+ * 부르는 recDates)에 찍히는 날짜와 달라지고, recCountUntil도 같은 구간에서 1개 적게 세 — "횟수"
+ * 입력(_applyCount/recalcEndCond)으로 역산한 endDate가 실제보다 한 회차 뒤로 밀려, 예컨대 "1번만
+ * 반복"을 저장해도 실제로는 2번 생성되는 금전 정확성 버그였다(app-evolve cycle386 develop,
+ * 날짜 선택기 방향키(cycle385)·회귀 테스트 탐색 중 발견). weekend='later'는 항상 미래로만 밀어
+ * from보다 작아질 수 없어 처음부터 영향이 없었다(위 '주말 조정 무시 버그' 테스트가 later만 다루는
+ * 이유). */
+const RECNTH_SHIFT_BUFFER_DAYS=10;
 function recNthDate(base,n){ /* n번째 반복 날짜 */
  n=Math.min(999,Math.max(0,Number(n)||0));if(n<1||!base.startDate)return null;
  const f=base.freq||'monthly';
  const rbase={freq:f,day:base.day,startDate:base.startDate,endDate:null,weekend:base.weekend};
+ const winFrom=addDays(base.startDate,-RECNTH_SHIFT_BUFFER_DAYS);
  /* 아래 버퍼(+2단위)는 "후보 n+2개를 만들면 결과도 n+2개 안팎"이라는 가정인데, freq='daily'+
     weekend='earlier'|'later'에서는 토/일 후보가 평일로 당겨지거나 미뤄지면서 그 평일에 이미 push된
     날짜와 같아져 recDates()의 인접 중복 제거(push())로 사라진다 — 주 7일 중 2일이 매번 다른 날과
@@ -158,14 +175,14 @@ function recNthDate(base,n){ /* n번째 반복 날짜 */
   else if(f==='weekly')to=addDays(base.startDate,(n+2)*7*span);
   else if(f==='biweekly')to=addDays(base.startDate,(n+2)*14*span);
   else to=addDays(base.startDate,(n+2)*span);
-  ds=recDates(rbase,base.startDate,to);
+  ds=recDates(rbase,winFrom,to);
   span*=2;
  }while(ds.length<n&&span<=64);
  return ds[n-1]||null;
 }
 function recCountUntil(base,endDate){ /* 시작일~종료일 사이 반복 횟수 */
  if(!endDate||!base.startDate)return null;
- return recDates({freq:base.freq||'monthly',day:base.day,startDate:base.startDate,endDate:null,weekend:base.weekend},base.startDate,endDate).length;
+ return recDates({freq:base.freq||'monthly',day:base.day,startDate:base.startDate,endDate:null,weekend:base.weekend},addDays(base.startDate,-RECNTH_SHIFT_BUFFER_DAYS),endDate).length;
 }
 function truncateRecEnd(base,cutoffDate){ /* 반복을 cutoffDate까지로 자를 때 endDate·count를 항상 함께 맞춘다 — count 없이 endDate만 남으면 clampRecurringToMaturity()가 이 명시적 절단을 자기 auto-clamp로 오인해 나중에 만기 연장 시 삭제된 회차를 되살린다(recApply/recSave/splitRecurrenceAt이 공유하는 불변식) */
  return {endDate:cutoffDate,count:recCountUntil(base,cutoffDate)};

@@ -1,15 +1,8 @@
 {
   "cycle": 386,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 379,
-      "phase": "advance",
-      "timestamp": "2026-11-20T01:30:00.000Z",
-      "summary": "critique(cycle379)의 계획대로 goalHistoryFor()에 _balCache/_recCache와 같은 LRU 캡 패턴의 _goalHistCache(Map, GOAL_HIST_CACHE_MAX=40) 추가. invalidateBalances()에서 함께 clear. node test/run.js 3697->3698/3698 통과. APP_VERSION 1.47.490->1.47.491, sw.js CACHE v757->v758. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 380,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-21T01:10:00.000Z",
       "summary": "critique(cycle385)의 계획대로 날짜 선택기 캘린더 그리드에 방향키 탐색 추가. dpMonthBlock()의 .dp-cell 버튼에 data-date 속성을 추가하고, #dpScroll에 onkeydown=\"dpGridKeydown(event)\"를 onscroll과 같은 인라인 속성 패턴으로 달아 매 renderDatePicker() 재렌더에도 끊기지 않게 했다. 순수 날짜 계산은 dpStepDate(ds,key)로 분리(ArrowLeft/Right=addDays(±1), ArrowUp/Down=addDays(±7), Home/End=그 달 1일/말일, PageUp/PageDown=addMonths(±1, 월말 clamp), 모르는 key는 그대로 반환) — whTargetIdx가 DOM 없이 순수 인덱스 계산만 테스트되는 것과 같은 분리 원칙. dpGridKeydown(e)은 e.target의 .dp-cell[data-date]를 찾아 dpStepDate로 다음 날짜를 구하고 dpFocusDate(ds)에 넘긴다. dpFocusDate는 대상 셀이 아직 렌더 안 됐으면(스크롤 끝 근처) dpExtend(sc,dir)로 최대 4번까지 이어붙인 뒤 focus()+scrollIntoView({block:'nearest'})한다. 선택 커밋(dpPick)은 건드리지 않음 — 포커스된 <button>의 기본 Enter/Space→click 동작에 그대로 맡겨 탐색과 커밋을 분리했다. dpStepDate에 테스트 6건 추가(ArrowLeft/Right 월경계 롤오버, ArrowUp/Down 7일, Home/End 윤년 2월 포함, PageUp/PageDown addMonths와 동일 clamp, 모르는 key). test/run.js FUNCTIONS에 'dpStepDate' 추가. node test/run.js 3742->3747/3747 통과, 메인 <script> 블록 node --check/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.503->1.47.504, sw.js CACHE v770->v771. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 386,
+      "phase": "develop",
+      "timestamp": "2026-11-21T04:15:00.000Z",
+      "summary": "recNthDate/recCountUntil(logic.js:138-170)이 recDates(r,from,to)를 부를 때 from으로 base.startDate 자체를 그대로 써, weekend='earlier'인 반복의 첫 원본 후보(=startDate)가 주말·공휴일이라 그 이전 평일로 당겨지면 push()의 'd>=from' 검사에 걸려 통째로 유실되는 버그 발견 및 수정(예: monthly day=1+earlier, startDate=2025-11-01(토) → 실제 첫 회차는 2025-10-31인데 기존엔 다음달 2025-12-01을 1번째로 오판했고, recCountUntil도 같은 구간에서 1개 적게 셈 — '횟수' 입력(_applyCount/recalcEndCond)으로 역산하는 endDate가 한 회차 뒤로 밀려 '1번만 반복'을 저장해도 실제로는 2번 생성되는 금전 정확성 버그였다). shiftWeekend의 최대 이동폭(10일)만큼 from을 앞당긴 RECNTH_SHIFT_BUFFER_DAYS=10 버퍼를 추가해 고침 — recDates 자체의 raw ds>=r.startDate 가드는 그대로라 새 원본 후보가 섞여 들어오지 않고, weekend='later'는 항상 미래로만 밀어 처음부터 영향이 없었다. 기존 self-consistency 테스트 2건(daily+earlier, startDate=2026-01-01이 신정이라 같은 경로를 타던 테스트)이 narrow window(from=startDate)로 비교해 회귀로 깨져 wideFrom(startDate-10일)으로 같이 수정. 신규 회귀 테스트 3건 추가(첫 회차 유실 가드/recCountUntil 카운트 가드/later 영향 없음 가드). 부가로 renderRecSheet()(index.html:7086)에 '다음 결제일' 미리보기 힌트를 추가해(recNthDate(base,1) 재사용, monthly일 때만 노출) 반복일이 말일을 넘기거나 주말·공휴일로 조정될 때 저장 전에 실제 날짜를 미리 볼 수 있게 함(새 계산식 없이 기존 순수 함수만 재사용). 테스트 3건 추가. node test/run.js 3747->3753/3753 통과, node --check logic.js/sw.js/메인 script 블록 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.504->1.47.505, sw.js CACHE v771->v772.",
       "commit": null
     }
   ]
