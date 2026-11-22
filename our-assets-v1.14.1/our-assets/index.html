@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.515';
+const APP_VERSION='1.47.516';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -5549,9 +5549,10 @@ function saveAsset(editing){
  const setBase=(origBase)=>{if(!balType)return;invalidateBalances(null,{recsChanged:false}); /* 기준값 역산용 재계산 — DB.recurrences는 안 바뀌므로 _recCache 보존(app-evolve cycle207 advance) */
    const contrib=balanceAt(d.id,TODAY)-origBase; /* 오늘까지 순입출금(기준값 제외) */
    d[balKey]=Math.round(entered-contrib);if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;};
- let prevMaturity=null;touch(d);
+ let prevMaturity=null,origAsset=null,adjUndo=null,qtyLogId=null,settleTxnId=null;touch(d);
  if(editing){
    const i=DB.assets.findIndex(a=>a.id===d.id);
+   origAsset=i>=0?JSON.parse(JSON.stringify(DB.assets[i])):null; /* 편집 전 자산 전체 깊은 복제 — undo 복원용(commitRec의 prevSettle 깊은복제 관례와 동일, app-evolve cycle391 advance) */
    const origBase=assetBase(DB.assets[i]); /* 교체 전 원래 기준값 */
    prevMaturity=DB.assets[i]&&DB.assets[i].maturityDate; /* 교체 전 원래 만기일 — clampRecurringToMaturity가 만기 연장 여부를 판단하는 데 씀 */
    const hasAdj=balType&&(DB.txns||[]).some(t=>t.adjust&&t.adjustAsset===d.id);
@@ -5559,7 +5560,20 @@ function saveAsset(editing){
      d[balKey]=origBase;
      if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;
      DB.assets[i]=d;
+     const prevAdj=(DB.txns||[]).find(t=>t.adjust&&t.adjustAsset===d.id);
+     const prevAdjSnap=prevAdj?JSON.parse(JSON.stringify(prevAdj)):null; /* 조정 내역 수정 전 스냅샷 — undo가 updateBalanceAdjust의 3가지 결과(필드만 수정/gap=0으로 톰스톤 삭제/신규 생성)를 구분해 되돌릴 근거(app-evolve cycle391 advance) */
      updateBalanceAdjust(d,entered); /* 입력 금액에 맞춰 조정 내역 수정 */
+     const afterAdj=(DB.txns||[]).find(t=>t.adjust&&t.adjustAsset===d.id);
+     const afterAdjId=afterAdj?afterAdj.id:null;
+     adjUndo=()=>{
+       if(prevAdjSnap){
+         const cur=(DB.txns||[]).find(t=>t.id===prevAdjSnap.id);
+         if(cur)Object.assign(cur,prevAdjSnap); /* 필드만 수정된 경우: 원래 값으로 복원 */
+         else{DB.txns.push(prevAdjSnap);if(DB.deletedIds)delete DB.deletedIds[prevAdjSnap.id];} /* gap=0으로 톰스톤 삭제된 경우: 되살리고 톰스톤 해제 */
+       }else if(afterAdjId){
+         DB.txns=DB.txns.filter(t=>t.id!==afterAdjId); /* 조정 내역이 신규 생성된 경우: 제거 */
+       }
+     };
    }else if(isMarketValued(d)){ /* fx/gold/stock: balType처럼 거래로 남는 조정 내역이 없어, 수량을
        덮어쓰기 전에 변경폭을 DB.assetQtyLog에 기록해둔다 — 이전엔 saveAsset()이 그냥 덮어써서
        수량이 언제·얼마나 바뀌었는지 아무 기록도 남지 않았다(app-evolve cycle138 advance) */
@@ -5577,9 +5591,10 @@ function saveAsset(editing){
        if(newQty>prevQty&&addedCost>0)qtyLogEntry.addedAmount=addedCost; /* 투입액 이력을 openAssetQtyLog에서 재구성할 수 있도록 남김 */
        if(saleResult&&saleResult.realizedGain!=null){qtyLogEntry.saleProceeds=saleProceeds;qtyLogEntry.realizedGain=saleResult.realizedGain;} /* 실현손익 이력을 openAssetQtyLog에서 재구성할 수 있도록 남김 */
        DB.assetQtyLog.push(touch(qtyLogEntry));
+       qtyLogId=qtyLogEntry.id; /* undo가 이 기록만 지목해 제거할 근거(app-evolve cycle391 advance) */
      }
      const settleTxn=settleTxnForQtyChange(prevQty,newQty,addedCost,saleProceeds,settleAssetId,d.name,TODAY); /* 결제·수령 통장을 골랐을 때만 그 통장 쪽에 돈이 움직였다는 거래를 남김(app-evolve cycle357 advance) */
-     if(settleTxn)DB.txns.push(touch(Object.assign({id:uid()},settleTxn)));
+     if(settleTxn){settleTxnId=uid();DB.txns.push(touch(Object.assign({id:settleTxnId},settleTxn)));} /* id를 미리 뽑아 쥐고 있어야 undo가 이 거래만 지목해 제거할 수 있음(app-evolve cycle391 advance) */
    }else{
      d[balKey]=origBase; /* 원래 기준값 유지한 채 교체 */
      if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;
@@ -5603,7 +5618,21 @@ function saveAsset(editing){
   * owner 일치 필터에 걸려 그 목표가 자산의 실제 귀속 캐러셀에서는 더 이상 보이지 않고(옛 귀속에서는
   * 여전히 "보이지만" 자산 내용과 안 맞는 혼란스러운 상태로 남는다(app-evolve cycle230 develop). */
  (DB.goals||[]).forEach(g=>{if(g.type==='asset'&&g.linkedAssetId===d.id&&g.owner!==d.owner){g.owner=d.owner;touch(g)}});
- save();closeSheet();renderCurrent();toast(editing?'자산을 수정했어요':'자산을 등록했어요');
+ save();closeSheet();renderCurrent();
+ const msg=editing?'자산을 수정했어요':'자산을 등록했어요';
+ /* 신규 등록(editing=false, origAsset=null)은 트래시로 지우면 되므로 기존 toast()만 유지 — 수정은
+  * commitTx/commitRec과 동일하게 undoToast로, undo 시점에 orig.id로 다시 찾아 교체한다(배열 인덱스를
+  * 클로저하면 6초 윈도우 동안 배경 동기화로 자리가 바뀔 수 있음, app-evolve cycle391 advance) */
+ if(origAsset){
+   undoToast(msg,()=>{
+     const j=DB.assets.findIndex(a=>a.id===origAsset.id);
+     if(j>=0)DB.assets[j]=JSON.parse(JSON.stringify(origAsset));else DB.assets.push(JSON.parse(JSON.stringify(origAsset)));
+     if(adjUndo)adjUndo();
+     if(qtyLogId)DB.assetQtyLog=(DB.assetQtyLog||[]).filter(q=>q.id!==qtyLogId);
+     if(settleTxnId)DB.txns=DB.txns.filter(t=>t.id!==settleTxnId);
+     save();renderCurrent();toast('되돌렸어요');
+   });
+ }else toast(msg);
  if(rateWasUnknown)syncRates(true); /* autoSyncRates()의 10분 TTL을 기다리지 않고 즉시 당겨와, 방금 등록한 자산이 순자산에서 조용히 ₩0으로 비는 시간을 줄임 */
 }
 /* 저축통장 만기일이 생기면, 그 통장으로 '입금'하는 반복의 종료일을 만기 직전 마지막 이체일로 맞춤.

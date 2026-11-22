@@ -1,19 +1,8 @@
 {
-  "cycle": 391,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "saveAsset() 자산 수정 3갈래 분기에 undo 없음 — commitTx/commitRec과 어긋나는 공백",
-    "why": "index.html:5518 saveAsset()의 editing 분기(5553-5588행)는 hasAdj(조정내역 보유, 5557-5562행)/isMarketValued(fx·gold·stock·crypto, 5563-5582행)/else(평범한 balType 자산, 5583-5588행) 3갈래 전부 DB.assets[i]=d로 직접 덮어쓰고 끝에서(5606행) 그냥 toast('자산을 수정했어요')만 띄운다 — orig 캡처도 undoToast도 없다. 같은 '편집=원본 캡처+undoToast' 패턴을 거래 수정(commitTx, index.html:6872, cycle386 advance)과 반복거래 수정(commitRec, index.html:7232, cycle293)은 이미 갖추고 있는데, 자산 수정만 비대칭으로 빠져 있다. 더 심각한 건 이 분기들이 단순 필드 교체가 아니라 부작용을 만든다는 점 — hasAdj는 updateBalanceAdjust()(5145행)로 '잔액 조정' 거래를 새로 만들거나 수정·톰스톤 삭제하고, isMarketValued는 DB.assetQtyLog에 새 기록을 push하고 조건에 따라 settleTxnForQtyChange()가 만든 결제 거래까지 DB.txns에 추가한다. 금액을 잘못 고쳐 저장(예: 보유수량 입력 실수)하면 자산 값뿐 아니라 이 부작용 레코드들까지 조용히 영구 반영되어 되돌릴 방법이 없다 — 이것이 바로 cycle386 critique가 '3갈래라 더 크다'며 별도 사이클로 미뤄둔 이유이고(summary: 'saveAsset()의 3갈래 편집 분기는 더 큰 별도 사이클로 미룸'), cycle387~391 동안 아무 cycle도 집지 않았다(배제 목록에도 없음).",
-    "approach": "saveAsset() editing 분기 진입 직후(5554행 i 산출 직후)에 orig=JSON.parse(JSON.stringify(DB.assets[i]))로 전체 자산을 깊은 복제해둔다(commitRec의 prevSettle 깊은복제 관례와 동일). 분기별로 되돌릴 부작용도 함께 캡처: (1) hasAdj 분기는 updateBalanceAdjust(d,entered) 호출 전에 prevAdj=(DB.txns||[]).find(t=>t.adjust&&t.adjustAsset===d.id)를 깊은 복제(prevAdjSnap, 없으면 null)해두고, 호출 후 현재 adjust 거래 상태와 비교해 undo 시 (a) prevAdjSnap이 있고 지금도 같은 id로 있으면 그 필드만 prevAdjSnap으로 복원, (b) prevAdjSnap이 있는데 지금 톰스톤으로 지워졌으면(gap===0 케이스) DB.txns에 다시 push하고 DB.deletedIds[id]를 delete, (c) prevAdjSnap이 null인데 updateBalanceAdjust가 addBalanceAdjust로 새 조정거래를 만들었으면 그 새 거래를 id로 filter해서 제거. (2) isMarketValued 분기는 qtyLogEntry.id/settleTxn 생성 직후(5576/5582행) 그 id들을 지역변수로 쥐고 있다가, undo 시 DB.assetQtyLog/DB.txns에서 해당 id로 제거. (3) else 분기는 orig 복원만으로 충분. 세 분기 공통으로 DB.assets[i]=d 대신 DB.assets 교체 지점을 orig 캡처 이후로 유지하고, 5606행 save();closeSheet();renderCurrent();toast(...) 를 commitTx와 동일하게 'orig가 있으면 undoToast(msg, undoFn)로, 신규 등록(else 분기, d.id 없음)은 기존 toast() 유지'로 분기한다. undoFn은 commitTx의 교훈대로 고정 배열 인덱스를 클로저하지 않고 DB.assets.findIndex(a=>a.id===orig.id)로 재탐색해 교체하고, 위에서 캡처한 부작용 되돌리기를 순서대로 적용한 뒤 save();renderCurrent();toast('되돌렸어요')로 마무리한다. 테스트는 test/run.js에 FUNCTIONS로 saveAsset 추가 후 최소 (a) hasAdj 분기 수정+undo로 조정거래 필드 원복, (b) hasAdj 분기에서 gap=0으로 조정거래가 톰스톤 삭제된 경우 undo로 톰스톤 해제+거래 복원, (c) isMarketValued 분기 수정+undo로 새로 생긴 assetQtyLog/정산거래 제거, (d) else 분기 수정+undo로 단순 필드 원복, (e) 신규 등록(editing=false)은 undoToast 안 부르고 기존 toast 유지 — commitTx가 cycle386에 추가한 'i>=0일 때만 undo' 가드와 동일한 회귀 테스트 구조를 그대로 재사용한다."
-  },
+  "cycle": 392,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 386,
-      "phase": "advance",
-      "timestamp": "2026-11-21T07:10:00.000Z",
-      "summary": "critique(cycle386)의 계획대로 commitTx() 기존 거래 수정에 undo 추가. i>=0(기존 거래 교체) 분기에서 DB.txns[i]=d 직전에 orig=DB.txns[i]를 캡처하고, 성공 토스트를 orig가 있을 때만 undoToast(msg, undoFn)로 교체했다. commitRec()(7233행)과 달리 undoFn은 교체 당시의 배열 인덱스 i를 클로저하지 않고 undo 시점에 orig.id로 DB.txns를 다시 findIndex해 찾는다 — 거래 수정 후 6초 undo 윈도우 동안에도 백그라운드 클라우드 머지·정산 이체 생성 등이 배열 길이/순서를 바꿀 수 있어 고정 인덱스가 틀린 자리를 가리킬 위험이 있기 때문(정산/반복은 애초에 고정 인덱스라 그 위험이 없다). 신규 저장(d.id 없음, orig===null)은 트래시로 지우면 되므로 기존 toast() 그대로 유지. 테스트 3건 추가: 기존 거래 수정+undo 복원(금액/메모), 신규 저장은 undoToast 안 부름, undo 윈도우 중 배열 앞에 레코드가 끼어들어도 orig.id로 올바르게 되돌림(인덱스 클로저였다면 실패했을 케이스). node test/run.js 3753->3756/3756 통과, node --check(메인 script 블록 추출)/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.505->1.47.506, sw.js CACHE v772->v773. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 387,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-22T06:30:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-391 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx undo, 트래시 허브 통합 등)을 주고 전략적 재검토시킴. saveAsset()(index.html:5518)의 editing 분기 3갈래(hasAdj/isMarketValued/else, 5553-5588행)가 전부 DB.assets[i]=d로 직접 덮어쓰고 평범한 toast만 띄워 undo가 없음을 재확인 — commitTx()(cycle386)/commitRec()(cycle293)은 이미 orig캡처+undoToast로 같은 위험을 막았는데 saveAsset()만 비대칭으로 빠져 있고, 이 자체는 cycle386 critique가 이미 발견해 '3갈래라 범위가 더 크다'며 별도 사이클로 명시적으로 미뤄둔 채 cycle387~391 동안 아무도 집지 않은 항목이다. hasAdj 분기는 updateBalanceAdjust()가 '잔액 조정' 거래를 신규/수정/톰스톤 삭제하고, isMarketValued 분기는 DB.assetQtyLog push + settleTxnForQtyChange() 결제거래 추가까지 만들어내는 부작용이 있어, 단순 필드 교체보다 되돌릴 범위가 넓다. 조사 중 기각한 가설들: transfer 통화 불일치(openAssetPicker가 excludeMarketValued로 이미 원천 차단), CSV 가져오기 비대칭(cycle275에서 '내보내기 전용' 설계로 이미 명문화), SRI TODO(이 컨테이너가 jsdelivr/kakaocdn을 403 차단해 구현 불가 재확인), 음력 공휴일표 2028년 상한(아직 여유 있어 보류). pending_advance_plan에 saveAsset() 3갈래 전체(필드 복원 + hasAdj의 조정거래 원복 3케이스 + isMarketValued의 신규 assetQtyLog/정산거래 제거, i>=0일 때만 undoToast)를 범위로 한 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 391,
+      "phase": "advance",
+      "timestamp": "2026-11-22T03:13:51.563Z",
+      "summary": "critique(cycle390)의 계획대로 saveAsset() 자산 수정(editing=true) 3갈래 분기(hasAdj/isMarketValued/else) 전부에 undo 추가. editing 분기 진입 직후 origAsset=JSON.parse(JSON.stringify(DB.assets[i]))로 자산 전체를 깊은 복제해두고(commitRec의 prevSettle 관례와 동일), 분기별 부작용도 함께 캡처: (1) hasAdj — updateBalanceAdjust() 호출 전 조정 거래(adjust&&adjustAsset===d.id) 스냅샷(prevAdjSnap)을 떠두고, 호출 후 현재 조정 거래 id(afterAdjId)와 비교해 undo 시 (a) 같은 id로 남아있으면 Object.assign으로 필드만 복원, (b) gap=0으로 톰스톤 삭제됐으면 DB.txns에 되살리고 DB.deletedIds에서 해제, (c) 신규 생성됐으면(prevAdjSnap null) afterAdjId로 filter해서 제거. (2) isMarketValued — qtyLogEntry.id/settleTxnId를 지역변수로 쥐고 있다가 undo 시 DB.assetQtyLog/DB.txns에서 해당 id만 filter 제거(수량·매입원가 자체는 origAsset 복원으로 커버). (3) else는 origAsset 복원만으로 충분. 끝의 save();closeSheet();renderCurrent();toast(...)를 commitTx와 동일하게 origAsset이 있으면(editing=true) undoToast(msg,undoFn)로, 신규 등록(editing=false, origAsset=null)은 기존 toast()로 분기. undoFn은 DB.assets.findIndex(a=>a.id===origAsset.id)로 재탐색해 배열 위치가 바뀌어도 안전하게 교체(commitTx cycle386의 교훈과 동일). test/run.js에 saveAsset undo 테스트 5건 추가: hasAdj 필드수정 복원, hasAdj gap=0 톰스톤 복원, isMarketValued 수량/매입원가+assetQtyLog/결제거래 제거, else 평범한 필드 복원, 신규등록은 undoToast 안 부름. node test/run.js 3851->3856/3856 통과, 메인 <script> 4블록 모두 node Function 파싱 통과, logic.js/sw.js node --check 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.515->1.47.516, sw.js CACHE v782->v783. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

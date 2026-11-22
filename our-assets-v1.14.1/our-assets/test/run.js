@@ -20948,6 +20948,124 @@ test('duplicateAsset → saveAsset: 복제본을 저장하면 원본은 그대�
   assert.strictEqual(dup.name, '토스뱅크 복사');
   assert.strictEqual(dup.baseAmount, 300000, '복제본은 새로 입력한 잔액으로 저장돼야 함');
 });
+
+/* ---------- saveAsset: 자산 수정(editing=true) 3갈래(hasAdj/isMarketValued/else)에 undo 추가
+ * (app-evolve cycle391 advance). commitTx()(cycle386)/commitRec()(cycle293)은 이미 '편집 전
+ * 원본 캡처 + undoToast'로 잘못 고친 수정을 되돌릴 수 있는데, saveAsset()만 이 안전망이 없었다.
+ * 편집 직후 자산 전체를 깊은 복제(origAsset)해 undo의 기준으로 쓰고, hasAdj/isMarketValued
+ * 분기가 만드는 부작용(조정 내역 수정·삭제·신규생성 / assetQtyLog 신규기록 / 결제·수령 거래)도
+ * 각각 되돌린다. 신규 등록(editing=false)은 트래시로 지우면 되므로 그대로 toast()만 유지한다. ---------- */
+test('saveAsset: hasAdj 분기(조정 내역이 이미 있는 자산) 수정 — undoToast로 자산 필드와 조정 내역 금액이 모두 원래대로 복원된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '비상금', type: 'cash', baseAmount: 4000, includeInTotal: true }],
+    txns: [{ id: 'adj1', date: '2026-06-01', type: 'income', category: sandbox.ADJUST_CAT, memo: '재등록 잔액 조정', amount: 1000, fromAssetId: null, toAssetId: 'a1', adjust: true, adjustAsset: 'a1' }],
+    recurrences: [],
+  };
+  sandbox.asDraft = { id: 'a1', name: '비상금 수정', type: 'cash', includeInTotal: true, _dispAmt: 6000 };
+  sandbox._balCache.clear();
+  sandbox.lastUndo = null; sandbox.toastCalls = []; sandbox.lastToast = null;
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].name, '비상금 수정', '자산 이름 수정이 반영되어야 함');
+  assert.strictEqual(sandbox.DB.assets[0].baseAmount, 4000, 'hasAdj 분기는 기준값을 그대로 유지해야 함');
+  let adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'a1');
+  assert.strictEqual(adj.amount, 2000, '입력 금액(6000)에 맞춰 조정 내역이 재계산되어야 함(기준값 4000 기준)');
+  assert.ok(sandbox.lastUndo && typeof sandbox.lastUndo.undoFn === 'function', '자산 수정은 undoToast를 불러야 함(평범한 toast가 아니라)');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.assets[0].name, '비상금', '되돌리기는 자산 이름을 원래대로 복원해야 함');
+  assert.strictEqual(sandbox.DB.assets[0].baseAmount, 4000);
+  adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'a1');
+  assert.ok(adj, '조정 내역이 그대로 남아있어야 함(새로 생성된 게 아니라 필드만 되돌아감)');
+  assert.strictEqual(adj.amount, 1000, '되돌리기는 조정 내역 금액도 원래대로 복원해야 함');
+  assert.strictEqual(adj.type, 'income');
+});
+test('saveAsset: hasAdj 분기에서 입력 금액이 기준값과 같아져(gap=0) 조정 내역이 톰스톤 삭제된 경우, undoToast로 되돌리면 조정 내역이 되살고 톰스톤도 해제된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '비상금', type: 'cash', baseAmount: 4000, includeInTotal: true }],
+    txns: [{ id: 'adj1', date: '2026-06-01', type: 'income', category: sandbox.ADJUST_CAT, memo: '재등록 잔액 조정', amount: 1000, fromAssetId: null, toAssetId: 'a1', adjust: true, adjustAsset: 'a1' }],
+    recurrences: [],
+  };
+  // 입력 금액을 기준값(4000)과 정확히 같게 둬 gap=0 → updateBalanceAdjust가 조정 내역을 제거+톰스톤.
+  sandbox.asDraft = { id: 'a1', name: '비상금', type: 'cash', includeInTotal: true, _dispAmt: 4000 };
+  sandbox._balCache.clear();
+  sandbox.lastUndo = null;
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'a1'), undefined, '조정 내역이 제거되어야 함');
+  assert.ok(sandbox.DB.deletedIds && sandbox.DB.deletedIds.adj1, '제거된 조정 내역의 id가 톰스톤되어야 함');
+  assert.ok(sandbox.lastUndo && typeof sandbox.lastUndo.undoFn === 'function');
+  sandbox.lastUndo.undoFn();
+  const adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'a1');
+  assert.ok(adj, '되돌리기는 톰스톤 삭제된 조정 내역을 다시 살려야 함');
+  assert.strictEqual(adj.amount, 1000, '되살린 조정 내역은 원래 금액이어야 함');
+  assert.ok(!(sandbox.DB.deletedIds && sandbox.DB.deletedIds.adj1), '되돌리기는 톰스톤도 해제해야 함(안 그러면 동기화 시 다시 사라짐)');
+});
+test('saveAsset: isMarketValued 분기(주식 추가매수) 수정 — undoToast로 되돌리면 수량·매입원가뿐 아니라 새로 생긴 assetQtyLog/결제 거래까지 제거된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    assets: [
+      { id: 'cash1', name: '통장', type: 'cash', baseAmount: 1000000, includeInTotal: true },
+      { id: 'a2', name: '애플', type: 'stock', stockCode: 'AAPL', stockQty: 10, costBasis: 100000, includeInTotal: true },
+    ],
+    txns: [],
+    recurrences: [],
+    assetQtyLog: [],
+    rates: { stocks: { AAPL: 150 }, fx: {}, crypto: {} },
+  };
+  sandbox.asDraft = {
+    id: 'a2', name: '애플', type: 'stock', stockCode: 'AAPL', stockQty: 15, costBasis: 100000, includeInTotal: true,
+    _addedCost: 50000, _settleAssetId: 'cash1',
+  };
+  sandbox._balCache.clear();
+  sandbox.lastUndo = null;
+  sandbox.saveAsset(true);
+  const a2 = sandbox.DB.assets.find((a) => a.id === 'a2');
+  assert.strictEqual(a2.stockQty, 15, '추가매수한 수량이 반영되어야 함');
+  assert.strictEqual(a2.costBasis, 150000, '추가 투입액이 매입원가에 더해져야 함');
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 1, '수량 변경 기록이 남아야 함');
+  assert.strictEqual(sandbox.DB.txns.length, 1, '결제 통장에서 돈이 나갔다는 거래가 남아야 함');
+  assert.strictEqual(sandbox.DB.txns[0].amount, 50000);
+  assert.ok(sandbox.lastUndo && typeof sandbox.lastUndo.undoFn === 'function', '자산 수정은 undoToast를 불러야 함');
+  sandbox.lastUndo.undoFn();
+  const a2u = sandbox.DB.assets.find((a) => a.id === 'a2');
+  assert.strictEqual(a2u.stockQty, 10, '되돌리기는 수량을 원래대로 복원해야 함');
+  assert.strictEqual(a2u.costBasis, 100000, '되돌리기는 매입원가도 원래대로 복원해야 함');
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 0, '되돌리기는 새로 생긴 수량 변경 기록을 제거해야 함');
+  assert.strictEqual(sandbox.DB.txns.length, 0, '되돌리기는 새로 생긴 결제 거래도 제거해야 함');
+});
+test('saveAsset: else 분기(조정 내역 없는 평범한 balType 자산) 수정 — undoToast로 되돌리면 이름·잔액이 모두 원래대로 복원된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a3', name: '아파트', type: 'realestate', amountKRW: 500000000, includeInTotal: true }],
+    txns: [],
+    recurrences: [],
+  };
+  sandbox.asDraft = { id: 'a3', name: '아파트(리모델링)', type: 'realestate', includeInTotal: true, _dispAmt: 520000000 };
+  sandbox._balCache.clear();
+  sandbox.lastUndo = null;
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].name, '아파트(리모델링)');
+  assert.strictEqual(sandbox.DB.assets[0].amountKRW, 520000000);
+  assert.ok(sandbox.lastUndo && typeof sandbox.lastUndo.undoFn === 'function', 'hasAdj/isMarketValued가 아닌 평범한 수정도 undoToast를 불러야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.assets[0].name, '아파트', '되돌리기는 이름을 원래대로 복원해야 함');
+  assert.strictEqual(sandbox.DB.assets[0].amountKRW, 500000000, '되돌리기는 잔액도 원래대로 복원해야 함');
+});
+test('saveAsset: 신규 등록(editing=false)은 되돌리기 없이 평범한 toast만 띄운다(트래시로 지울 수 있으므로 undo 불필요)', () => {
+  sandbox.DB = { settings: {}, assets: [], txns: [], recurrences: [] };
+  sandbox.asDraft = { type: 'cash', name: '새통장', includeInTotal: true, _dispAmt: 10000 };
+  sandbox._balCache.clear();
+  sandbox.lastUndo = null; sandbox.toastCalls = []; sandbox.lastToast = null;
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 1);
+  assert.strictEqual(sandbox.lastUndo, null, '신규 등록은 undoToast를 부르면 안 됨');
+  assert.ok(sandbox.toastCalls.includes('자산을 등록했어요'));
+});
+
 /* ---------- duplicateRec: 복제(빠른 재등록) (app-evolve cycle274 develop) ----------
  * 거래(duplicateTx)·자산(duplicateAsset)엔 전용 복제 기능이 있지만 반복(recurrence)에는 없어,
  * 조건이 비슷한 구독 등을 여러 개 등록할 때마다 유형·주기·요일·자산을 처음부터 다시 골라야
