@@ -43542,6 +43542,29 @@ test('[실행형] kakaoReady: cleanup()이 던지면(실제로는 거의 없음)
   assert.strictEqual(initCalls.length, 0, 'cleanup()이 실패해 isInitialized()가 계속 true로 남으면 init()을 다시 부르면 안 됨(중복 init 호출로 더 깨지는 것을 막음)');
 });
 
+/* ---------- fcWire: 검색창 6곳(goalQ 등)·공용 피커 시트(pkQ 등) 외의 나머지 field-clear 입력
+ * (이름/금액/메모/이메일/키 등 40여 곳)은 그동안 fc-x(×) 버튼을 눌러야만 지워졌고, Escape
+ * 키보드로는 못 지웠다. 그 공백을 fcWire()의 1회성 배선 블록(_fcw 가드) 안에 keydown 리스너
+ * 하나로 메운다(app-evolve cycle392 develop). _fcw 가드 "안"에 있어야 매 fcWire() 재호출(시트를
+ * 다시 그릴 때마다)마다 리스너가 중복으로 쌓이지 않는다 — 가드 밖에 있으면 같은 입력에 리스너가
+ * N개 쌓여 Escape 한 번에 clrInput 로직이 N번 실행되는 회귀가 생긴다. fcWire는 FUNCTIONS(실행형
+ * vm 추출) 목록에 없고(document/Event 등 브라우저 전역이 더 필요해져 손대지 않음) 이 스위트의
+ * 다른 "검색창 Escape" 테스트들(goalQ/gsQ/recQ 등)과 동일하게 소스 텍스트 매칭으로 검증한다. ---------- */
+test('fcWire: 나머지 field-clear 입력에 Escape 지우기 keydown 리스너를 1회성 배선(_fcw) 가드 안에 추가한다(app-evolve cycle392 develop)', () => {
+  const body = extractFunction('fcWire');
+  const guardIdx = body.indexOf(`if(!el._fcw){el._fcw=1;`);
+  assert.ok(guardIdx !== -1, 'fcWire의 1회성 배선 가드(_fcw)를 찾지 못함 — 추출 범위가 예상과 다름');
+  const escLine = `el.addEventListener('keydown',e=>{if(e.key==='Escape'&&el.value){e.stopPropagation();el.value='';el.dispatchEvent(new Event('input',{bubbles:true}));fcToggle(el);}});`;
+  const escIdx = body.indexOf(escLine);
+  assert.ok(escIdx !== -1, 'fcWire에 Escape 지우기 keydown 리스너가 없음(이름/금액/메모 등 입력을 키보드로 못 지우는 공백이 남아 있음)');
+  const blockEnd = body.indexOf('}});', guardIdx); // _fcw 가드 블록을 닫는 '}'
+  assert.ok(escIdx > guardIdx && escIdx < blockEnd, 'Escape 지우기 리스너가 _fcw 1회성 배선 가드 밖에 있음 — fcWire()가 재호출될 때마다(시트 재렌더링마다) 같은 입력에 리스너가 중복으로 쌓이는 회귀 위험');
+  // 값이 있을 때만 stopPropagation해 onSheetKeydown의 시트 닫기로 새지 않게 하고, 값이 없으면
+  // Escape가 평소처럼 버블돼 시트를 닫는 기존 동작을 보존해야 한다 — 그 조건(el.value)이
+  // stopPropagation보다 앞서 가드돼 있는지도 함께 확인한다.
+  assert.ok(/if\(e\.key==='Escape'&&el\.value\)\{e\.stopPropagation\(\)/.test(body), '값이 있을 때만(el.value) stopPropagation하는 가드가 없음 — 빈 입력에서 Escape를 누르면 시트가 안 닫히는 회귀 위험');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.

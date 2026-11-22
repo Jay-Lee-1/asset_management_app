@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.516';
+const APP_VERSION='1.47.517';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -5670,6 +5670,14 @@ function fcWire(){document.querySelectorAll('.field-clear input').forEach(el=>{f
     el.addEventListener('input',()=>fcToggle(el));
     el.addEventListener('focus',()=>{if(w)w.classList.add('is-focus')});
     el.addEventListener('blur',()=>{if(w)setTimeout(()=>w.classList.remove('is-focus'),120)}); /* 탭 여유 */
+    /* 검색창 6곳(goalQ 등)·공용 피커 시트(pkQ 등)는 이미 개별 onkeydown으로 Escape 지우기를
+     * 갖고 있어 el.value가 먼저 비워지므로 아래 체크에서 자연히 걸러져 중복 동작하지 않는다.
+     * 이름/금액/메모/이메일/키 등 나머지 field-clear 입력 전부(새 귀속·카테고리 이름, 거래·반복
+     * 금액·메모, 매입/매도 금액, 이자율, 이메일, Supabase/카카오 키 등)는 지금까지 fc-x(×) 버튼을
+     * 눌러야만 지워졌고 키보드로는 못 지웠던 공백을 여기서 한 번에 메운다(app-evolve cycle392
+     * develop). 값이 있을 때만 stopPropagation해 onSheetKeydown(11395행 근처)의 시트 닫기로
+     * 새지 않게 하고, 값이 없으면 평소처럼 Escape가 버블돼 시트가 닫힌다. */
+    el.addEventListener('keydown',e=>{if(e.key==='Escape'&&el.value){e.stopPropagation();el.value='';el.dispatchEvent(new Event('input',{bubbles:true}));fcToggle(el);}});
   }});}
 function num(el,allowNeg){if(!el)return 0;const s=el.value||'0';const neg=allowNeg&&/^-/.test(s.trim());const digits=s.replace(/[^0-9]/g,'');return(neg?-1:1)*Number(digits||'0')}
 
