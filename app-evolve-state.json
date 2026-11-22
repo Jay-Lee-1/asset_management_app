@@ -1,6 +1,6 @@
 {
   "cycle": 391,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -135,6 +135,13 @@
       "timestamp": "2026-11-22T00:20:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-391 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx undo, 트래시 허브 통합 등)을 주고 조사시킴. 날짜 선택기/공용 피커 5종/카테고리 아이콘 피커(.icon-grid)에 이어 openAccentSheet()의 메인 색 그리드(.accent-grid, ACCENTS 7개·CSS grid-template-columns:repeat(4,1fr))도 같은 모양의 정적 열거형 그리드인데 방향키 탐색이 유일하게 빠진 사각지대였음을 발견(grep으로 .accent-sw/.accent-grid에 onkeydown 없음 확인). iconCellKeydown과 완전히 같은 구조로 accentCellKeydown(e)을 신설해 .accent-grid에 id=\"accentGrid\" onkeydown=\"accentCellKeydown(event)\"로 인라인 배선했고, 기존 pkGridNextIdx(idx,len,cols,key) 순수 헬퍼를 cols=4로 재사용했다(cols는 이미 3/5로 범용성이 검증돼 있어 cols=4 전용 순수 테스트는 추가하지 않음). test/run.js FUNCTIONS에 openAccentSheet/setAccent/accentCellKeydown, CONSTS에 ACCENTS 추가. openAccentSheet 마크업 배선 테스트 1건(.accent-grid id·onkeydown, .accent-sw 버튼 수==ACCENTS.length) + accentCellKeydown 조기-return 가드 2건(closest null/방향키 아닌 key, iconCellKeydown과 동일 패턴 — DOM 깊이 흉내낸 전체 포커스 이동 실행형 테스트는 pkCatKeydown/iconCellKeydown과 같은 이유로 두지 않음)을 추가. node test/run.js 3841->3851/3851 통과, 메인 <script> 블록(HTML 주석 제거 후 추출) node vm.Script 파싱/logic.js/sw.js node --check 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.514->1.47.515, sw.js CACHE v781->v782. 커밋 84d02ca.",
       "commit": "84d02ca"
+    },
+    {
+      "cycle": 391,
+      "phase": "review",
+      "timestamp": "2026-11-22T01:07:19.052Z",
+      "summary": "develop(cycle391) 커밋 84d02ca(accentCellKeydown 신설, .accent-grid 방향키 탐색)를 검토. iconCellKeydown(8748행)·pkCatKeydown(13737행)과 완전히 동일한 조기-return 가드 구조(알려진 방향키 아니면 return, closest(.accent-sw) 없으면 return)를 그대로 재사용했고, pkGridNextIdx(idx,len,cols,key)는 cols=3(pkCatKeydown)/5(iconCellKeydown)로 이미 순수 테스트된 범용 헬퍼라 cols=4 재사용에 새 위험이 없음을 확인. CSS .accent-grid의 grid-template-columns:repeat(4,1fr)과 accentCellKeydown의 cols=4 하드코딩이 실제로 일치함을 직접 grep으로 재확인(966행). .accent-sw가 <button>이라 별도 tabindex 없이도 포커스 가능. 테스트 3851/3851 통과 재확인. 버그 없음.",
+      "commit": null
     }
   ]
 }
