@@ -41958,36 +41958,56 @@ test('openSheet: 시트 콘텐츠의 첫 h3/.pk-h 제목으로 #sheet에 aria-la
  * 갈아끼우면, 눌렀던 버튼이 DOM에서 사라져 document.activeElement가 body로 밀려나고 아래 350ms
  * 포커스 복구가 매번 "첫 포커스 가능 요소"(보통 닫기 ✕ 버튼)로 잘못 되돌아갔다 — 탭을 눌러
  * 전환했는데 포커스가 '닫기'로 튀어 키보드·스크린리더 사용자가 방금 고른 탭을 놓쳤다(app-evolve
- * cycle394 develop). 위 aria-labelledby 테스트와 동일한 이유(jsdom 없음)로 소스 패턴 검사로
- * 확인한다. ---------- */
-test('openSheet: sh.innerHTML을 바꾸기 전에 이전 포커스가 .seg/.mseg 탭 버튼 안에 있었는지(prevSegFocus)를 먼저 계산해 기억해둔다', () => {
+ * cycle394 develop). 1차 수정(prevSegFocus, "시트 전체에서 첫 .on")은 .seg 그룹이 하나뿐인
+ * 화면에선 맞지만, renderGoalForm(networth 유형+귀속 설정됨)처럼 그룹이 2개(목표 유형, 귀속)인
+ * 화면에서 두 번째 그룹(귀속)을 눌러 전환하면 DOM 순서상 앞서는 첫 번째 그룹(목표 유형)의 .on으로
+ * 엉뚱하게 튀는 걸 cycle394 review가 발견해, 그룹의 aria-label로 같은 그룹을 다시 찾아 그 안의
+ * .on을 우선하도록 고쳤다(prevSegGroup/prevSegLabel). 위 aria-labelledby 테스트와 동일한 이유
+ * (jsdom 없음)로 소스 패턴 검사로 확인한다. ---------- */
+test('openSheet: sh.innerHTML을 바꾸기 전에 이전 포커스가 있던 .seg/.mseg 그룹과 그 aria-label(prevSegGroup/prevSegLabel)을 먼저 계산해 기억해둔다', () => {
   const body = extractFunction('openSheet');
   assert.ok(body.includes('sh.innerHTML='), 'openSheet 추출 범위가 예상과 다름(innerHTML 대입을 못 찾음)');
   const innerHtmlIdx = body.indexOf('sh.innerHTML=');
-  const prevSegIdx = body.indexOf('const prevSegFocus=');
-  assert.ok(prevSegIdx >= 0, 'openSheet에 prevSegFocus 계산이 없음');
+  const prevSegIdx = body.indexOf('const prevSegGroup=');
+  assert.ok(prevSegIdx >= 0, 'openSheet에 prevSegGroup 계산이 없음');
   assert.ok(
     prevSegIdx < innerHtmlIdx,
-    'prevSegFocus가 sh.innerHTML을 이미 갈아끼운 뒤에 계산됨(그 시점엔 document.activeElement가 이미 body로 밀려나 있어 항상 false가 됨)'
+    'prevSegGroup이 sh.innerHTML을 이미 갈아끼운 뒤에 계산됨(그 시점엔 document.activeElement가 이미 body로 밀려나 있어 항상 false가 됨)'
   );
   assert.ok(
-    body.includes(`const prevSegFocus=wasOpen&&!!(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.seg,.mseg'));`),
-    'prevSegFocus가 wasOpen(시트가 이미 열려있던 재렌더만)과 이전 포커스의 .seg/.mseg 소속 여부를 함께 보지 않음'
+    body.includes(`const prevSegGroup=wasOpen&&document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.seg,.mseg');`),
+    'prevSegGroup이 wasOpen(시트가 이미 열려있던 재렌더만)과 이전 포커스의 .seg/.mseg 소속 여부를 함께 보지 않음'
   );
+  assert.ok(
+    body.includes(`const prevSegLabel=prevSegGroup?prevSegGroup.getAttribute('aria-label'):null;`),
+    'prevSegLabel이 prevSegGroup의 aria-label을 sh.innerHTML 대입 전(아직 옛 DOM이 살아있을 때) 읽어두지 않음'
+  );
+  const prevSegLabelIdx = body.indexOf('const prevSegLabel=');
+  assert.ok(prevSegLabelIdx > prevSegIdx && prevSegLabelIdx < innerHtmlIdx, 'prevSegLabel이 prevSegGroup보다 먼저거나 sh.innerHTML 대입 뒤에 계산됨');
 });
-test('openSheet: 포커스 복구 시 prevSegFocus면 새로 그려진 .seg/.mseg의 활성(.on) 버튼으로, 아니면 기존처럼 첫 포커스 가능 요소로 돌아간다', () => {
+test('openSheet: 포커스 복구 시 같은 aria-label의 .seg/.mseg 그룹이 재렌더 후에도 있으면 그 그룹의 .on 버튼을 먼저 찾고, 없으면 시트 전체의 첫 .on으로, 그것도 없으면 첫 포커스 가능 요소로 내려간다', () => {
   const body = extractFunction('openSheet');
   assert.ok(
-    body.includes(`const f=(prevSegFocus&&sh.querySelector('.seg button.on,.mseg button.on'))||sheetFocusables(sh)[0];if(f)f.focus();else sh.focus()`),
-    'openSheet의 포커스 복구 로직이 prevSegFocus일 때 새로 그려진 탭의 .on 버튼을 먼저 찾지 않음(여전히 무조건 첫 포커스 가능 요소로 감)'
+    body.includes(`const sameLabelGroup=prevSegLabel&&Array.prototype.find.call(sh.querySelectorAll('.seg,.mseg'),g=>g.getAttribute('aria-label')===prevSegLabel);`),
+    'openSheet의 포커스 복구 로직이 같은 aria-label의 .seg/.mseg 그룹을 다시 찾지 않음'
+  );
+  assert.ok(
+    body.includes(`const f=(sameLabelGroup&&sameLabelGroup.querySelector('button.on'))||(prevSegGroup&&sh.querySelector('.seg button.on,.mseg button.on'))||sheetFocusables(sh)[0];if(f)f.focus();else sh.focus()`),
+    'openSheet의 포커스 복구 로직이 sameLabelGroup -> (prevSegGroup이면) 시트 전체 첫 .on -> 첫 포커스 가능 요소 순서로 폴백하지 않음'
   );
   const setTimeoutIdx = body.indexOf(`setTimeout(()=>{if(sh.classList.contains('show')`);
-  const prevSegIdx = body.indexOf('const prevSegFocus=');
+  const prevSegIdx = body.indexOf('const prevSegGroup=');
   assert.ok(setTimeoutIdx >= 0, 'openSheet의 포커스 복구 setTimeout을 찾지 못함');
   assert.ok(
     prevSegIdx >= 0 && setTimeoutIdx > prevSegIdx,
-    'prevSegFocus가 그걸 참조하는 포커스 복구 setTimeout보다 뒤에 선언됨(클로저가 그 시점엔 아직 없는 변수를 참조)'
+    'prevSegGroup이 그걸 참조하는 포커스 복구 setTimeout보다 뒤에 선언됨(클로저가 그 시점엔 아직 없는 변수를 참조)'
   );
+});
+test('renderGoalForm: 목표 유형(.seg)과 귀속(.seg)이 서로 다른 aria-label을 쓴다(같은 그룹 재탐색이 둘을 구별할 수 있어야 함)', () => {
+  const typeSegIdx = src.indexOf(`aria-label="목표 유형 선택"`);
+  const ownerSegIdx = src.indexOf(`aria-label="귀속 선택"`);
+  assert.ok(typeSegIdx >= 0, '목표 유형 .seg의 aria-label을 찾지 못함(마크업이 바뀌었을 수 있음)');
+  assert.ok(ownerSegIdx >= 0, '귀속 선택 .seg의 aria-label을 찾지 못함(ownerSegHtml 마크업이 바뀌었을 수 있음)');
 });
 
 /* ---------- #dpModal/#dpWheel도 #sheet와 같은 공백이 있었다 — app-evolve cycle207 develop은

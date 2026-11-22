@@ -1,15 +1,8 @@
 {
   "cycle": 394,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 389,
-      "phase": "review",
-      "timestamp": "2026-11-21T16:08:23.190Z",
-      "summary": "develop(cycle389)의 카테고리 관리 일괄 선택에 예산 이월(bulkCatRolloverTargets/doBulkRolloverToggle/catRolloverSel) 전환 추가를 검토. bulkCatVarTargets/doBulkCatVarToggle/catVarSel과 1:1 대응되는 구조임을 코드로 확인: type!=='expense'면 notApplicable로 바로 거절(isBudgetRolloverCat/setBudgetRolloverCat 둘 다 내부적으로 catKey('expense',name)을 쓰므로 expense 전용 설정과 일치), DB.catBudgetRollover에 이름 기반으로 저장되므로 save()+undoToast로 되돌리는 패턴도 변동/고정과 동일. activeSel()의 catRolloverT가 _catMgmtKind==='expense'일 때만 계산되어 income/saving에는 영향 없고, updateSelBottom()의 catRolloverBtns가 catVarBtns 옆에 안전하게 이어붙여짐을 확인. svg('repeat') 아이콘이 이미 존재하는 키임을 확인. HTML 주석 안에 리터럴 '<script>' 문자열이 들어있어 주석 제거 없이 전체 파일에 단순 정규식으로 스크립트 블록을 추출하면 가짜 실패가 뜨는 것을 발견했으나, 이는 리뷰 스크립트 자체의 추출 방식 문제일 뿐 앱 코드의 버그가 아님(주석 제거 후 재검증하여 4개 블록 모두 정상 파싱 확인) — 코드 수정 대상 아님. 실제 버그는 발견하지 못함. node test/run.js 3829/3829 통과(재실행), 메인 <script> 블록들(HTML 주석 제거 후 추출) node --check 통과, logic.js/sw.js node --check 통과. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 389,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-22T12:05:00.000Z",
       "summary": "cycle340-393 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드·날짜 선택기 방향키, .seg/.mseg 전역 방향키, 카테고리 관리 일괄선택 3종, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt 범위가드 금지 등)을 직접 숙지한 뒤 index.html/sw.js/logic.js를 조사. duplicateTx/duplicateAsset/duplicateGoal/duplicateRec 포커스 일관성, sanitizeAmount/interestRate 상한, owner 이름 변경/삭제 undo, amortizationPayoffMonths 가드, KR_LUNAR_HOLIDAYS 상한(2028, 아직 여유) 등 여러 후보를 검토했으나 전부 이미 고쳐져 있거나 리스크 대비 가치가 낮아 기각. 최종적으로 openSheet()(index.html, #sheet 공용 바텀시트)의 포커스 복구 로직에서 실제 버그를 발견: openCatManage(지출/수입/저축 탭)·openTrashHub(트래시 7종 탭)·renderGoalForm의 목표 유형 세그먼트·txType/recType(거래·반복 구분 선택)·csvMapSetMode(CSV 금액 형식)처럼 .seg/.mseg 탭 버튼의 onclick이 openSheet()를 통째로 다시 불러 sh.innerHTML을 갈아끼우는 모든 화면에서, 눌렀던(또는 방향키로 포커스만 옮겨뒀던) 탭 버튼이 DOM에서 사라지는 순간 document.activeElement가 body로 밀려나고, 기존 350ms 포커스 복구 타이머가 조건 없이 매번 sheetFocusables(sh)[0](보통 맨 앞의 '닫기 ✕' 버튼)로 포커스를 되돌려버렸다 — 키보드·스크린리더 사용자가 탭을 전환할 때마다 포커스가 '닫기'로 튀어 방금 고른 탭 위치를 잃어버리는 재현 가능한 접근성 버그. 이 .seg/.mseg 탭들이 '전역 방향키 탐색'으로 이미 처리된 범위(화살표로 포커스 이동)와는 다른 공백(탭을 실제로 '활성화'한 뒤의 포커스 보존)이라 배제 목록과 겹치지 않음을 확인했다. openSheet() 안에 sh.innerHTML을 바꾸기 전 prevSegFocus=wasOpen&&document.activeElement가 .seg/.mseg 안에 있었는지 1줄로 기억해두고, 350ms 복구 분기에서 prevSegFocus일 때만 새로 그려진 쪽의 '.seg button.on,.mseg button.on'(방금 활성화된 탭)을 먼저 찾아 포커스하도록 (prevSegFocus&&sh.querySelector(...))||sheetFocusables(sh)[0] 한 줄로 수정 — 조건이 안 맞으면(처음 여는 시트, 다른 화면으로 드릴다운하는 일반 네비게이션, .on 버튼이 없는 화면) 기존 '첫 포커스 가능 요소' 동작이 그대로 유지돼 회귀 위험이 없음을 코드로 직접 확인(ownerSegHtml/.mseg 뷰 전환 등 시트 밖에서 쓰는 .seg/.mseg는 sh 바깥이라 영향 없음, 시트가 열려 있을 때는 syncOverlayInert()로 배경이 비활성화돼 포커스가 시트 밖으로 샐 수 없어 오탐 불가능함을 확인). openSheet()는 이미 이 스위트가 'jsdom 없어 실행형으로 못 돌림'으로 분류해 소스 패턴 검사로만 검증하는 함수(기존 aria-labelledby 테스트와 동일한 관례)라, 그 관례를 그대로 따라 테스트 2건을 같은 자리에 추가: (1) prevSegFocus가 sh.innerHTML 대입보다 먼저 선언되는지(순서가 뒤바뀌면 그 시점엔 document.activeElement가 이미 body로 밀려나 항상 false가 됨), (2) 350ms 복구 분기가 prevSegFocus일 때 .on 탭 버튼을 먼저 찾고 아니면 기존 동작으로 폴백하는 정확한 표현을 쓰는지. node test/run.js 3873->3875/3875 통과, node --check(logic.js/sw.js) 통과, 메인 인라인 <script> 블록은 테스트 스위트 안의 기존 vm.Script 파싱 검증(3875건 중 하나)이 그대로 통과해 문법 확인됨. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.520->1.47.521, sw.js CACHE v787->v788.",
+      "commit": null
+    },
+    {
+      "cycle": 394,
+      "phase": "review",
+      "timestamp": "2026-11-22T13:00:00.000Z",
+      "summary": "develop(cycle394) 커밋 ac93a41(openSheet() 포커스 복구에 prevSegFocus 추가, .seg/.mseg 탭 전환 시 닫기로 튀던 버그 수정)을 검토해 실제 버그를 발견하고 그 자리에서 고쳤다. 1차 수정('시트 전체에서 첫 .seg/.mseg button.on')은 .seg 그룹이 하나뿐인 화면(openCatManage/openTrashHub/txType·recType/csvMapSetMode)에는 맞지만, renderGoalForm이 networth 유형이고 DB.owners가 설정돼 있으면 한 시트 안에 .seg 그룹이 2개(목표 유형 typeSeg, 귀속 goalOwnerSel이 그리는 ownerSegHtml)가 함께 떠 있음을 코드로 확인(둘 다 goalTypeSel/goalOwnerSel이 renderGoalForm(editing)을 다시 불러 openSheet() 전체를 재렌더). 이 경우 사용자가 두 번째 그룹(귀속)의 버튼을 눌러 전환해도, '시트 전체 첫 .on'은 마크업 순서상 앞서는 첫 번째 그룹(목표 유형)의 .on 버튼을 찾아 거기로 포커스를 보내버린다 — 처음 신고됐던 '닫기로 튐'보다는 가깝지만 여전히 사용자가 실제로 만지던 귀속 그룹이 아닌 엉뚱한 세그먼트로 튀는 재현 가능한 버그. 작은 범위로 고쳤다: prevSegFocus(불리언)를 prevSegGroup(이전 포커스가 속했던 .seg/.mseg 엘리먼트, sh.innerHTML 대입 전에 캡처)과 prevSegLabel(그 그룹의 aria-label — 화면마다 '목표 유형 선택'/'귀속 선택'처럼 고정 문자열이라 재렌더 후에도 같은 그룹을 식별하는 안정적인 키)로 나눠, 포커스 복구 시 재렌더된 시트에서 같은 aria-label을 가진 그룹(sameLabelGroup)을 먼저 찾아 그 안의 .on 버튼을 최우선으로 쓰고, 그 그룹 자체가 재렌더 중 없어졌으면(예: 목표 유형을 asset으로 바꿔 귀속 그룹이 통째로 사라짐) 기존 '시트 전체에서 첫 .on' 폴백으로, 그마저 없으면 첫 포커스 가능 요소로 내려가게 했다 — 단일 .seg 화면에서는 sameLabelGroup이 곧 그 유일한 그룹이라 기존 동작과 결과가 같아 회귀 없음. 기존 2개 소스 패턴 테스트를 prevSegGroup/prevSegLabel/sameLabelGroup 표현에 맞게 갱신하고, renderGoalForm의 두 .seg가 서로 다른 aria-label('목표 유형 선택'/'귀속 선택')을 쓰는지(같은 그룹 재탐색이 둘을 구별할 수 있어야 함) 확인하는 테스트 1건을 추가했다. node test/run.js 3875->3876/3876 통과, logic.js/sw.js node --check 통과, 메인 <script> 블록 4개(HTML 주석 제거 후 추출) new Function 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.521->1.47.522, sw.js CACHE v788->v789.",
       "commit": null
     }
   ]

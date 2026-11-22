@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.521';
+const APP_VERSION='1.47.522';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -11413,7 +11413,15 @@ function openSheet(html,topBtn){
   * 그려진 쪽에 .on(aria-pressed 활성) 버튼이 있으면 그걸로 복구한다 — 처음 여는 시트(wasOpen=false)
   * 나 다른 화면으로 드릴다운하는 일반 네비게이션(이전 포커스가 .seg/.mseg 버튼이 아니거나 새 화면에
   * .on 버튼이 없음)에는 전혀 영향이 없다(기존 "첫 포커스 가능 요소" 동작 그대로 유지). */
- const prevSegFocus=wasOpen&&!!(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.seg,.mseg'));
+ /* renderGoalForm(networth 유형+귀속 설정됨)처럼 한 시트 안에 .seg 그룹이 2개 이상(목표 유형, 귀속)
+  * 있으면, 위 "새로 그려진 쪽의 .on 버튼 중 첫 번째"만 찾는 방식은 사용자가 두 번째 그룹(귀속)을
+  * 눌러 전환했는데도 DOM 순서상 앞서는 첫 번째 그룹(목표 유형)의 .on 버튼으로 엉뚱하게 튀어버린다
+  * (app-evolve cycle394 review에서 발견 — 처음 보고됐던 '닫기로 튐'보다는 낫지만 여전히 사용자가
+  * 실제로 만지던 그룹이 아니다). 그룹의 aria-label(화면마다 고정 문자열)로 같은 그룹을 다시 찾아
+  * 그 안의 .on 버튼을 우선 쓰고, 그룹 자체가 재렌더 중 사라졌으면(예: 목표 유형을 asset으로 바꿔
+  * 귀속 그룹이 통째로 없어짐) 기존의 '시트 전체에서 첫 .on' 폴백으로 내려간다. */
+ const prevSegGroup=wasOpen&&document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.seg,.mseg');
+ const prevSegLabel=prevSegGroup?prevSegGroup.getAttribute('aria-label'):null;
  if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;_sheetReturnFocus=document.activeElement;ovHistPush();}
  const btn=topBtn||`<button class="sheet-x" onclick="closeSheetGuarded()" aria-label="닫기">${svg('x')}</button>`;
  sh.innerHTML=`<div class="sheet-scroll" id="sheetScroll"><div class="grip"></div>${btn}${html}</div>`;
@@ -11430,7 +11438,7 @@ function openSheet(html,topBtn){
  attachDetent(sh,sc);
  wireSheetGestures(sh,sc);
  requestAnimationFrame(()=>requestAnimationFrame(()=>{moveSegBlobs();try{fcWire()}catch(e){}}));
- setTimeout(()=>{if(sh.classList.contains('show')&&!sh.contains(document.activeElement)){const f=(prevSegFocus&&sh.querySelector('.seg button.on,.mseg button.on'))||sheetFocusables(sh)[0];if(f)f.focus();else sh.focus()}},350);
+ setTimeout(()=>{if(sh.classList.contains('show')&&!sh.contains(document.activeElement)){const sameLabelGroup=prevSegLabel&&Array.prototype.find.call(sh.querySelectorAll('.seg,.mseg'),g=>g.getAttribute('aria-label')===prevSegLabel);const f=(sameLabelGroup&&sameLabelGroup.querySelector('button.on'))||(prevSegGroup&&sh.querySelector('.seg button.on,.mseg button.on'))||sheetFocusables(sh)[0];if(f)f.focus();else sh.focus()}},350);
 }
 /* ── 애플식 시트 제스처: 스크롤 컨테이너와 분리된 껍데기에서 처리 ────────────── */
 function sheetSlideBack(renderPrev){if(renderPrev)renderPrev()}
