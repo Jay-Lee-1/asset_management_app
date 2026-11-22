@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.520';
+const APP_VERSION='1.47.521';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -11404,6 +11404,16 @@ document.addEventListener('keydown',onSheetKeydown);
 function openSheet(html,topBtn){
  const sh=$('sheet');
  const wasOpen=sh.classList.contains('show');
+ /* openCatManage/openTrashHub/renderGoalForm(목표 유형)/txType·recType(구분 선택)·csvMapSetMode처럼
+  * .seg·.mseg 탭 버튼의 onclick이 통째로 openSheet()를 다시 불러 sh.innerHTML을 갈아끼우면, 그 순간
+  * 눌렀던 버튼이 DOM에서 사라져 document.activeElement가 body로 밀려나고, 아래 350ms 포커스 복구가
+  * 매번 "첫 포커스 가능 요소"(보통 닫기 ✕ 버튼)로 잘못 되돌아갔다 — 탭을 눌러 전환했는데 포커스가
+  * '닫기'로 튀어 키보드·스크린리더 사용자가 방금 고른 탭을 놓쳤다(app-evolve cycle394 develop).
+  * sh.innerHTML을 바꾸기 전에 지금 포커스가 .seg/.mseg 탭 버튼 안에 있었는지만 기억해두고, 새로
+  * 그려진 쪽에 .on(aria-pressed 활성) 버튼이 있으면 그걸로 복구한다 — 처음 여는 시트(wasOpen=false)
+  * 나 다른 화면으로 드릴다운하는 일반 네비게이션(이전 포커스가 .seg/.mseg 버튼이 아니거나 새 화면에
+  * .on 버튼이 없음)에는 전혀 영향이 없다(기존 "첫 포커스 가능 요소" 동작 그대로 유지). */
+ const prevSegFocus=wasOpen&&!!(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.seg,.mseg'));
  if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;_sheetReturnFocus=document.activeElement;ovHistPush();}
  const btn=topBtn||`<button class="sheet-x" onclick="closeSheetGuarded()" aria-label="닫기">${svg('x')}</button>`;
  sh.innerHTML=`<div class="sheet-scroll" id="sheetScroll"><div class="grip"></div>${btn}${html}</div>`;
@@ -11420,7 +11430,7 @@ function openSheet(html,topBtn){
  attachDetent(sh,sc);
  wireSheetGestures(sh,sc);
  requestAnimationFrame(()=>requestAnimationFrame(()=>{moveSegBlobs();try{fcWire()}catch(e){}}));
- setTimeout(()=>{if(sh.classList.contains('show')&&!sh.contains(document.activeElement)){const f=sheetFocusables(sh)[0];if(f)f.focus();else sh.focus()}},350);
+ setTimeout(()=>{if(sh.classList.contains('show')&&!sh.contains(document.activeElement)){const f=(prevSegFocus&&sh.querySelector('.seg button.on,.mseg button.on'))||sheetFocusables(sh)[0];if(f)f.focus();else sh.focus()}},350);
 }
 /* ── 애플식 시트 제스처: 스크롤 컨테이너와 분리된 껍데기에서 처리 ────────────── */
 function sheetSlideBack(renderPrev){if(renderPrev)renderPrev()}
