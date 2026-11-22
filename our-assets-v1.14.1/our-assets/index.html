@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.517';
+const APP_VERSION='1.47.518';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -11889,8 +11889,14 @@ function pageHead(tab,extra){
  return `<div class="hdr"><div class="hd-l"><div class="sub">우리의 자산</div><h1>${PAGE_TITLE[tab]}</h1></div>${acts?`<div class="hdr-actions">${acts}</div>`:''}</div>`;
 }
 function monthNav(which,label){
- const lbl=`<button class="mn-lbl" id="mnLbl-${which}" ontouchstart="mnLblDown('${which}')" ontouchend="mnLblUp()" ontouchmove="mnLblUp()" onmousedown="mnLblDown('${which}')" onmouseup="mnLblUp()" onmouseleave="mnLblUp()" onclick="mnLblTap('${which}')">${label} ${svg('chevD')}</button>`;
- return `<div class="month-nav solo">${lbl}</div>`; /* 좌우 스와이프로 달 이동 — 화살표 없음 */
+ const lbl=`<button class="mn-lbl" id="mnLbl-${which}" ontouchstart="mnLblDown('${which}')" ontouchend="mnLblUp()" ontouchmove="mnLblUp()" onmousedown="mnLblDown('${which}')" onmouseup="mnLblUp()" onmouseleave="mnLblUp()" onclick="mnLblTap('${which}')" onkeydown="monthNavKeydown(event,'${which}')">${label} ${svg('chevD')}</button>`;
+ return `<div class="month-nav solo">${lbl}</div>`; /* 좌우 스와이프 또는 ←/→ 키로 달 이동 */
+}
+function monthNavKeydown(e,which){ /* nwCarousel의 ArrowLeft/Right keydown(gotoNwOwner)과 동일한 패턴 — 스와이프를 못 쓰는 키보드 사용자용 */
+ if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;
+ e.preventDefault();
+ monthStep(which,e.key==='ArrowRight'?1:-1); /* renderLedger/renderPlan이 월 레이블 버튼을 통째로 새로 그려 포커스가 끊김 */
+ const el=$('mnLbl-'+which);if(el)el.focus();
 }
 /* 요약 박스를 좌우로 스와이프하면 달 이동 (홈 월현황 · 전체내역 수지 · 플랜 말일잔액) */
 function setNavLabel(which,y,m){const el=$('mnLbl-'+which);

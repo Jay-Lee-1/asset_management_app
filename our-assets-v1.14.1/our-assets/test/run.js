@@ -371,7 +371,7 @@ const FUNCTIONS = [
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'inquiriesTrashBody', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry', 'inqTextInput',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
-  'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
+  'modeSeg', 'monthNav', 'monthNavKeydown', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory', 'histPreset',
@@ -929,6 +929,11 @@ const sandbox = {
   // openCatManage 등과 같은 이유로 넘겨받은 which만 기록하는 스파이로 흉내낸다.
   lastMonthSheetWhich: null,
   openMonthSheet: (which) => { sandbox.lastMonthSheetWhich = which; },
+  // monthNavKeydown(app-evolve cycle392 advance)이 부르는 실제 월 이동 — renderLedger/renderPlan을
+  // 통째로 다시 그리는 화면 전용 부수효과라 openMonthSheet 등과 같은 이유로 넘겨받은
+  // which/delta만 기록하는 스파이로 흉내낸다.
+  lastMonthStepCall: null,
+  monthStep: (which, delta) => { sandbox.lastMonthStepCall = { which, delta }; },
   // asOpenType()이 여는 자산 종류 피커 — 실제 DOM/블롭 렌더는 화면 전용이라 openPicker처럼
   // no-op으로 흉내내고, onPick 콜백만 캡처해 테스트가 직접 호출할 수 있게 한다.
   lastTypePickerOnPick: null,
@@ -35163,6 +35168,49 @@ test('accentCellKeydown: 방향키 목록에 없는 key는 무시한다', () => 
 // pkGridNextIdx는 이미 cols=3/5로 순수 검증돼 있고(위 1266줄 부근) cols=4(ACCENTS, 7개)도
 // 같은 범용 계산이라 별도 전용 테스트 없이 그 커버리지를 그대로 공유한다. accentCellKeydown
 // 자체는 iconCellKeydown/pkCatKeydown과 같은 이유로 DOM을 직접 다루는 쪽이라 가드 2건만 둔다.
+// 가계부/플랜 월 이동 캐러셀(monthNav)은 touchstart/move/end만 바인딩돼 있어(wireMonthCarousel)
+// 스와이프를 못 쓰는 키보드 사용자에겐 ±1개월 이동 수단이 없었다(app-evolve cycle392 critique).
+// 같은 좌우 캐러셀 패턴인 nwCarousel의 keydown(ArrowLeft/Right → gotoNwOwner)을 그대로 본떠
+// monthNavKeydown을 추가했다 — monthStep이 renderLedger/renderPlan으로 화면을 통째로 다시
+// 그려 포커스가 끊기므로, 호출 뒤 같은 id(mnLbl-{which})로 포커스를 되돌린다.
+test('monthNav: mn-lbl 버튼에 monthNavKeydown 방향키 배선이 있다', () => {
+  const html = sandbox.monthNav('ledger', '2026년 11월');
+  assert.ok(html.includes('id="mnLbl-ledger"'), 'mn-lbl 버튼 id가 which로 결정돼야 함');
+  assert.ok(html.includes(`onkeydown="monthNavKeydown(event,'ledger')"`), 'onkeydown이 monthNavKeydown(event, which)를 가리켜야 함');
+});
+test('monthNavKeydown: ArrowRight는 monthStep(which,1)을 부르고 월 레이블에 포커스를 되돌린다', () => {
+  let focused = false;
+  const orig$ = sandbox.$;
+  sandbox.$ = (id) => (id === 'mnLbl-ledger' ? { focus: () => { focused = true; } } : orig$(id));
+  sandbox.lastMonthStepCall = null;
+  let prevented = false;
+  try {
+    sandbox.monthNavKeydown({ key: 'ArrowRight', preventDefault: () => { prevented = true; } }, 'ledger');
+    assert.strictEqual(prevented, true, 'preventDefault를 호출해야 함');
+    assert.deepStrictEqual(sandbox.lastMonthStepCall, { which: 'ledger', delta: 1 }, 'monthStep을 +1개월로 불러야 함');
+    assert.strictEqual(focused, true, '재렌더 후 같은 mnLbl-{which} 버튼으로 포커스를 되돌려야 함');
+  } finally { sandbox.$ = orig$; }
+});
+test('monthNavKeydown: ArrowLeft는 monthStep(which,-1)을 부르고 plan의 월 레이블에 포커스를 되돌린다', () => {
+  let focused = false;
+  const orig$ = sandbox.$;
+  sandbox.$ = (id) => (id === 'mnLbl-plan' ? { focus: () => { focused = true; } } : orig$(id));
+  sandbox.lastMonthStepCall = null;
+  let prevented = false;
+  try {
+    sandbox.monthNavKeydown({ key: 'ArrowLeft', preventDefault: () => { prevented = true; } }, 'plan');
+    assert.strictEqual(prevented, true, 'preventDefault를 호출해야 함');
+    assert.deepStrictEqual(sandbox.lastMonthStepCall, { which: 'plan', delta: -1 }, 'monthStep을 -1개월로 불러야 함');
+    assert.strictEqual(focused, true, '재렌더 후 같은 mnLbl-{which} 버튼으로 포커스를 되돌려야 함');
+  } finally { sandbox.$ = orig$; }
+});
+test('monthNavKeydown: 방향키 목록에 없는 key는 무시한다(monthStep 호출/preventDefault 없음)', () => {
+  sandbox.lastMonthStepCall = null;
+  let prevented = false;
+  sandbox.monthNavKeydown({ key: 'Tab', preventDefault: () => { prevented = true; } }, 'ledger');
+  assert.strictEqual(prevented, false, '방향키가 아니면 preventDefault를 호출하면 안 됨');
+  assert.strictEqual(sandbox.lastMonthStepCall, null, '방향키가 아니면 monthStep을 부르면 안 됨');
+});
 test('moveCat: 인접 항목과 순서를 바꾸고 저장 후 같은 탭을 다시 연다', () => {
   setupCatManageDB();
   sandbox.moveCat('expense', 0, 1);
