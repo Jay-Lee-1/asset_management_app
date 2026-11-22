@@ -1,7 +1,11 @@
 {
   "cycle": 393,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "세그먼트 토글(.seg/.mseg) 전역 방향키 탐색 추가",
+    "why": ".seg/.mseg role=\"group\" 버튼열(기간 선택/귀속 선택/목표 유형/상환 전략/구분 선택/달력·목록 전환/카테고리 관리 탭/최근 삭제함 탭 등 index.html 15곳 이상, 예: 3442,3631,3790,4262,4267,6169,6285,6602,7180,7593,8825,9434,11121,13628)에 aria-pressed+onclick만 있고 keydown이 전혀 없어, 날짜 선택기/공용 피커 5종/카테고리 아이콘 피커/메인 색 그리드/monthNav/nwCarousel에 이미 적용된 '방향키로 네이티브 라디오그룹처럼 탐색' 패턴의 유일한 사각지대로 남아있음(grep으로 15곳 전수 확인, 기존 ArrowLeft/Right 핸들러들이 .seg/.mseg를 전혀 건드리지 않음도 확인). 한 번의 공용 핸들러로 15곳을 동시에 커버할 수 있어 레버리지가 큼. 기각한 후보: 트래시 허브 검색창(TRASH_MAX_AGE_DAYS로 데이터셋이 작아 가치 낮음), 거래내역 리스트 가상화(ST.hist.page 기반 페이지네이션+_histCache가 이미 있어 미해결 항목 아님).",
+    "approach": "iconCellKeydown/accentCellKeydown/monthNavKeydown과 동일한 조기-return 구조로 segKeydown(e) 신설: ArrowLeft/ArrowRight/Home/End 아니면 return, e.target.closest('.seg,.mseg')로 컨테이너 찾고 그 안의 활성화된(비활성/숨김 제외) <button> 목록에서 다음 인덱스를 pkListNextIdx류 순수 헬퍼로 계산(가능하면 재사용, 열 개념이 없으니 pkListNextIdx(idx,len,key) 그대로 재사용 가능할 것으로 보임), 해당 버튼에 .focus()+.click()을 호출해 기존 onclick 선택 로직(nwPresetSel/histPreset/openCatManage 등)을 그대로 타게 한다. 배선은 각 15개 렌더 지점을 개별 수정하지 않고, fcWire()/onSheetKeydown과 동일한 1회성 가드 패턴으로 document에 위임 keydown 리스너 하나만 추가해 e.target.closest('.seg,.mseg')로 스코프. 범위 제외: .seg/.mseg 마크업 구조·aria-pressed/role=group 시맨틱 변경, openTrashHub의 가로 스크롤 포커스 스크롤 보정(필요하면 후속 사이클로 메모만 남김). test/run.js에 iconCellKeydown/accentCellKeydown 테스트 스타일로 양끝 wraparound 또는 클램프, Home/End 동작 회귀 테스트 추가. index.html/sw.js 수정 시 APP_VERSION/sw.js CACHE 버전 올리고 node test/run.js + node --check(스크립트 블록 추출)로 검증."
+  },
   "history": [
     {
       "cycle": 388,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-11-22T10:00:00.000Z",
       "summary": "develop(cycle393) 커밋 965aa02(qtyCaretAfterFilter 신설, fmtQty() 커서 복원)를 검토. 옛 fmtQty 로직(정규식으로 숫자/소수점 외 제거 후 첫 소수점만 남기고 나머지 소수점 제거)과 새 qtyCaretAfterFilter의 단일 순회(digit이거나 dot&&!dotSeen일 때만 keep)가 동일한 필터 결과를 내는지 직접 트레이스로 확인('12a,3bc'→'123', '12..34'→'12.34' 등), fmtAmt의 caretPosAfterFormat과 달리 콤마 삽입이 없어 'oldCaret 앞에서 살아남은 문자 수'를 caret으로 직접 쓰는 방식이 타당함을 확인. 6개 호출부(asInterestRate/asFx/asGold/asQty×2/연이자율) 전부 oninput=\"fmtQty(this)\" 패턴으로 일관되게 새 구현을 쓰게 됨을 grep으로 재확인. setSelectionRange가 fmtAmt와 동일한 try/catch로 감싸져 selectionStart 없는 평범한 객체에서도 안 터짐을 확인. 실제 버그는 발견하지 못함. node test/run.js 3868/3868 통과(재실행), sw.js/logic.js node --check 통과, index.html HTML 주석 제거 후 추출한 <script> 블록 4개 전부 new Function 파싱 통과. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 393,
+      "phase": "critique",
+      "timestamp": "2026-11-22T10:35:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-393 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt/fmtQty 커서버그, 문의하기 메모 클램프, commitTx/saveAsset undo, 트래시 허브 통합, 전역 field-clear Escape, monthNav 방향키 등)를 주고 전략적 재검토시킴. .seg/.mseg role=\"group\" 세그먼트 토글(기간 선택/귀속 선택/목표 유형/상환 전략/구분 선택/달력·목록 전환/카테고리 관리 탭/최근 삭제함 탭 등 index.html 15곳 이상)이 aria-pressed+onclick만 있고 keydown이 전혀 없어, 날짜 선택기/공용 피커/카테고리 아이콘 피커·메인 색 그리드/monthNav/nwCarousel에 이미 적용된 방향키 네이티브 라디오그룹 탐색 패턴의 유일한 사각지대로 남아있음을 발견(grep으로 15곳 전수 확인, 기존 ArrowLeft/Right 핸들러들이 .seg/.mseg를 전혀 안 건드림도 확인). 기각한 후보: 트래시 허브 검색창(TRASH_MAX_AGE_DAYS로 데이터셋 작아 가치 낮음), 거래내역 리스트 가상화(ST.hist.page 기반 페이지네이션+_histCache 이미 존재). pending_advance_plan에 공용 segKeydown(e) 신설(iconCellKeydown/accentCellKeydown/monthNavKeydown과 동일한 조기-return 구조, document 위임 리스너로 15곳 개별 수정 없이 한 번에 배선) 계획 저장. node test/run.js 3868/3868 통과 확인(서브에이전트가 재실행). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
