@@ -1,15 +1,8 @@
 {
   "cycle": 393,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 388,
-      "phase": "review",
-      "timestamp": "2026-11-21T12:20:00.000Z",
-      "summary": "develop(cycle388)의 문의하기 메모 MEMO_MAX 클램프 추가를 검토. inqText/inqEditText textarea maxlength+inqTextInput 핸들러가 txMemoInput(6586줄)/recMemoInput(7038줄)과 동일한 'maxlength 속성 + oninput에서 한 번 더 slice' 패턴을 정확히 따르고, sendInquiry/saveInquiryEdit의 저장 직전 clamp와 sanitizeBackup()의 inquiries/trashInquiries d.text clamp가 d.memo(10165/10272줄) 블록과 1:1 대응됨을 코드로 직접 확인. editInquiry()의 esc(q.text) 렌더링, uid/touch/touchSave 등 기존 저장 경로는 그대로이고 새로 추가된 clamp 지점들이 서로 중복되거나 충돌하지 않음을 확인. node test/run.js 3773/3773 통과(재실행), 메인 <script> 블록 node --check(Function 생성자로 파싱) 통과. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 388,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-22T08:18:52.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-392 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx/saveAsset undo, 트래시 허브 통합, 전역 field-clear Escape, monthNav 방향키 등)를 주고 조사시킴. fmtAmt()가 cycle387에서 고친 '매 oninput마다 .value 재대입으로 커서가 끝으로 튀는 버그'와 정확히 같은 클래스의 버그가 fmtQty()(보유수량 FX/금/주식·코인, 연이자율 등 6곳이 사용)에는 그대로 남아있었음을 발견(제외 목록의 'fmtAmt 커서버그 수정'은 fmtAmt 하나만 다뤘고 fmtQty는 범위 밖이었음). qtyCaretAfterFilter(oldValue,oldCaret) 신설 — fmtQty의 기존 필터 규칙(숫자 유지, 첫 소수점만 유지, 나머지 제거)을 한 번의 순회로 수행하면서 'oldCaret 앞에서 살아남은 문자 수'로 caret을 직접 계산(fmtAmt의 caretPosAfterFormat과 달리 콤마 삽입이 없어 더 단순). fmtQty(inp)를 이 함수를 쓰도록 재작성해 inp.setSelectionRange로 커서를 복원(fmtAmt와 동일한 try/catch 안전망, selectionStart 없는 평범한 객체에도 안 터짐). test/run.js FUNCTIONS에 qtyCaretAfterFilter 추가, 테스트 8건 추가(순수 4건: 필터 불필요/문자 제거/둘째 소수점 제거/oldCaret clamp, 실행형 2건: 숫자 중간 삽입 시 커서가 끝이 아니라 삽입 지점에 남음·둘째 소수점 삽입 시 지워진 자리로 복원, 기존 평범한 객체 안전망 1건 재확인+신규 케이스 추가). node test/run.js 3861->3868/3868 통과, node --check sw.js/logic.js 통과, index.html HTML주석 제거 후 <script> 블록 4개(src 없는 블록) 전부 node Function 파싱 통과(메인 리뷰 세션이 직접 재실행해 재확인). index.html/sw.js를 수정했으므로 APP_VERSION 1.47.518->1.47.519, sw.js CACHE v785->v786.",
+      "commit": null
+    },
+    {
+      "cycle": 393,
+      "phase": "review",
+      "timestamp": "2026-11-22T10:00:00.000Z",
+      "summary": "develop(cycle393) 커밋 965aa02(qtyCaretAfterFilter 신설, fmtQty() 커서 복원)를 검토. 옛 fmtQty 로직(정규식으로 숫자/소수점 외 제거 후 첫 소수점만 남기고 나머지 소수점 제거)과 새 qtyCaretAfterFilter의 단일 순회(digit이거나 dot&&!dotSeen일 때만 keep)가 동일한 필터 결과를 내는지 직접 트레이스로 확인('12a,3bc'→'123', '12..34'→'12.34' 등), fmtAmt의 caretPosAfterFormat과 달리 콤마 삽입이 없어 'oldCaret 앞에서 살아남은 문자 수'를 caret으로 직접 쓰는 방식이 타당함을 확인. 6개 호출부(asInterestRate/asFx/asGold/asQty×2/연이자율) 전부 oninput=\"fmtQty(this)\" 패턴으로 일관되게 새 구현을 쓰게 됨을 grep으로 재확인. setSelectionRange가 fmtAmt와 동일한 try/catch로 감싸져 selectionStart 없는 평범한 객체에서도 안 터짐을 확인. 실제 버그는 발견하지 못함. node test/run.js 3868/3868 통과(재실행), sw.js/logic.js node --check 통과, index.html HTML 주석 제거 후 추출한 <script> 블록 4개 전부 new Function 파싱 통과. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
