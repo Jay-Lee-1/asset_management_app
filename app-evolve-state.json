@@ -1,15 +1,8 @@
 {
   "cycle": 392,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 387,
-      "phase": "develop",
-      "timestamp": "2026-11-21T07:20:39.000Z",
-      "summary": "검색창 6곳(goalQ/assetQ/histQ/gsQ/catQ/recQ) 모두 지우기(fc-x) 버튼은 있지만 입력창에 포커스가 있는 상태에서 키보드로 검색어를 즉시 지울 방법(Escape)이 통째로 빠져 있던 사례 발견 — Tab으로 fc-x 버튼까지 옮겨가야만 지울 수 있었다(날짜피커 방향키·캐러셀 Arrow키처럼 이미 누적된 키보드 접근성 패턴과 같은 결이지만, 한 위젯이 아니라 검색창 전부가 똑같이 비어 있던 사례). 6개 입력 모두에 onkeydown=\"if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput('ID')}\"를 추가해, 입력값이 있을 때만 document 레벨 onSheetKeydown()의 '시트 닫기' Escape 버블을 막고 clrInput()으로 즉시 지운다 — clrInput()이 이미 fc-x 버튼과 동일하게 'input' 이벤트를 디스패치해 각 *QInput() 디바운스 핸들러를 그대로 타므로 새 로직은 필요 없다. 입력값이 없으면 그대로 버블시켜 Escape가 시트를 닫는 기존 동작을 보존한다. 기존 goalQ/assetQ/histQ/recQ/catQ 마크업 테스트 5건에 어서션을 추가하고, 지금까지 FUNCTIONS에 없던 openGlobalSearch를 추가해 gsQ용 신규 테스트 1건을 더했다. node test/run.js 3756->3757/3757 통과, node --check(메인 <script> 블록 추출)/logic.js/sw.js/test/run.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.506->1.47.507, sw.js CACHE v773->v774.",
-      "commit": "5ba7a64"
-    },
     {
       "cycle": 387,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-22T03:13:51.563Z",
       "summary": "critique(cycle390)의 계획대로 saveAsset() 자산 수정(editing=true) 3갈래 분기(hasAdj/isMarketValued/else) 전부에 undo 추가. editing 분기 진입 직후 origAsset=JSON.parse(JSON.stringify(DB.assets[i]))로 자산 전체를 깊은 복제해두고(commitRec의 prevSettle 관례와 동일), 분기별 부작용도 함께 캡처: (1) hasAdj — updateBalanceAdjust() 호출 전 조정 거래(adjust&&adjustAsset===d.id) 스냅샷(prevAdjSnap)을 떠두고, 호출 후 현재 조정 거래 id(afterAdjId)와 비교해 undo 시 (a) 같은 id로 남아있으면 Object.assign으로 필드만 복원, (b) gap=0으로 톰스톤 삭제됐으면 DB.txns에 되살리고 DB.deletedIds에서 해제, (c) 신규 생성됐으면(prevAdjSnap null) afterAdjId로 filter해서 제거. (2) isMarketValued — qtyLogEntry.id/settleTxnId를 지역변수로 쥐고 있다가 undo 시 DB.assetQtyLog/DB.txns에서 해당 id만 filter 제거(수량·매입원가 자체는 origAsset 복원으로 커버). (3) else는 origAsset 복원만으로 충분. 끝의 save();closeSheet();renderCurrent();toast(...)를 commitTx와 동일하게 origAsset이 있으면(editing=true) undoToast(msg,undoFn)로, 신규 등록(editing=false, origAsset=null)은 기존 toast()로 분기. undoFn은 DB.assets.findIndex(a=>a.id===origAsset.id)로 재탐색해 배열 위치가 바뀌어도 안전하게 교체(commitTx cycle386의 교훈과 동일). test/run.js에 saveAsset undo 테스트 5건 추가: hasAdj 필드수정 복원, hasAdj gap=0 톰스톤 복원, isMarketValued 수량/매입원가+assetQtyLog/결제거래 제거, else 평범한 필드 복원, 신규등록은 undoToast 안 부름. node test/run.js 3851->3856/3856 통과, 메인 <script> 4블록 모두 node Function 파싱 통과, logic.js/sw.js node --check 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.515->1.47.516, sw.js CACHE v782->v783. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 392,
+      "phase": "develop",
+      "timestamp": "2026-11-22T04:14:16.908Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-391 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx/saveAsset undo, 트래시 허브 통합 등)을 주고 조사시킴. index.html 전체 54곳의 .field-clear 입력 중 8곳(검색창 6곳 + 공용 피커 검색 2곳, 모두 과거 cycle에서 처리됨)만 Escape로 즉시 지울 수 있고, 나머지 ~46곳(자산/카테고리/소유자 이름, 거래·반복거래 금액/메모, 분할 금액/메모, 매입원가/매도가/이자율, 이메일, Supabase/Kakao 키, 환율 오버라이드 등)은 × 버튼 클릭으로만 지울 수 있고 키보드 단축키가 전혀 없던 사각지대를 발견. 46곳 각각에 onkeydown을 개별로 추가하는 대신, 모든 시트/화면 렌더 시 .field-clear input을 배선하는 fcWire()의 1회성 배선 가드(_fcw) 안에 keydown 리스너 하나를 중앙 추가 — 필드에 값이 있을 때만 지우고 stopPropagation()해 기존 8곳 전용 핸들러의 Escape 시트닫기 보존 동작과 동일한 시맨틱을 유지하며, 기존 8곳은 이미 자신의 핸들러에서 먼저 지우므로 이중 실행/동작 변화 없음. extractFunction('fcWire') 방식으로 test/run.js에 리스너가 _fcw 가드 안에 있고 el.value 체크가 stopPropagation보다 먼저임을 검증하는 회귀 테스트 1건 추가. node test/run.js 3856->3857/3857 통과, 메인 <script> 5블록 new Function() 파싱/logic.js·sw.js node --check 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.516->1.47.517, sw.js CACHE v783->v784.",
+      "commit": "97b175f"
     }
   ]
 }
