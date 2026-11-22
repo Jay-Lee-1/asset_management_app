@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.519';
+const APP_VERSION='1.47.520';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -11928,6 +11928,31 @@ function monthNavKeydown(e,which){ /* nwCarousel의 ArrowLeft/Right keydown(goto
  monthStep(which,e.key==='ArrowRight'?1:-1); /* renderLedger/renderPlan이 월 레이블 버튼을 통째로 새로 그려 포커스가 끊김 */
  const el=$('mnLbl-'+which);if(el)el.focus();
 }
+/* .seg/.mseg role="group" 세그먼트 토글(기간 선택/귀속 선택/목표 유형/상환 전략/구분 선택/달력·목록
+ * 전환/카테고리 관리 탭/최근 삭제함 탭 등 index.html 15곳 이상)의 방향키 탐색 — 날짜 선택기/공용
+ * 피커 5종/카테고리 아이콘 피커/메인 색 그리드/monthNav에 이미 적용된 '방향키로 네이티브
+ * 라디오그룹처럼 탐색' 패턴의 유일한 사각지대였다(app-evolve cycle393 critique→advance). 15곳
+ * 각 렌더 지점을 개별로 고치는 대신 document 위임 리스너 하나로 .seg,.mseg 전체를 한 번에
+ * 커버한다(onSheetKeydown과 동일한 등록 방식 — 아래서 바로 이어 등록). pkListNextIdx는 ArrowUp/Down
+ * 전용이라 가로 방향 세그먼트에는 그대로 못 쓰고, 모양은 같지만 Left/Right를 쓰는 segNextIdx를
+ * 따로 둔다. */
+function segNextIdx(idx,len,key){
+ if(key==='ArrowLeft')return Math.max(0,idx-1);
+ if(key==='ArrowRight')return Math.min(len-1,idx+1);
+ if(key==='Home')return 0;
+ if(key==='End')return len-1;
+ return idx;
+}
+function segKeydown(e){
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
+ const btn=e.target.closest&&e.target.closest('.seg button,.mseg button');
+ if(!btn)return;
+ const items=[...btn.closest('.seg,.mseg').querySelectorAll('button:not(:disabled)')];
+ const idx=items.indexOf(btn);if(idx<0)return;
+ e.preventDefault();
+ items[segNextIdx(idx,items.length,e.key)].focus();
+}
+document.addEventListener('keydown',segKeydown);
 /* 요약 박스를 좌우로 스와이프하면 달 이동 (홈 월현황 · 전체내역 수지 · 플랜 말일잔액) */
 function setNavLabel(which,y,m){const el=$('mnLbl-'+which);
  if(el)el.innerHTML=`${y}년 ${m}월 ${svg('chevD')}`;

@@ -191,7 +191,7 @@ function extractMainScript() {
 // index.html이 아니라 logic.js에 있다 — 위 logicSrc로 직접 로드하므로 이 목록에는 없다
 // (app-evolve cycle97 advance, cycle111 advance).
 const FUNCTIONS = [
-  'addMonths', 'dpStepDate', 'pkListNextIdx', 'pkGridNextIdx', 'fetchWithTimeout', 'withTimeout',
+  'addMonths', 'dpStepDate', 'pkListNextIdx', 'pkGridNextIdx', 'segNextIdx', 'segKeydown', 'fetchWithTimeout', 'withTimeout',
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat', 'catSelectableIdx',
   'num', 'doRenameCat', 'doDeleteCat', 'doDeleteCatsUndo', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
@@ -35256,6 +35256,38 @@ test('monthNavKeydown: 방향키 목록에 없는 key는 무시한다(monthStep 
   sandbox.monthNavKeydown({ key: 'Tab', preventDefault: () => { prevented = true; } }, 'ledger');
   assert.strictEqual(prevented, false, '방향키가 아니면 preventDefault를 호출하면 안 됨');
   assert.strictEqual(sandbox.lastMonthStepCall, null, '방향키가 아니면 monthStep을 부르면 안 됨');
+});
+// .seg/.mseg role="group" 세그먼트 토글(기간 선택/귀속 선택/목표 유형/상환 전략/구분 선택/달력·목록
+// 전환/카테고리 관리 탭/최근 삭제함 탭 등 15곳 이상)이 날짜 선택기/공용 피커/아이콘·색 그리드/
+// monthNav와 달리 방향키 탐색이 전혀 없던 사각지대였다(app-evolve cycle393 critique). 15곳을
+// 개별로 고치는 대신 document 위임 리스너 segKeydown 하나로 묶었다 — pkListNextIdx(ArrowUp/Down
+// 전용)를 그대로 재사용하지 못해 가로 방향(Left/Right)을 쓰는 segNextIdx를 pkGridNextIdx와
+// 같은 모양으로 새로 둔다.
+test('segNextIdx: ArrowLeft/ArrowRight는 한 칸씩 이동하며 양끝에서 더 나가지 않는다', () => {
+  assert.strictEqual(sandbox.segNextIdx(2, 4, 'ArrowRight'), 3);
+  assert.strictEqual(sandbox.segNextIdx(2, 4, 'ArrowLeft'), 1);
+  assert.strictEqual(sandbox.segNextIdx(0, 4, 'ArrowLeft'), 0, '첫 항목에서 더 왼쪽으로 가지 않는다');
+  assert.strictEqual(sandbox.segNextIdx(3, 4, 'ArrowRight'), 3, '마지막 항목에서 더 오른쪽으로 가지 않는다');
+});
+test('segNextIdx: Home/End는 첫/마지막 항목으로 이동한다', () => {
+  assert.strictEqual(sandbox.segNextIdx(1, 4, 'Home'), 0);
+  assert.strictEqual(sandbox.segNextIdx(1, 4, 'End'), 3);
+});
+test('segNextIdx: 모르는 key는 인덱스를 그대로 돌려준다(호출부가 이동 없음으로 처리)', () => {
+  assert.strictEqual(sandbox.segNextIdx(1, 4, 'ArrowUp'), 1, '세그먼트는 가로 방향이라 ArrowUp/Down은 모르는 key로 취급');
+});
+// segKeydown 자체는 iconCellKeydown/accentCellKeydown과 같은 이유로 DOM을 직접 다루는
+// 쪽이라(e.target.closest, querySelectorAll) 조기-return 가드 2건만 둔다 — 실제 이동 계산은
+// 위 segNextIdx 순수 테스트가, 양끝 클램프·Home/End 회귀는 그 테스트가 커버한다.
+test('segKeydown: 방향키 목록에 없는 key는 closest 호출 전에 조기 return한다', () => {
+  let prevented = false;
+  sandbox.segKeydown({ key: 'Tab', target: { closest: () => { throw new Error('호출되면 안 됨'); } }, preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, false, '방향키가 아니면 preventDefault를 호출하면 안 됨');
+});
+test('segKeydown: target.closest(\'.seg button,.mseg button\')이 null이면(위임 밖 클릭 등) 조기 return한다', () => {
+  let prevented = false;
+  sandbox.segKeydown({ key: 'ArrowRight', target: { closest: () => null }, preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, false, '.seg/.mseg 버튼이 아니면 preventDefault를 호출하면 안 됨');
 });
 test('moveCat: 인접 항목과 순서를 바꾸고 저장 후 같은 탭을 다시 연다', () => {
   setupCatManageDB();

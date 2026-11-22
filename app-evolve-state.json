@@ -1,26 +1,8 @@
 {
-  "cycle": 393,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "세그먼트 토글(.seg/.mseg) 전역 방향키 탐색 추가",
-    "why": ".seg/.mseg role=\"group\" 버튼열(기간 선택/귀속 선택/목표 유형/상환 전략/구분 선택/달력·목록 전환/카테고리 관리 탭/최근 삭제함 탭 등 index.html 15곳 이상, 예: 3442,3631,3790,4262,4267,6169,6285,6602,7180,7593,8825,9434,11121,13628)에 aria-pressed+onclick만 있고 keydown이 전혀 없어, 날짜 선택기/공용 피커 5종/카테고리 아이콘 피커/메인 색 그리드/monthNav/nwCarousel에 이미 적용된 '방향키로 네이티브 라디오그룹처럼 탐색' 패턴의 유일한 사각지대로 남아있음(grep으로 15곳 전수 확인, 기존 ArrowLeft/Right 핸들러들이 .seg/.mseg를 전혀 건드리지 않음도 확인). 한 번의 공용 핸들러로 15곳을 동시에 커버할 수 있어 레버리지가 큼. 기각한 후보: 트래시 허브 검색창(TRASH_MAX_AGE_DAYS로 데이터셋이 작아 가치 낮음), 거래내역 리스트 가상화(ST.hist.page 기반 페이지네이션+_histCache가 이미 있어 미해결 항목 아님).",
-    "approach": "iconCellKeydown/accentCellKeydown/monthNavKeydown과 동일한 조기-return 구조로 segKeydown(e) 신설: ArrowLeft/ArrowRight/Home/End 아니면 return, e.target.closest('.seg,.mseg')로 컨테이너 찾고 그 안의 활성화된(비활성/숨김 제외) <button> 목록에서 다음 인덱스를 pkListNextIdx류 순수 헬퍼로 계산(가능하면 재사용, 열 개념이 없으니 pkListNextIdx(idx,len,key) 그대로 재사용 가능할 것으로 보임), 해당 버튼에 .focus()+.click()을 호출해 기존 onclick 선택 로직(nwPresetSel/histPreset/openCatManage 등)을 그대로 타게 한다. 배선은 각 15개 렌더 지점을 개별 수정하지 않고, fcWire()/onSheetKeydown과 동일한 1회성 가드 패턴으로 document에 위임 keydown 리스너 하나만 추가해 e.target.closest('.seg,.mseg')로 스코프. 범위 제외: .seg/.mseg 마크업 구조·aria-pressed/role=group 시맨틱 변경, openTrashHub의 가로 스크롤 포커스 스크롤 보정(필요하면 후속 사이클로 메모만 남김). test/run.js에 iconCellKeydown/accentCellKeydown 테스트 스타일로 양끝 wraparound 또는 클램프, Home/End 동작 회귀 테스트 추가. index.html/sw.js 수정 시 APP_VERSION/sw.js CACHE 버전 올리고 node test/run.js + node --check(스크립트 블록 추출)로 검증."
-  },
+  "cycle": 394,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 388,
-      "phase": "critique",
-      "timestamp": "2026-11-21T13:14:22.045Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-388 전체 배제 목록(aria-label, debtPayoffStatuses, anyRateSourceStale, N인 정산, acquiredAt 가드 롤백, 휴지통 전체비우기, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트, commitTx undo, 검색창 Escape 6곳, fmtAmt 커서버그, 문의하기 메모 클램프)를 주고 전략적 재검토시킴. 거래내역/전체내역/자산목록/반복거래/목표관리 5곳이 모두 갖춘 선택모드+일괄액션+단일undoToast 패턴이 카테고리 관리(catManageBody, index.html:8752-8789)에만 전혀 없음(ST.catSel grep 0건, 합치기/수정/삭제/변동전환/이월설정/순서이동 전부 행 단위)을 발견. CAT_LIST_SEARCH_THRESHOLD=10이 카테고리 다수 사용자를 이미 전제하는 것과 대비됨. pending_advance_plan에 ST.catSel 추가 + 일괄 삭제/일괄 변동전환 2개 액션만 범위로 둔 계획 저장(합치기/이월설정/순서이동은 제외). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 388,
-      "phase": "advance",
-      "timestamp": "2026-11-21T14:33:56.000Z",
-      "summary": "critique(cycle388)가 세운 계획대로 카테고리 관리(openCatManage/catManageBody, index.html)에 거래내역/전체내역/자산목록/반복거래/목표관리와 동일한 선택모드+하단 일괄 액션바+단일 undoToast 패턴을 추가. ST.catSel={mode:false,ids:new Set()} 신설(카테고리는 고유 id가 없어 ids는 DB.categories[kind] 안의 인덱스 집합, 선택모드 중엔 그 kind를 _catMgmtKind 전역이 들고 있음 — 구분(지출/수입/저축) 전환 시 자동 초기화). openCatManage에 '선택' 토글 버튼과 선택모드 중 검색창/새 카테고리 추가 입력 숨김을 추가하고, catManageBody에 체크박스 행 렌더링 분기(합치기/수정/삭제/변동전환/이월설정/순서이동 버튼을 체크박스로 대체, ADJUST_CAT은 선택 대상에서 제외)를 추가. wireLongPress로 롱프레스 진입도 연결. 계획대로 범위를 두 액션으로 제한: (1) 일괄 삭제 — doDeleteCat의 트래시(DB.trashCats) 적재/반복거래 비활성화 로직을 catDelSel/doDeleteCatsUndo로 배치화해 deleteGoalsUndo와 동일한 단일 undoToast 제공, (2) 일괄 변동/고정 전환 — bulkCatVarTargets/doBulkCatVarToggle/catVarSel로 doBulkInclToggle(자산 총자산 포함/제외 배치 토글)과 동일한 패턴 적용(저축 카테고리는 변동/고정 구분이 없어 버튼 자체를 안 보여줌). activeSel()/updateSelBottom()/exitSelMode()/closeSheet()/go()에 다른 4개 선택모드와 동일한 배선을 추가. 합치기/이월설정/순서이동은 계획대로 이번 cycle 범위에서 제외.\ntest/run.js에 catSelectableIdx/bulkCatVarTargets/doBulkCatVarToggle/doDeleteCatsUndo(배치 삭제 undo 복원·트래시 적재·반복거래 비활성화 패리티 포함)/catSelPartial/catToggleSel/catSelAll/catDelSel/catVarSel 및 openCatManage/catManageBody의 선택모드 렌더링·activeSel의 catVarT 판정 회귀 테스트를 신규 추가. 기존 doRenameCat/doDeleteCat/mergeCatInto/addCat/moveCat/openCatManage/catManageBody/catQInput/closeSheet 등 카테고리 관련 함수들은 전부 내부적으로 openCatManage(k)를 불러 시트를 새로고침하는데, 이제 그 함수가 ST.catSel.mode를 읽으므로 그 함수들을 테스트하는 기존 픽스처 다수가 깨짐 — 기본 sandbox.ST 및 setupAssetsDB/setupLedgerDB/setupHistoryDB 등 널리 쓰이는 ST 전체 재할당 지점들에 catSel 기본값을 추가해 회귀 없이 수습. node test/run.js 3773->3815/3815 통과(신규 42건), node --check(메인 <script> 블록) 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.509->1.47.510, sw.js CACHE v776->v777. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 389,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-22T10:35:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-393 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt/fmtQty 커서버그, 문의하기 메모 클램프, commitTx/saveAsset undo, 트래시 허브 통합, 전역 field-clear Escape, monthNav 방향키 등)를 주고 전략적 재검토시킴. .seg/.mseg role=\"group\" 세그먼트 토글(기간 선택/귀속 선택/목표 유형/상환 전략/구분 선택/달력·목록 전환/카테고리 관리 탭/최근 삭제함 탭 등 index.html 15곳 이상)이 aria-pressed+onclick만 있고 keydown이 전혀 없어, 날짜 선택기/공용 피커/카테고리 아이콘 피커·메인 색 그리드/monthNav/nwCarousel에 이미 적용된 방향키 네이티브 라디오그룹 탐색 패턴의 유일한 사각지대로 남아있음을 발견(grep으로 15곳 전수 확인, 기존 ArrowLeft/Right 핸들러들이 .seg/.mseg를 전혀 안 건드림도 확인). 기각한 후보: 트래시 허브 검색창(TRASH_MAX_AGE_DAYS로 데이터셋 작아 가치 낮음), 거래내역 리스트 가상화(ST.hist.page 기반 페이지네이션+_histCache 이미 존재). pending_advance_plan에 공용 segKeydown(e) 신설(iconCellKeydown/accentCellKeydown/monthNavKeydown과 동일한 조기-return 구조, document 위임 리스너로 15곳 개별 수정 없이 한 번에 배선) 계획 저장. node test/run.js 3868/3868 통과 확인(서브에이전트가 재실행). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 393,
+      "phase": "advance",
+      "timestamp": "2026-11-22T11:10:05.000Z",
+      "summary": "critique(cycle393)의 계획대로 .seg/.mseg role=\"group\" 세그먼트 토글 15곳 이상에 방향키 탐색을 공용 document 위임 리스너로 추가. monthNavKeydown 바로 뒤에 segNextIdx(idx,len,key)(ArrowLeft/ArrowRight/Home/End, pkListNextIdx와 같은 모양이지만 가로 방향이라 Left/Right를 씀 — pkListNextIdx는 ArrowUp/Down 전용이라 그대로 재사용하지 못함)와 segKeydown(e)(iconCellKeydown/accentCellKeydown과 동일한 조기-return 구조: 알려진 방향키 아니면 return → e.target.closest('.seg button,.mseg button') 없으면 return → closest('.seg,.mseg')의 'button:not(:disabled)' 목록에서 segNextIdx로 다음 인덱스 계산 → focus())를 신설하고 document.addEventListener('keydown',segKeydown)으로 1회 등록(onSheetKeydown과 동일한 등록 방식). 15개 렌더 지점(nwh-seg 3곳, 귀속/목표유형/구분선택 세그, 상환전략, 달력·목록 전환 mseg 2곳, 카테고리 관리/트래시 허브 탭, 금액 형식 등)은 전혀 건드리지 않음 — 위임 리스너라 기존 onclick 선택 로직(nwPresetSel/histPreset/openCatManage 등)은 그대로 두고 포커스만 이동시킨다(계획의 '.focus()+.click()' 대신, 기존 아이콘·색 그리드·pk 목록 전부가 따르는 'focus만 이동, 선택은 네이티브 Enter/Space'로 일관성 유지 — click()을 추가로 부르면 세그먼트 안에서도 유일하게 다른 동작이 됨). .seg/.mseg 마크업·aria-pressed/role=group 시맨틱, 트래시 허브 가로 스크롤 포커스 보정은 계획대로 범위 제외. test/run.js에 segNextIdx 순수 테스트 3건(좌우 이동+양끝 클램프, Home/End, 세그먼트는 가로라 ArrowUp/Down은 모르는 key로 취급)과 segKeydown 조기-return 가드 2건(방향키 아닌 key, closest null)을 monthNavKeydown 테스트 바로 뒤에 추가, FUNCTIONS에 segNextIdx/segKeydown 추가. node test/run.js 3868->3873/3873 통과, 메인 <script> 4블록(HTML 주석 제거 후 추출) new Function 파싱 통과, logic.js/sw.js node --check 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.519->1.47.520, sw.js CACHE v786->v787. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
