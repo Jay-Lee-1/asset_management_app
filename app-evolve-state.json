@@ -1,15 +1,12 @@
 {
   "cycle": 392,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "가계부/플랜 월 이동 캐러셀(monthNav) 키보드 화살표 탐색 누락",
+    "why": "wireMonthCarousel(14182행)이 바인딩하는 monthNav(11891-11893행, ledger 6302/6312행·plan 7937/7943행에서 사용)는 touchstart/touchmove/touchend/touchcancel만 받고(14200-14239행) keydown이 전혀 없어, 스와이프를 못 쓰는 키보드 사용자는 ±1개월 이동 수단이 openYMSheet/openMonthSheet 휠뿐이다. 같은 좌우 캐러셀 패턴인 nwCarousel(귀속 전환, 4763-4784행)은 이미 ArrowLeft/Right keydown(gotoNwOwner)을 갖추고 있어 앱 안에 동일 패턴 캐러셀 2곳만 접근성이 비대칭. 가계부/플랜은 최고빈도 화면이라 공백의 체감 영향이 크고 exclusion list(날짜피커/공용피커/아이콘·색그리드 방향키)에 없는 새 자리.",
+    "approach": "1) monthNav(which,label)의 mn-lbl 버튼에 onkeydown=\"monthNavKeydown(event,'${which}')\" 추가. 2) monthNavKeydown(e,which) 신설(nwCarousel keydown 4779-4784행과 동일 패턴): ArrowLeft/Right 아니면 return, preventDefault 후 monthStep(which, e.key==='ArrowRight'?1:-1) 호출(11944행 monthStep 그대로 재사용, ledger/plan 분기 이미 존재). monthStep이 renderLedger()/renderPlan()으로 innerHTML을 통째로 교체해 포커스가 끊기므로 호출 직후 $('mnLbl-'+which).focus()로 포커스 복귀(refreshNwHistoryCard 4707-4709행과 동일 원칙). 3) mn-lbl은 이미 <button>이라 tabindex 불필요. 4) monthStep('home',...) 분기(11945행)는 renderHome()이 항상 이번 달로 고정돼(3366행) 실제 도달 불가한 죽은 코드이므로 이번 범위 제외하되 변경하지 않음. 5) test/run.js에 monthNavKeydown 가드(알 수 없는 key는 return)와 ArrowLeft/Right 각각 monthStep 호출+포커스 복귀 확인 테스트 추가, node test/run.js 통과 확인."
+  },
   "history": [
-    {
-      "cycle": 387,
-      "phase": "critique",
-      "timestamp": "2026-11-21T09:10:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-387에서 다룬 모든 주제(aria-label, debtPayoffStatuses 통합, anyRateSourceStale, acquiredAt 가드 롤백, 휴지통 전체비우기 7종, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트, commitTx undo, 검색창 Escape 6곳)를 배제 목록으로 주고 전략적 재검토시킴. fmtAmt(inp,allowNeg)(index.html:11396)가 금액 입력 oninput마다 inp.value를 toLocaleString('ko-KR')로 재포맷하면서 selectionStart/selectionEnd를 전혀 다루지 않아, 숫자 맨 끝이 아닌 중간을 고칠 때마다 커서가 끝으로 튀어버리는 버그를 발견. 거래/분담/반복/자산 잔액·매입가/채무 추가상환/목표/예산/큰거래 임계값/빠른금액 등 앱 전역 금액 입력이 전부 이 함수를 공유해 영향받는, 사용 빈도가 가장 높은 입력 중 하나. pending_advance_plan에 caretPosAfterFormat(oldValue,oldCaret,newValue) 순수 헬퍼 + fmtAmt() setSelectionRange 복원 + test/domstub.js selection 스텁 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 387,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-22T07:05:00.000Z",
       "summary": "develop(cycle392) 커밋 97b175f(fcWire()의 _fcw 1회성 배선 가드 안에 Escape 지우기 keydown 리스너 중앙 추가)를 검토. 검색창 6곳(goalQ 등)·공용 피커 2곳(pkQ/pkCatQ)이 이미 가진 인라인 onkeydown 속성이 HTML 파싱 시점(innerHTML 대입)에 등록되고 fcWire()의 addEventListener는 그 뒤 렌더 완료 후에야 호출되므로, 같은 keydown 이벤트에서 인라인 핸들러가 먼저 실행돼 el.value를 비우고 stopPropagation한 뒤 새 중앙 리스너가 돌면 el.value가 이미 빈 문자열이라 조건(e.key==='Escape'&&el.value)에서 자연히 걸러짐을 리스너 등록 순서 규칙(동일 타겟·동일 단계에서는 등록 순서대로 실행)으로 직접 확인 — 코드 주석의 '자연히 걸러져 중복 동작하지 않는다' 주장이 사실임을 검증. 날짜 선택(acquiredAt/maturityDate/목표일)과 PIN/비밀번호(pw-wrap) 입력은 .field-clear 안에 <input>이 없거나 .pw-wrap을 쓰므로 querySelectorAll('.field-clear input') 선택자에 전혀 걸리지 않아 영향 없음을 grep으로 확인. 새 리스너가 clrInput()을 호출하는 대신 동일 로직(value='', input 디스패치, fcToggle)을 인라인으로 복제했는데 el.focus()만 호출하지 않음 — 그러나 Escape는 이미 포커스가 그 입력에 있을 때만 발생하므로 focus 호출 누락은 실질적 차이가 없음을 확인. sbUrlIn/kkeyIn2처럼 oninput 속성이 없는 입력에 input 이벤트를 디스패치해도 리스너가 없어 부작용이 없음도 확인. 실제 버그는 발견하지 못함. node test/run.js 3857/3857 통과(재실행), 메인 <script> 블록(HTML 주석 제거 후 추출) new Function 파싱/logic.js·sw.js node --check 통과. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 392,
+      "phase": "critique",
+      "timestamp": "2026-11-22T08:40:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-392 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx/saveAsset undo, 트래시 허브 통합, 전역 field-clear Escape 등)를 주고 전략적 재검토시킴. 가계부(ledger)/플랜(plan) 월 이동 캐러셀 monthNav(index.html:11891-11893, wireMonthCarousel:14182)가 touchstart/touchmove/touchend/touchcancel만 바인딩돼 있고(14200-14239) keydown이 전혀 없어, 스와이프를 못 쓰는 키보드 사용자는 ±1개월 이동 수단이 openYMSheet/openMonthSheet 휠뿐임을 발견. 같은 좌우 캐러셀 패턴인 nwCarousel(귀속 전환, 4763-4784)은 이미 ArrowLeft/Right keydown(gotoNwOwner)을 갖춰 앱 내 동일 패턴 캐러셀 2곳만 접근성이 비대칭하고, 가계부/플랜이 최고빈도 화면이라 공백의 체감 영향이 크다고 판단. monthStep('home',...) 분기(11945)는 renderHome()이 항상 이번 달로 고정돼(3366) 실제 도달 불가한 죽은 코드라 범위에서 제외(변경하지 않음). pending_advance_plan에 monthNavKeydown(e,which) 신설 + monthNav 버튼 onkeydown 배선 + monthStep 재사용 + 재렌더 후 mnLbl-{which} 포커스 복귀 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
