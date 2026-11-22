@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.518';
+const APP_VERSION='1.47.519';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -11567,7 +11567,37 @@ function caretPosAfterFormat(oldValue,oldCaret,newValue){
  return newValue.length;
 }
 function fmtAmt(inp,allowNeg){const oldValue=inp.value;const oldCaret=typeof inp.selectionStart==='number'?inp.selectionStart:oldValue.length;const neg=allowNeg&&/^-/.test(inp.value);let v=inp.value.replace(/[^0-9]/g,'');const n=v?Math.min(Number(v),AMOUNT_MAX):0;const newValue=v?(neg?'-':'')+n.toLocaleString('ko-KR'):(neg?'-':'');inp.value=newValue;try{const pos=caretPosAfterFormat(oldValue,oldCaret,newValue);inp.setSelectionRange(pos,pos);}catch(e){}}
-function fmtQty(inp){let v=inp.value.replace(/[^0-9.]/g,'');const dot=v.indexOf('.');if(dot!==-1)v=v.slice(0,dot+1)+v.slice(dot+1).replace(/\./g,'');inp.value=v}
+/* qtyCaretAfterFilter(oldValue,oldCaret): fmtQty()도 fmtAmt()와 똑같이 매 oninput마다 inp.value를
+ * 통째로 재대입하면서(숫자·소수점 외 문자 제거, 둘째 소수점부터 제거) 커서 위치를 전혀 다루지
+ * 않았다 — .value 대입은 값이 실제로 바뀌지 않아도 브라우저가 커서를 끝으로 옮기므로
+ * (caretPosAfterFormat 주석과 동일한 근거, app-evolve cycle387이 fmtAmt에서 고친 바로 그 버그
+ * 클래스), 보유수량(FX/금/주식·코인, taPctInput의 비중)처럼 소수점이 있는 수량 입력칸에서 맨
+ * 끝이 아닌 자리를 고쳐 쓸 때마다(예: "12.5"의 "1" 뒤에 "0"을 끼워 "102.5"로 고치는 경우) 커서가
+ * 매 입력마다 끝으로 튀어 연속 수정이 거의 불가능했다(app-evolve cycle393 develop). fmtAmt와
+ * 달리 fmtQty는 콤마를 새로 삽입하지 않고 문자를 제거만 하므로(순서 유지, 삽입 없음)
+ * caretPosAfterFormat의 '숫자 개수로 재탐색' 방식 대신, 필터와 똑같은 한 번의 순회로 "oldCaret
+ * 앞에서 살아남은 문자 수"를 바로 세는 쪽이 더 간단하고 fmtQty의 실제 필터 규칙(숫자는 전부
+ * 유지, 첫 소수점만 유지)과 1:1로 대응돼 읽기도 쉽다. 필터링된 값 자체도 이 함수가 돌려줘
+ * fmtQty가 같은 규칙을 두 번 구현하지 않게 한다. */
+function qtyCaretAfterFilter(oldValue,oldCaret){
+ oldValue=String(oldValue==null?'':oldValue);
+ oldCaret=Math.max(0,Math.min(oldCaret,oldValue.length));
+ let value='',caret=0,dotSeen=false;
+ for(let i=0;i<oldValue.length;i++){
+  const c=oldValue[i];
+  const keep=(c>='0'&&c<='9')||(c==='.'&&!dotSeen);
+  if(c==='.'&&keep)dotSeen=true;
+  if(keep){value+=c;if(i<oldCaret)caret++;}
+ }
+ return {value,caret};
+}
+function fmtQty(inp){
+ const oldValue=inp.value;
+ const oldCaret=typeof inp.selectionStart==='number'?inp.selectionStart:oldValue.length;
+ const r=qtyCaretAfterFilter(oldValue,oldCaret);
+ inp.value=r.value;
+ try{inp.setSelectionRange(r.caret,r.caret);}catch(e){}
+}
 
 function wireLongPress(root,onLong){
  if(!root)return;

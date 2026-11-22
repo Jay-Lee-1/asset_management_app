@@ -240,7 +240,7 @@ const FUNCTIONS = [
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals', 'makeMonthCatCache',
   'yearSpendByCategory', 'yearIncomeByCategory', 'yearRealizedGain', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'caretPosAfterFormat', 'fmtAmt', 'fmtQty',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'caretPosAfterFormat', 'fmtAmt', 'qtyCaretAfterFilter', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'confirmCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
@@ -2348,6 +2348,52 @@ test('fmtQty(): 빈 문자열은 그대로 빈 문자열로 남는다', () => {
   const inp = { value: '' };
   sandbox.fmtQty(inp);
   assert.strictEqual(inp.value, '');
+});
+
+/* ---------- qtyCaretAfterFilter()/fmtQty(): 수량 입력 중간 편집 시 커서가 끝으로 튀던 버그
+ * (app-evolve cycle393 develop) — fmtAmt()의 caretPosAfterFormat 수정(cycle387)과 같은 버그
+ * 클래스가 fmtQty()에는 그대로 남아있었다. */
+test('qtyCaretAfterFilter(): 필터링이 필요 없는 입력은 값이 그대로이고 caret도 oldCaret과 같다', () => {
+  // vm 샌드박스가 돌려준 객체는 Node 메인 realm과 Object 프로토타입이 달라 deepStrictEqual이
+  // "구조는 같지만 참조 동일성이 다르다"로 오탐하므로, 필드별로 strictEqual로 비교한다.
+  const r = sandbox.qtyCaretAfterFilter('12.5', 2);
+  assert.strictEqual(r.value, '12.5'); assert.strictEqual(r.caret, 2);
+});
+test('qtyCaretAfterFilter(): 문자/기호가 제거되면 그 앞까지 살아남은 문자 수만큼 caret이 줄어든다', () => {
+  // "12a,3bc"에서 caret이 'a' 바로 뒤(3)에 있었다면, 살아남은 건 "12" 2글자뿐이라 caret은 2
+  const r = sandbox.qtyCaretAfterFilter('12a,3bc', 3);
+  assert.strictEqual(r.value, '123'); assert.strictEqual(r.caret, 2);
+});
+test('qtyCaretAfterFilter(): 둘째 소수점이 제거되면 caret이 그 자리(첫 소수점 뒤)로 당겨진다', () => {
+  // "12.34"의 첫 '.' 뒤에 '.'를 잘못 더 쳐서 "12..34"가 된 상태(caret은 둘째 '.' 뒤=4)
+  const r = sandbox.qtyCaretAfterFilter('12..34', 4);
+  assert.strictEqual(r.value, '12.34'); assert.strictEqual(r.caret, 3);
+});
+test('qtyCaretAfterFilter(): oldCaret이 범위를 벗어나도(음수/길이 초과) clamp된다', () => {
+  assert.strictEqual(sandbox.qtyCaretAfterFilter('12.5', -3).caret, 0);
+  assert.strictEqual(sandbox.qtyCaretAfterFilter('12.5', 99).caret, 4);
+});
+test('fmtQty(): 소수점 중간에 숫자를 끼워 넣어도(.value 대입이 기본적으로 옮기는 끝 위치 대신) 방금 입력한 숫자 뒤로 커서를 복원한다', () => {
+  const inp = domstub.createElement('input');
+  inp.value = '129.34'; // "12.34"의 "12" 뒤에 '9'를 끼워 넣어 브라우저가 만든 raw 값("129.34")
+  inp.selectionStart = 3; inp.selectionEnd = 3; // 네이티브 삽입 직후 캐럿(필터링으로 아무것도 안 지워짐)
+  sandbox.fmtQty(inp);
+  assert.strictEqual(inp.value, '129.34');
+  assert.strictEqual(inp.selectionStart, 3, '커서가 값 끝(6)이 아니라 방금 입력한 숫자 뒤에 남아야 함');
+  assert.strictEqual(inp.selectionEnd, 3);
+});
+test('fmtQty(): 둘째 소수점을 끼워 넣어 지워지는 경우에도 caret이 끝이 아니라 첫 소수점 뒤로 복원된다', () => {
+  const inp = domstub.createElement('input');
+  inp.value = '12..34'; // "12.34"의 첫 '.' 뒤에 '.'를 잘못 더 입력한 raw 값
+  inp.selectionStart = 4; inp.selectionEnd = 4; // 방금 입력한 둘째 '.' 바로 뒤
+  sandbox.fmtQty(inp);
+  assert.strictEqual(inp.value, '12.34');
+  assert.strictEqual(inp.selectionStart, 3, '지워진 둘째 소수점 자리(끝이 아니라 첫 소수점 뒤)에 남아야 함');
+});
+test('fmtQty(): selectionStart/setSelectionRange가 없는 평범한 객체(기존 테스트들)에도 에러 없이 값만 포맷한다', () => {
+  const inp = { value: '1.2.3' };
+  assert.doesNotThrow(() => sandbox.fmtQty(inp));
+  assert.strictEqual(inp.value, '1.23');
 });
 
 /* ---------- catVar / doRenameCat: 카테고리 이름변경 시 '변동' 플래그 마이그레이션 (c38ee65) ---------- */

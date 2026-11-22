@@ -1,15 +1,8 @@
 {
   "cycle": 393,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 388,
-      "phase": "develop",
-      "timestamp": "2026-11-21T11:30:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 fmtAmt/commitTx/Escape검색 등 최근 cycle 주제를 배제 목록으로 주고 조사시켜, 문의하기(DB.inquiries[].text) 메모 입력에 길이 상한이 전혀 없음을 발견(앱의 다른 모든 메모 입력 txMemo/splitMemo/rMemo는 MEMO_MAX=200 maxlength+oninput clamp를 갖춤, sanitizeBackup()도 d.memo는 클램프하지만 같은 함수의 d.text(문의)는 타입만 코어션하고 길이는 안 봄). inqText/inqEditText textarea에 maxlength=\"${MEMO_MAX}\" 추가하고, 신규 oninput 핸들러 inqTextInput(txMemoInput과 동일 패턴)을 둘 다에 연결. sendInquiry()/saveInquiryEdit()도 DB에 push/저장하기 직전에 한 번 더 MEMO_MAX로 clamp(브라우저 간 maxlength 처리 차이에 대한 방어선, 기존 메모 입력 핸들러들의 '한 번 더 clamp' 관례와 동일). sanitizeBackup()의 inquiries/trashInquiries 블록 둘 다에 d.memo(10165/10272줄)와 동일한 'd.text.length>MEMO_MAX면 slice+fixedCount++' clamp를 추가해, 백업 복원/클라우드 풀로 들어오는 다른 기기의 과거 미클램프 레코드(megabyte급 메모가 매 백업/동기화마다 반복 왕복되는 문제)도 막음. 테스트 7건 추가: inqTextInput clamp/정상유지, sendInquiry clamp/정상유지, saveInquiryEdit clamp, sanitizeBackup inquiries/trashInquiries text clamp. test/run.js FUNCTIONS에 inqTextInput 추가. node test/run.js 3766->3773/3773 통과, node --check logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.508->1.47.509, sw.js CACHE v775->v776.",
-      "commit": "2fc95b4"
-    },
     {
       "cycle": 388,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-22T09:50:00.000Z",
       "summary": "critique(cycle392)의 계획대로 가계부/플랜 월 이동 캐러셀 monthNav에 키보드 화살표 탐색 추가. monthNav(which,label)의 mn-lbl 버튼에 onkeydown=\"monthNavKeydown(event,'${which}')\" 배선, nwCarousel의 ArrowLeft/Right keydown(gotoNwOwner, 4779-4784행)과 완전히 동일한 조기-return 구조로 monthNavKeydown(e,which) 신설 — ArrowLeft/Right 아니면 return, preventDefault 후 기존 monthStep(which, delta) 그대로 재사용(ledger/plan 분기 이미 존재, 새 분기 없음). monthStep이 renderLedger()/renderPlan()으로 화면을 통째로 다시 그려 포커스가 끊기므로, 호출 직후 $('mnLbl-'+which).focus()로 같은 id의 버튼에 포커스를 되돌림(refreshNwHistoryCard 4707-4709행과 동일 원칙). monthStep('home',...) 분기(11945행, renderHome이 항상 이번 달로 고정돼 실제 도달 불가)는 계획대로 범위 제외하고 변경하지 않음. test/run.js에 monthStep 호출을 스파이로 기록하는 lastMonthStepCall 스텁(openMonthSheet와 동일 패턴)을 추가하고, monthNav 마크업에 onkeydown 배선 확인 1건 + monthNavKeydown ArrowRight(+1월, ledger 포커스 복귀)/ArrowLeft(-1월, plan 포커스 복귀)/방향키 아닌 key 무시(가드) 테스트 3건, 총 4건 추가. 'monthNavKeydown'을 FUNCTIONS에 추가. node test/run.js 3857->3861/3861 통과, 메인 <script> 4블록(HTML 주석 제거 후 추출) new Function 파싱 통과, sw.js node --check 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.517->1.47.518, sw.js CACHE v784->v785. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 393,
+      "phase": "develop",
+      "timestamp": "2026-11-22T08:18:52.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-392 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx/saveAsset undo, 트래시 허브 통합, 전역 field-clear Escape, monthNav 방향키 등)를 주고 조사시킴. fmtAmt()가 cycle387에서 고친 '매 oninput마다 .value 재대입으로 커서가 끝으로 튀는 버그'와 정확히 같은 클래스의 버그가 fmtQty()(보유수량 FX/금/주식·코인, 연이자율 등 6곳이 사용)에는 그대로 남아있었음을 발견(제외 목록의 'fmtAmt 커서버그 수정'은 fmtAmt 하나만 다뤘고 fmtQty는 범위 밖이었음). qtyCaretAfterFilter(oldValue,oldCaret) 신설 — fmtQty의 기존 필터 규칙(숫자 유지, 첫 소수점만 유지, 나머지 제거)을 한 번의 순회로 수행하면서 'oldCaret 앞에서 살아남은 문자 수'로 caret을 직접 계산(fmtAmt의 caretPosAfterFormat과 달리 콤마 삽입이 없어 더 단순). fmtQty(inp)를 이 함수를 쓰도록 재작성해 inp.setSelectionRange로 커서를 복원(fmtAmt와 동일한 try/catch 안전망, selectionStart 없는 평범한 객체에도 안 터짐). test/run.js FUNCTIONS에 qtyCaretAfterFilter 추가, 테스트 8건 추가(순수 4건: 필터 불필요/문자 제거/둘째 소수점 제거/oldCaret clamp, 실행형 2건: 숫자 중간 삽입 시 커서가 끝이 아니라 삽입 지점에 남음·둘째 소수점 삽입 시 지워진 자리로 복원, 기존 평범한 객체 안전망 1건 재확인+신규 케이스 추가). node test/run.js 3861->3868/3868 통과, node --check sw.js/logic.js 통과, index.html HTML주석 제거 후 <script> 블록 4개(src 없는 블록) 전부 node Function 파싱 통과(메인 리뷰 세션이 직접 재실행해 재확인). index.html/sw.js를 수정했으므로 APP_VERSION 1.47.518->1.47.519, sw.js CACHE v785->v786.",
       "commit": null
     }
   ]
