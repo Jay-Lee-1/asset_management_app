@@ -305,6 +305,11 @@ const FUNCTIONS = [
   'catManageBody', 'catQInput',
   'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'openIconPicker', 'pickCatIcon', 'iconCellKeydown',
+  // openAccentSheet/setAccent/accentCellKeydown: 메인 색 그리드(.accent-grid)에 iconCellKeydown과
+  // 동일한 방향키 그리드 탐색을 추가한 것(app-evolve cycle391 develop) — setAccent()는 openIconPicker
+  // 옆의 pickCatIcon과 같은 이유로(onclick 문자열로만 참조) 직접 호출하는 테스트는 두지 않는다.
+  // openAccentSheet()가 쓰는 ACCENTS 배열은 아래 CONSTS에 함께 올린다.
+  'openAccentSheet', 'setAccent', 'accentCellKeydown',
   // renameCatSheet는 지금까지 extractFunction 소스 패턴으로만 검증돼(29984줄 부근) renameCat 입력의
   // value="${esc(catRenameDraft.name)}" 같은 실제 왕복 이스케이핑은 한 번도 실행된 적이 없었다
   // (app-evolve cycle374 advance — .replace(/"/g,'&quot;') 7곳을 esc()로 통일한 critique 계획의
@@ -468,7 +473,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'CAT_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'TRASH_HUB_KINDS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET',
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'CAT_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'TRASH_HUB_KINDS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET', 'ACCENTS',
   // WK(주말·공휴일 조정 어휘)는 renderRecSheet가 d.freq==='monthly'일 때 WK[d.weekend||'none'][0]로
   // 직접 참조한다(app-evolve cycle372 advance, openTxSheet/openRecSheet 실행형 테스트 추가 — 이
   // 전까지 renderRecSheet() 자체가 한 번도 실행된 적이 없어 빠져 있었다).
@@ -35016,6 +35021,30 @@ test('iconCellKeydown: 방향키 목록에 없는 key는 무시한다', () => {
   sandbox.iconCellKeydown({ key: 'Tab', target: { closest: () => ({}) }, preventDefault: () => { prevented = true; } });
   assert.strictEqual(prevented, false, '방향키가 아니면 closest도 호출 전에 조기 return해야 함');
 });
+// 날짜 선택기/공용 피커 5종/아이콘 피커(.icon-grid)에 이어, 설정의 메인 색 그리드(.accent-grid,
+// openAccentSheet)도 같은 모양의 정적 열거형 그리드(7개, 4열)인데 방향키 탐색이 빠져 있던
+// 사각지대였다(app-evolve cycle391 develop) — iconCellKeydown과 완전히 같은 구조로
+// accentCellKeydown을 추가하고 pkGridNextIdx를 cols=4로 재사용한다.
+test('openAccentSheet: .accent-grid에 id와 accentCellKeydown 방향키 배선이 있다', () => {
+  sandbox.DB = { settings: { accent: 'indigo' } };
+  sandbox.openAccentSheet();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('<div class="accent-grid" id="accentGrid" onkeydown="accentCellKeydown(event)">'), '.accent-grid에 id="accentGrid"와 onkeydown="accentCellKeydown(event)"가 있어야 함');
+  assert.strictEqual((html.match(/class="accent-sw/g) || []).length, sandbox.ACCENTS.length, 'ACCENTS 배열 길이만큼 .accent-sw 버튼이 떠야 함');
+});
+test('accentCellKeydown: target.closest(\'.accent-sw\')이 null이면(위임 밖 클릭 등) 조기 return한다', () => {
+  let prevented = false;
+  sandbox.accentCellKeydown({ key: 'ArrowRight', target: { closest: () => null }, preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, false, '.accent-sw가 아니면 preventDefault를 호출하면 안 됨');
+});
+test('accentCellKeydown: 방향키 목록에 없는 key는 무시한다', () => {
+  let prevented = false;
+  sandbox.accentCellKeydown({ key: 'Tab', target: { closest: () => ({}) }, preventDefault: () => { prevented = true; } });
+  assert.strictEqual(prevented, false, '방향키가 아니면 closest도 호출 전에 조기 return해야 함');
+});
+// pkGridNextIdx는 이미 cols=3/5로 순수 검증돼 있고(위 1266줄 부근) cols=4(ACCENTS, 7개)도
+// 같은 범용 계산이라 별도 전용 테스트 없이 그 커버리지를 그대로 공유한다. accentCellKeydown
+// 자체는 iconCellKeydown/pkCatKeydown과 같은 이유로 DOM을 직접 다루는 쪽이라 가드 2건만 둔다.
 test('moveCat: 인접 항목과 순서를 바꾸고 저장 후 같은 탭을 다시 연다', () => {
   setupCatManageDB();
   sandbox.moveCat('expense', 0, 1);

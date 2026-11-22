@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.514';
+const APP_VERSION='1.47.515';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -11239,9 +11239,21 @@ function applyAccent(){document.documentElement.setAttribute('data-accent',DB.se
 function openAccentSheet(){
  const cur=DB.settings.accent||'teal';
  openSheet(`<h3>메인 색</h3><div class="desc">앱 전체 포인트 색을 골라요. 수입·지출·저축 색과 겹치지 않게 튜닝했고, 다크모드도 자동 대응돼요.</div>
-  <div class="accent-grid">${ACCENTS.map(a=>`<button class="accent-sw ${a.id===cur?'on':''}" onclick="setAccent('${a.id}')"><span class="accent-dot" style="background:${a.c}">${a.id===cur?svg('check'):''}</span><span class="accent-nm">${a.name}</span></button>`).join('')}</div>`);
+  <div class="accent-grid" id="accentGrid" onkeydown="accentCellKeydown(event)">${ACCENTS.map(a=>`<button class="accent-sw ${a.id===cur?'on':''}" onclick="setAccent('${a.id}')"><span class="accent-dot" style="background:${a.c}">${a.id===cur?svg('check'):''}</span><span class="accent-nm">${a.name}</span></button>`).join('')}</div>`);
 }
 function setAccent(id){DB.settings.accent=id;applyAccent();save();openAccentSheet();if(navigator.vibrate)navigator.vibrate(6)}
+/* 메인 색 그리드(.accent-grid, CSS grid-template-columns:repeat(4,1fr))의 방향키 탐색 — iconCellKeydown
+ * (카테고리 아이콘 피커, app-evolve cycle390 develop)과 완전히 같은 모양의 정적 열거형 그리드라 같은
+ * pkGridNextIdx 순수 헬퍼를 cols=4로 재사용한다. 열이 바뀌면 이 숫자도 CSS와 같이 바꿔야 한다. */
+function accentCellKeydown(e){
+ if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key))return;
+ const item=e.target.closest&&e.target.closest('.accent-sw');
+ if(!item)return;
+ const items=[...item.closest('.accent-grid').querySelectorAll('.accent-sw')];
+ const idx=items.indexOf(item);if(idx<0)return;
+ e.preventDefault();
+ items[pkGridNextIdx(idx,items.length,4,e.key)].focus();
+}
 
 /* ================= SHEETS / SWIPE / LONGPRESS ================= */
 function applyHeight(sh,sc){ /* 높이 단일 소스: 세션 고정 높이 + 확장 여부 */
