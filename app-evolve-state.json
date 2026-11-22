@@ -1,6 +1,6 @@
 {
   "cycle": 391,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -128,6 +128,13 @@
       "timestamp": "2026-11-21T23:40:00.000Z",
       "summary": "critique(cycle390)의 계획대로 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 진입점을 openTrashHub(kind) 탭 허브로 통합. TRASH_HUB_KINDS([kind,dbKey,label] 7개)와 trashHubTotalCount()를 TRASH_MAX_AGE_DAYS 옆에 공용으로 선언. 기존 7개 openXTrashList()의 openSheet(...) 호출부를 xTrashBody()(txnsTrashBody/assetsTrashBody/recsTrashBody/goalsTrashBody/qtyLogTrashBody/catsTrashBody/inquiriesTrashBody) 순수 렌더 함수로 쪼개고, openXTrashList()는 `openSheet(`<h3>...</h3>${xTrashBody()}`)` 한 줄짜리 하위호환 래퍼로 남김 — 복원/영구삭제/전체비우기 로직 자체는 전혀 건드리지 않음. 각 restoreTrashX/purgeTrashX의 self-refresh 호출과 purgeAllTrash의 reopenFn 인자만 openXTrashList()에서 ()=>openTrashHub(kind)/openTrashHub(kind)로 교체해, 허브로 들어온 사용자가 복구·삭제 후에도 7탭 허브에 머물게 했다(기존 단독 화면으로 안 튕겨나감). openTrashHub(kind)는 openCatManage/catManageBody와 동일한 '.seg 탭 + #바디 재렌더' 패턴을 쓰되, 탭이 7개라 .seg에 overflow-x:auto와 버튼 flex:0 0 auto/white-space:nowrap을 인라인으로 얹어 가로 스크롤시켜 글자가 눌려 찌그러지지 않게 했다(moveSegBlobs()는 offsetLeft/offsetWidth만 읽어 탭 개수·스크롤 여부와 무관하게 그대로 동작). renderMenu() '백업·데이터' 그룹의 7개 행을 trashHubTotalCount() 합계 배지를 단 1개 행('최근 삭제함', a:\"openTrashHub('txns')\")으로 교체 — 전체 0건이면 기존처럼 빈 라벨. test/run.js FUNCTIONS/CONSTS에 새 함수·상수 전부 추가, openTrashHub 테스트 5건(기본값 txns 탭/7탭 세그먼트 aria-pressed·on 일치/알수없는 kind는 txns로 폴백/6개 kind 각각 해당 xTrashBody 내용 렌더/trashHubTotalCount 합계·0건) + restoreTrashTxn에 self-refresh가 openTrashHub('txns')로 바뀌었는지 확인하는 테스트 1건 추가. node test/run.js 3841->3848/3848 통과, node --check(메인 <script> 916KB 블록을 vm.compileFunction으로 직접 검증, HTML 주석 내 리터럴 '<script>' 블록0 오탐은 cycle389/390 review가 이미 확인한 추출 아티팩트)/logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.513->1.47.514, sw.js CACHE v780->v781. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 391,
+      "phase": "develop",
+      "timestamp": "2026-11-22T00:20:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-391 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx undo, 트래시 허브 통합 등)을 주고 조사시킴. 날짜 선택기/공용 피커 5종/카테고리 아이콘 피커(.icon-grid)에 이어 openAccentSheet()의 메인 색 그리드(.accent-grid, ACCENTS 7개·CSS grid-template-columns:repeat(4,1fr))도 같은 모양의 정적 열거형 그리드인데 방향키 탐색이 유일하게 빠진 사각지대였음을 발견(grep으로 .accent-sw/.accent-grid에 onkeydown 없음 확인). iconCellKeydown과 완전히 같은 구조로 accentCellKeydown(e)을 신설해 .accent-grid에 id=\"accentGrid\" onkeydown=\"accentCellKeydown(event)\"로 인라인 배선했고, 기존 pkGridNextIdx(idx,len,cols,key) 순수 헬퍼를 cols=4로 재사용했다(cols는 이미 3/5로 범용성이 검증돼 있어 cols=4 전용 순수 테스트는 추가하지 않음). test/run.js FUNCTIONS에 openAccentSheet/setAccent/accentCellKeydown, CONSTS에 ACCENTS 추가. openAccentSheet 마크업 배선 테스트 1건(.accent-grid id·onkeydown, .accent-sw 버튼 수==ACCENTS.length) + accentCellKeydown 조기-return 가드 2건(closest null/방향키 아닌 key, iconCellKeydown과 동일 패턴 — DOM 깊이 흉내낸 전체 포커스 이동 실행형 테스트는 pkCatKeydown/iconCellKeydown과 같은 이유로 두지 않음)을 추가. node test/run.js 3841->3851/3851 통과, 메인 <script> 블록(HTML 주석 제거 후 추출) node vm.Script 파싱/logic.js/sw.js node --check 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.514->1.47.515, sw.js CACHE v781->v782. 커밋 84d02ca.",
+      "commit": "84d02ca"
     }
   ]
 }
