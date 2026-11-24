@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.523';
+const APP_VERSION='1.47.524';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -2035,8 +2035,8 @@ const SETTLE_ALERT_BUCKET=100000;
  * 깨진 값이 그대로 잔액 합산(assetEval/balancesUpTo 등)으로 전파될 수 있어, 그보다 한 자리
  * 작은 15자리(999,999,999,999,999 — 현실적인 원화 금액보다는 넉넉함)에서 클램프한다. */
 const AMOUNT_MAX=999999999999999;
-/* AMOUNT_MAX는 숫자 입력(fmtAmt/sanitizeAmount/syncAssetInputs/csvRowToImportTxn/taPctInput)
- * 전 경로를 상한으로 막는데, 자산/소유자/카테고리/목표 이름과 거래 메모 같은 자유텍스트
+/* AMOUNT_MAX는 숫자 입력(fmtAmt/sanitizeAmount/syncAssetInputs/csvRowToImportTxn/taPctInput/
+ * setRate) 전 경로를 상한으로 막는데, 자산/소유자/카테고리/목표 이름과 거래 메모 같은 자유텍스트
  * 입력에는 그런 길이 상한이 전혀 없었다(app-evolve cycle340 critique). 클립보드로 긴 텍스트를
  * 붙여넣거나 손상된 CSV를 가져오면 esc() 렌더·localStorage 직렬화·pushCloud 페이로드까지
  * 그대로 번지므로, 숫자 쪽과 같은 "거부가 아니라 clamp" 방식으로 상한을 둔다. */
@@ -9271,7 +9271,15 @@ function openRateSheet(){
   <div style="height:16px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
 }
 
-function setRate(kind,key,val){const n=Number(String(val).replace(/[^0-9.]/g,''))||0;
+function setRate(kind,key,val){const n0=Number(String(val).replace(/[^0-9.]/g,''))||0;
+ /* AMOUNT_MAX(2038행 주석)가 상한으로 거는 경로 목록(fmtAmt/sanitizeAmount/syncAssetInputs/
+  * csvRowToImportTxn/taPctInput)에 시세 연동 관리 시트(openRateSheet)의 수동 입력 필드(금/환율/
+  * 주식/코인 현재가)가 빠져 있었다 — 이 필드들은 fmtAmt 대신 onchange=setRate(...,this.value)로
+  * 포맷 없이 직접 받아, 클립보드로 자릿수가 밀린 값을 붙여넣거나 숫자를 잘못 눌러도 그대로
+  * DB.rates에 저장됐다. Number.MAX_SAFE_INTEGER를 넘는 값은 정밀도가 깨진 채 해당 자산의
+  * 평가액(assetEval 등 수량×시세)과 전체 자산 총액 계산으로 조용히 전파될 수 있어, 다른 금액
+  * 입력과 동일하게 clamp한다(app-evolve develop). */
+ const n=n0>AMOUNT_MAX?AMOUNT_MAX:n0;
  /* 입력을 지우거나 숫자가 아닌 값을 넣으면 n이 0으로 떨어지는데, 이걸 그대로 저장하면
     rateUnknown()이 '아직 못 받아온 상태'와 '실제 0원'을 구분 못 해 미확인 배지 없이
     평가액이 조용히 0원이 된다(index.html:2125-2134 주석 참고). fx/stock/crypto는 키 자체를

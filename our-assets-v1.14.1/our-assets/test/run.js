@@ -21389,6 +21389,30 @@ test('setRate: 호출하면 값과 무관하게 항상 DB.rates.ratesUpdatedAt�
   sandbox.setRate('fx', 'USD', '');
   assert.ok(sandbox.DB.rates.ratesUpdatedAt >= before, '값을 지우는 입력(0 이하)에도 타임스탬프가 찍혀야 함');
 });
+/* setRate는 fmtAmt처럼 실시간 포맷(oninput)이 아니라 onchange로 포맷 없는 원시 문자열을 그대로
+ * 받는다 — AMOUNT_MAX(999,999,999,999,999)를 넘는 값을 붙여넣거나 잘못 입력해도 그대로
+ * DB.rates에 저장되면 Number.MAX_SAFE_INTEGER를 넘어 정밀도가 깨진 채 해당 자산의 평가액
+ * 계산(수량×시세)과 전체 자산 총액으로 전파될 수 있었다 — fmtAmt/sanitizeAmount 등 다른 모든
+ * 금액 입력 경로와 동일하게 clamp해 막는다(app-evolve develop). */
+test('setRate: AMOUNT_MAX를 넘는 입력은 AMOUNT_MAX로 클램프되어 저장된다(fx/stock/crypto/gold 전부)', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, crypto: {}, goldPerG: 0 } };
+  const over = String(sandbox.AMOUNT_MAX + 1);
+  sandbox.setRate('fx', 'USD', over);
+  assert.strictEqual(sandbox.DB.rates.fx.USD, sandbox.AMOUNT_MAX);
+  sandbox.setRate('stock', '005930', over);
+  assert.strictEqual(sandbox.DB.rates.stocks['005930'], sandbox.AMOUNT_MAX);
+  sandbox.setRate('crypto', 'BTC', over);
+  assert.strictEqual(sandbox.DB.rates.crypto.BTC, sandbox.AMOUNT_MAX);
+  sandbox.setRate('gold', '', over);
+  assert.strictEqual(sandbox.DB.rates.goldPerG, sandbox.AMOUNT_MAX);
+});
+test('setRate: AMOUNT_MAX 당일(경계값)은 그대로 저장되고, 그 이하 정상 입력은 클램프에 영향받지 않는다', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.setRate('fx', 'USD', String(sandbox.AMOUNT_MAX));
+  assert.strictEqual(sandbox.DB.rates.fx.USD, sandbox.AMOUNT_MAX, 'AMOUNT_MAX 당일은 상한선에 포함되어야 함');
+  sandbox.setRate('fx', 'EUR', '1,500.25');
+  assert.strictEqual(sandbox.DB.rates.fx.EUR, 1500.25);
+});
 test('saveAsset: 새 종목코드를 등록해도 더 이상 DB.rates.stocks를 0으로 미리 채우지 않고, 미확인 상태라 즉시 시세 동기화를 부른다', () => {
   sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
   sandbox.asDraft = { type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 };
