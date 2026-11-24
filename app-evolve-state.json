@@ -1,15 +1,12 @@
 {
   "cycle": 394,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "거래 메모 입력에 자주 쓴 메모 자동완성(datalist) 추가",
+    "why": "renderTxSheet()의 #txMemo 입력은 매번 완전히 새로 타이핑해야 한다. 이미 logic.js의 suggestCategoryForMemo()가 '메모가 완전히 일치하면' 카테고리를 추천하는 칩(txCatSuggestUpdate, index.html:6619 부근)을 보여주지만, 그 기능은 사용자가 이미 예전과 똑같은 메모를 '전부 타이핑한 뒤'에만 작동한다 — 메모 자체를 타이핑하는 과정은 전혀 돕지 않는다. grep으로 'datalist', 'autocomplete=' (PIN/비밀번호/이메일 입력 외 메모·이름류엔 전무), '추천 메모', '최근 사용' 등을 확인했고, 배제 목록의 390+ 사이클 어디에도 메모 자동완성/자주 쓴 텍스트 제안 기능이 없었다. '점심 김밥', '스타벅스'처럼 반복되는 지출 메모를 매번 완전히 새로 입력해야 하는 마찰은 거래가 누적될수록 누적 비용이 커지는 빠진 제품 기능이다.",
+    "approach": "1) logic.js에 순수 함수 frequentMemosForType(type, txns, limit=10)을 추가한다. suggestCategoryForMemo(logic.js:1006)와 동일한 관례(splitLines(t)로 분할 거래의 각 줄 메모까지 훑기, type 필터, NFC 정규화)를 재사용하되, 메모 문자열별 빈도+최근성(count desc, 동률이면 더 최근 거래 우선)으로 정렬해 상위 limit개의 '원본 표기(가장 최근 등장한 대소문자/표기)' 메모 문자열 배열을 돌려준다. 빈 메모는 제외. 2) index.html의 renderTxSheet()에서 #txMemo input에 list=\"txMemoList\" 속성을 추가하고, 바로 아래(또는 .field-clear 밖) 같은 블록에 `<datalist id=\"txMemoList\">${frequentMemosForType(d.type,DB.txns,10).map(m=>`<option value=\"${esc(m)}\">`).join('')}</datalist>`를 렌더한다. d.type이 바뀌면 renderTxSheet() 전체가 다시 그려지므로(txType() 호출부) 목록도 자동으로 갱신됨 — 별도 디바운스/증분 갱신 로직 불필요. 3) 네이티브 <datalist>는 브라우저가 자체적으로 방향키 탐색·Escape·열기/닫기를 처리하므로 이번 cycle에서 커스텀 키보드 리스너를 추가하지 않는다(배제 목록이 지목한 '피커류 키보드 접근성' 작업과 겹치지 않음). 4) test/run.js에 frequentMemosForType 회귀 테스트를 추가: 빈도순 정렬, 동빈도 시 최근 거래 우선, 분할 거래의 줄별 메모 집계, type 필터링, 빈 메모 제외, limit 적용을 각각 검증한다(suggestCategoryForMemo 테스트 스위트 바로 옆에 추가해 패턴을 맞춤). 5) 명시적 범위 제외: 분할 입력 각 줄의 splitMemo{i} 필드, 반복 내역 간편수정(renderRecSheet) 메모 필드, 문의하기/카테고리 이름 등 다른 자유 텍스트 입력에는 이번 cycle에서 datalist를 달지 않는다(화면마다 메모의 의미·소스가 달라 별도 판단이 필요). suggestCategoryForMemo()의 기존 완전일치 추천 칩 로직은 건드리지 않고 그대로 공존시킨다. CSV 가져오기/내보내기, DB 스키마에는 변경이 없다(순수 읽기 전용 제안 목록)."
+  },
   "history": [
-    {
-      "cycle": 389,
-      "phase": "critique",
-      "timestamp": "2026-11-21T17:10:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-389 전체 배제 목록(aria-label, debtPayoffStatuses, anyRateSourceStale, N인 정산, acquiredAt 가드 롤백, 휴지통 전체비우기, 카테고리 검색, 목표 정렬, mergeOwnerInto settledThrough, 날짜피커 방향키, recNthDate weekend=earlier 버퍼, 다음결제일 힌트, commitTx undo, 검색창 Escape 6곳, fmtAmt 커서버그, 문의하기 메모 클램프, 카테고리 관리 일괄선택 삭제/변동전환/예산이월, 카테고리 합치기/순서이동)를 주고 전략적 재검토시킴. openAssetPicker/openCatPicker/openTypePicker/openOwnerPicker/openCurrencyPicker(index.html:13499-13628, openPicker/pkChoose/pkFilteredAssets/catFilteredGrid 공유) — 거래/반복/자산 입력 등 앱 최고빈도 플로우에서 열리는 공용 피커 시트 — 가 다른 화면 6곳 검색창(goalQ 등)에 적용된 Escape 즉시 지우기와 날짜 선택기에 적용된 방향키 그리드 탐색 모두의 사각지대로 남아있음을 발견(pkQ/pkCatQ에 onkeydown 없음, #pkGroup/#catGrid에 dpGridKeydown류 핸들러 없음, grep으로 확인). 이미 검증된 두 패턴을 가장 트래픽 높은 공용 컴포넌트에 확장하는 것이라 리스크 낮고 효과 큼. pending_advance_plan에 저장(approach: pkQ/pkCatQ Escape-clear, #pkGroup/#catGrid 방향키+roving tabindex, refreshPkAssetList/refreshPkCatList 재검색 후 포커스 복원, openTypePicker/openOwnerPicker/openCurrencyPicker는 방향키만 재사용; aria-label/피커 호출 로직/자동포커스/비주얼 변경은 범위 제외). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 389,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-22T13:00:00.000Z",
       "summary": "develop(cycle394) 커밋 ac93a41(openSheet() 포커스 복구에 prevSegFocus 추가, .seg/.mseg 탭 전환 시 닫기로 튀던 버그 수정)을 검토해 실제 버그를 발견하고 그 자리에서 고쳤다. 1차 수정('시트 전체에서 첫 .seg/.mseg button.on')은 .seg 그룹이 하나뿐인 화면(openCatManage/openTrashHub/txType·recType/csvMapSetMode)에는 맞지만, renderGoalForm이 networth 유형이고 DB.owners가 설정돼 있으면 한 시트 안에 .seg 그룹이 2개(목표 유형 typeSeg, 귀속 goalOwnerSel이 그리는 ownerSegHtml)가 함께 떠 있음을 코드로 확인(둘 다 goalTypeSel/goalOwnerSel이 renderGoalForm(editing)을 다시 불러 openSheet() 전체를 재렌더). 이 경우 사용자가 두 번째 그룹(귀속)의 버튼을 눌러 전환해도, '시트 전체 첫 .on'은 마크업 순서상 앞서는 첫 번째 그룹(목표 유형)의 .on 버튼을 찾아 거기로 포커스를 보내버린다 — 처음 신고됐던 '닫기로 튐'보다는 가깝지만 여전히 사용자가 실제로 만지던 귀속 그룹이 아닌 엉뚱한 세그먼트로 튀는 재현 가능한 버그. 작은 범위로 고쳤다: prevSegFocus(불리언)를 prevSegGroup(이전 포커스가 속했던 .seg/.mseg 엘리먼트, sh.innerHTML 대입 전에 캡처)과 prevSegLabel(그 그룹의 aria-label — 화면마다 '목표 유형 선택'/'귀속 선택'처럼 고정 문자열이라 재렌더 후에도 같은 그룹을 식별하는 안정적인 키)로 나눠, 포커스 복구 시 재렌더된 시트에서 같은 aria-label을 가진 그룹(sameLabelGroup)을 먼저 찾아 그 안의 .on 버튼을 최우선으로 쓰고, 그 그룹 자체가 재렌더 중 없어졌으면(예: 목표 유형을 asset으로 바꿔 귀속 그룹이 통째로 사라짐) 기존 '시트 전체에서 첫 .on' 폴백으로, 그마저 없으면 첫 포커스 가능 요소로 내려가게 했다 — 단일 .seg 화면에서는 sameLabelGroup이 곧 그 유일한 그룹이라 기존 동작과 결과가 같아 회귀 없음. 기존 2개 소스 패턴 테스트를 prevSegGroup/prevSegLabel/sameLabelGroup 표현에 맞게 갱신하고, renderGoalForm의 두 .seg가 서로 다른 aria-label('목표 유형 선택'/'귀속 선택')을 쓰는지(같은 그룹 재탐색이 둘을 구별할 수 있어야 함) 확인하는 테스트 1건을 추가했다. node test/run.js 3875->3876/3876 통과, logic.js/sw.js node --check 통과, 메인 <script> 블록 4개(HTML 주석 제거 후 추출) new Function 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.521->1.47.522, sw.js CACHE v788->v789.",
+      "commit": null
+    },
+    {
+      "cycle": 394,
+      "phase": "critique",
+      "timestamp": "2026-11-24T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-394 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드·날짜 선택기 방향키, .seg/.mseg 전역 방향키(segKeydown), monthNav/nwCarousel 방향키, openSheet() 탭 전환 포커스 보존(prevSegGroup/prevSegLabel), 카테고리 관리 일괄선택 3종, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt 가드, transfer 통화 불일치, CSV 비대칭, SRI, 음력 공휴일표 상한, duplicateTx 등 포커스, sanitizeAmount 상한, owner undo, amortizationPayoffMonths 가드, 거래내역 가상화 등)를 주고 전략적 재검토시킴. 이제까지의 사이클이 거의 전부 키보드 접근성(방향키/Escape/undo/포커스)에 집중돼 있었음을 지적하고 다른 차원을 우선 보라고 지시. renderTxSheet()의 #txMemo 메모 입력이 완전히 새로 타이핑해야만 하고, logic.js의 suggestCategoryForMemo()(완전일치 시에만 카테고리 추천 칩을 띄움)는 메모를 다 입력한 '후'에만 작동해 타이핑 자체를 돕지 않음을 발견 — grep으로 datalist/autocomplete=/추천 메모/최근 사용 관련 코드가 전무함을 확인. '점심 김밥'처럼 반복되는 메모를 매번 새로 입력하는 마찰이 거래 누적에 따라 비용이 커지는 빠진 제품 기능으로 판단. pending_advance_plan에 저장(logic.js에 frequentMemosForType(type,txns,limit=10) 순수 함수 신설(suggestCategoryForMemo와 동일 관례: splitLines로 분할줄 메모까지, type 필터, NFC), renderTxSheet()의 #txMemo에 list=\"txMemoList\" + <datalist> 렌더, 네이티브 위젯이라 커스텀 키보드 리스너 불필요, test/run.js에 빈도/동률 최근우선/분할줄/type필터/빈 메모 제외/limit 테스트 추가; 분할줄 개별 메모·반복내역 메모·기타 자유텍스트 입력은 범위 제외, suggestCategoryForMemo 기존 로직 불변, DB 스키마 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
