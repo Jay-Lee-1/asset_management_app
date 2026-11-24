@@ -11135,6 +11135,75 @@ test('suggestCategoryForMemo: 메모가 빈 문자열(공백만)이거나 거래
   assert.strictEqual(sandbox.suggestCategoryForMemo('스타벅스', [], 'expense'), null);
 });
 
+/* ---------- frequentMemosForType: 거래 입력(index.html renderTxSheet #txMemo)의 메모 자동완성
+ * datalist 후보. suggestCategoryForMemo와 같은 집계 관례를 쓰지만 "완전일치 추천 카테고리 1개"가
+ * 아니라 "자주 쓴 메모 문자열 목록"을 돌려준다(app-evolve cycle394 critique → advance).
+ * recDates 테스트와 동일한 이유(위 주석 참고)로, vm 샌드박스가 돌려준 배열은 Array.from으로
+ * host realm 배열로 정규화한 뒤에 deepStrictEqual로 비교한다. */
+test('frequentMemosForType: 빈도 내림차순으로 메모를 돌려준다', () => {
+  const txns = [
+    { type: 'expense', date: '2026-10-01', memo: '스타벅스', category: '카페' },
+    { type: 'expense', date: '2026-10-02', memo: '점심 김밥', category: '식비' },
+    { type: 'expense', date: '2026-10-03', memo: '점심 김밥', category: '식비' },
+    { type: 'expense', date: '2026-10-04', memo: '점심 김밥', category: '식비' },
+  ];
+  assert.deepStrictEqual(Array.from(sandbox.frequentMemosForType('expense', txns, 10)), ['점심 김밥', '스타벅스']);
+});
+test('frequentMemosForType: 빈도가 같으면 더 최근 거래(date)의 메모를 먼저 돌려준다', () => {
+  const txns = [
+    { type: 'expense', date: '2026-10-01', memo: 'A', category: '카페' },
+    { type: 'expense', date: '2026-10-10', memo: 'B', category: '카페' },
+  ];
+  assert.deepStrictEqual(Array.from(sandbox.frequentMemosForType('expense', txns, 10)), ['B', 'A']);
+});
+test('frequentMemosForType: 날짜까지 같으면 배열에서 더 뒤쪽(나중에 추가된) 메모를 먼저 돌려준다', () => {
+  const txns = [
+    { type: 'expense', date: '2026-10-10', memo: 'A', category: '카페' },
+    { type: 'expense', date: '2026-10-10', memo: 'B', category: '카페' },
+  ];
+  assert.deepStrictEqual(Array.from(sandbox.frequentMemosForType('expense', txns, 10)), ['B', 'A']);
+});
+test('frequentMemosForType: 대소문자/NFC·NFD 정규화가 달라도 같은 메모로 집계하고, 가장 최근 등장한 원본 표기를 돌려준다', () => {
+  const txns = [
+    { type: 'expense', date: '2026-10-01', memo: 'netflix', category: '구독' },
+    { type: 'expense', date: '2026-10-10', memo: 'Netflix', category: '구독' },
+    { type: 'expense', date: '2026-10-20', memo: '용돈'.normalize('NFD'), category: '용돈' },
+  ];
+  const result = Array.from(sandbox.frequentMemosForType('expense', txns, 10));
+  // netflix/Netflix는 같은 키로 합쳐져 count=2라 1위, 용돈은 count=1이라 2위다.
+  // 용돈은 NFD로 입력했지만(복사/붙여넣기로 생길 수 있는 표기), 비교 자체는 코드포인트가
+  // 아니라 "같은 글자로 보이는가"가 중요하므로 NFC로 정규화해 비교한다(assert.strictEqual은
+  // 코드포인트까지 같아야 통과하는데, 돌려주는 값은 입력받은 원본 표기(NFD) 그대로다).
+  assert.strictEqual(result.length, 2);
+  assert.strictEqual(result[0], 'Netflix');
+  assert.strictEqual(result[1].normalize('NFC'), '용돈');
+});
+test('frequentMemosForType: 분할 거래(splits)의 각 줄 메모까지 훑어 집계한다', () => {
+  const txns = [{
+    type: 'expense', date: '2026-10-01', memo: '마트', category: '기타',
+    splits: [{ memo: '마트', category: '식비', amount: 10000 }, { memo: '생활용품', category: '생활용품', amount: 5000 }],
+  }];
+  assert.deepStrictEqual(Array.from(sandbox.frequentMemosForType('expense', txns, 10)), ['마트', '생활용품']);
+});
+test('frequentMemosForType: type이 다른 거래는 집계하지 않는다', () => {
+  const txns = [{ type: 'income', date: '2026-10-01', memo: '용돈', category: '기타수입' }];
+  assert.deepStrictEqual(Array.from(sandbox.frequentMemosForType('expense', txns, 10)), []);
+});
+test('frequentMemosForType: 빈 메모는 제외하고, limit을 넘는 개수는 자른다', () => {
+  const txns = [
+    { type: 'expense', date: '2026-10-01', memo: '', category: '기타' },
+    { type: 'expense', date: '2026-10-02', memo: 'A', category: '기타' },
+    { type: 'expense', date: '2026-10-03', memo: 'B', category: '기타' },
+    { type: 'expense', date: '2026-10-04', memo: 'C', category: '기타' },
+  ];
+  assert.deepStrictEqual(Array.from(sandbox.frequentMemosForType('expense', txns, 2)), ['C', 'B']);
+});
+test('frequentMemosForType: 거래 목록이 비어 있으면 빈 배열이고, limit 생략 시 기본 10개까지 돌려준다', () => {
+  assert.deepStrictEqual(Array.from(sandbox.frequentMemosForType('expense', [], 10)), []);
+  const txns = Array.from({ length: 15 }, (_, i) => ({ type: 'expense', date: `2026-10-${String(i + 1).padStart(2, '0')}`, memo: `메모${i}`, category: '기타' }));
+  assert.strictEqual(sandbox.frequentMemosForType('expense', txns).length, 10);
+});
+
 /* ---------- openGlobalSearch의 gsQ 검색창 — goalQ/assetQ/histQ/catQ/recQ 6곳 모두 지우기(fc-x)
  * 버튼은 있지만 Escape로 즉시 지우는 키보드 단축은 통째로 빠져 있었다(app-evolve cycle387 develop).
  * 입력값이 있을 때만 stopPropagation()으로 document 레벨 onSheetKeydown()의 '시트 닫기'를 막고

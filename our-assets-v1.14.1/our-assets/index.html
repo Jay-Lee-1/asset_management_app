@@ -1424,7 +1424,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.522';
+const APP_VERSION='1.47.523';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -6605,7 +6605,7 @@ function renderTxSheet(){
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.date)}</div><div class="psub">${datePsub}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="txDate" type="hidden" value="${d.date}"></div>
   ${catField}${assetFields}
-  <div class="field"><label for="txMemo">메모</label><div class="field-clear"><input id="txMemo" maxlength="${MEMO_MAX}" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}" oninput="txMemoInput(this)"${memoEnterSubmit}><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
+  <div class="field"><label for="txMemo">메모</label><div class="field-clear"><input id="txMemo" list="txMemoList" maxlength="${MEMO_MAX}" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}" oninput="txMemoInput(this)"${memoEnterSubmit}><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div><datalist id="txMemoList">${frequentMemosForType(d.type,DB.txns,10).map(m=>`<option value="${esc(m)}">`).join('')}</datalist></div>
   <div id="txCatSuggest" style="display:none;margin:-4px 0 14px;text-align:right"></div>
   ${rpt?'':txPhotoFieldHTML(d)}
   ${repeatFields}

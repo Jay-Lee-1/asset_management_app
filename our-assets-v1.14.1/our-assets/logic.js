@@ -1025,6 +1025,32 @@ function suggestCategoryForMemo(memo,txns,type){
  });
  return best?best.cat:null;
 }
+/* 메모 입력(#txMemo)의 자동완성 후보 — "자주 쓴 메모"를 빈도순(동률이면 더 최근 거래 우선)으로
+ * 최대 limit개 돌려준다. suggestCategoryForMemo와 동일한 관례(splitLines로 분할 거래의 각 줄
+ * 메모까지 훑기, type 필터, NFC 정규화로 "같은 메모" 판정)를 쓰지만, 집계 키는 정규화한
+ * 문자열이어도 돌려주는 값은 "가장 최근 등장한 원본 표기"다 — datalist에서 고른 값이 과거
+ * 입력과 똑같은 대소문자/공백으로 들어가게 하기 위함(app-evolve cycle394 critique/advance).
+ * 빈 메모는 추천할 가치가 없어 제외한다. */
+function frequentMemosForType(type,txns,limit){
+ limit=limit||10;
+ const counts=new Map();
+ (txns||[]).forEach((t,idx)=>{
+  if(t.type!==type)return;
+  splitLines(t).forEach(line=>{
+   const raw=String(line.memo||t.memo||'').trim();
+   if(!raw)return;
+   const key=raw.normalize('NFC').toLowerCase();
+   const cur=counts.get(key)||{count:0,lastDate:'',lastIdx:-1,label:raw};
+   cur.count++;
+   if(t.date>cur.lastDate||(t.date===cur.lastDate&&idx>cur.lastIdx)){cur.lastDate=t.date;cur.lastIdx=idx;cur.label=raw}
+   counts.set(key,cur);
+  });
+ });
+ return Array.from(counts.values())
+  .sort((a,b)=>b.count-a.count||(a.lastDate<b.lastDate?1:a.lastDate>b.lastDate?-1:0)||(b.lastIdx-a.lastIdx))
+  .slice(0,limit)
+  .map(v=>v.label);
+}
 /* 계좌(자산) 단위 거래내역 필터 — assetId가 없으면(전체) 항상 통과, 있으면 보내거나 받은 쪽 중 하나라도 일치해야 함 */
 function matchesAssetId(t,assetId){
  if(!assetId)return true;

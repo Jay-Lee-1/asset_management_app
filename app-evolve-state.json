@@ -1,19 +1,8 @@
 {
   "cycle": 394,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "거래 메모 입력에 자주 쓴 메모 자동완성(datalist) 추가",
-    "why": "renderTxSheet()의 #txMemo 입력은 매번 완전히 새로 타이핑해야 한다. 이미 logic.js의 suggestCategoryForMemo()가 '메모가 완전히 일치하면' 카테고리를 추천하는 칩(txCatSuggestUpdate, index.html:6619 부근)을 보여주지만, 그 기능은 사용자가 이미 예전과 똑같은 메모를 '전부 타이핑한 뒤'에만 작동한다 — 메모 자체를 타이핑하는 과정은 전혀 돕지 않는다. grep으로 'datalist', 'autocomplete=' (PIN/비밀번호/이메일 입력 외 메모·이름류엔 전무), '추천 메모', '최근 사용' 등을 확인했고, 배제 목록의 390+ 사이클 어디에도 메모 자동완성/자주 쓴 텍스트 제안 기능이 없었다. '점심 김밥', '스타벅스'처럼 반복되는 지출 메모를 매번 완전히 새로 입력해야 하는 마찰은 거래가 누적될수록 누적 비용이 커지는 빠진 제품 기능이다.",
-    "approach": "1) logic.js에 순수 함수 frequentMemosForType(type, txns, limit=10)을 추가한다. suggestCategoryForMemo(logic.js:1006)와 동일한 관례(splitLines(t)로 분할 거래의 각 줄 메모까지 훑기, type 필터, NFC 정규화)를 재사용하되, 메모 문자열별 빈도+최근성(count desc, 동률이면 더 최근 거래 우선)으로 정렬해 상위 limit개의 '원본 표기(가장 최근 등장한 대소문자/표기)' 메모 문자열 배열을 돌려준다. 빈 메모는 제외. 2) index.html의 renderTxSheet()에서 #txMemo input에 list=\"txMemoList\" 속성을 추가하고, 바로 아래(또는 .field-clear 밖) 같은 블록에 `<datalist id=\"txMemoList\">${frequentMemosForType(d.type,DB.txns,10).map(m=>`<option value=\"${esc(m)}\">`).join('')}</datalist>`를 렌더한다. d.type이 바뀌면 renderTxSheet() 전체가 다시 그려지므로(txType() 호출부) 목록도 자동으로 갱신됨 — 별도 디바운스/증분 갱신 로직 불필요. 3) 네이티브 <datalist>는 브라우저가 자체적으로 방향키 탐색·Escape·열기/닫기를 처리하므로 이번 cycle에서 커스텀 키보드 리스너를 추가하지 않는다(배제 목록이 지목한 '피커류 키보드 접근성' 작업과 겹치지 않음). 4) test/run.js에 frequentMemosForType 회귀 테스트를 추가: 빈도순 정렬, 동빈도 시 최근 거래 우선, 분할 거래의 줄별 메모 집계, type 필터링, 빈 메모 제외, limit 적용을 각각 검증한다(suggestCategoryForMemo 테스트 스위트 바로 옆에 추가해 패턴을 맞춤). 5) 명시적 범위 제외: 분할 입력 각 줄의 splitMemo{i} 필드, 반복 내역 간편수정(renderRecSheet) 메모 필드, 문의하기/카테고리 이름 등 다른 자유 텍스트 입력에는 이번 cycle에서 datalist를 달지 않는다(화면마다 메모의 의미·소스가 달라 별도 판단이 필요). suggestCategoryForMemo()의 기존 완전일치 추천 칩 로직은 건드리지 않고 그대로 공존시킨다. CSV 가져오기/내보내기, DB 스키마에는 변경이 없다(순수 읽기 전용 제안 목록)."
-  },
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 389,
-      "phase": "advance",
-      "timestamp": "2026-11-21T18:20:00.000Z",
-      "summary": "critique(cycle389)의 계획대로 공용 피커 시트에 Escape 즉시 지우기와 방향키 그리드 탐색을 추가. (1) openAssetPicker(#pkQ)/openCatPicker(#pkCatQ) 검색 입력에 검색창 6곳(goalQ 등)과 동일한 onkeydown=\"if(event.key==='Escape'&&this.value){event.stopPropagation();clrInput(...)}\" 추가. (2) 날짜 선택기(dpStepDate/dpGridKeydown)와 같은 '순수 인덱스 계산 + DOM은 포커스 이동만' 분리로 pkListNextIdx(idx,len,key)(ArrowUp/Down+Home/End)와 pkItemKeydown(e)을 신설해 #pkGroup(openAssetPicker/openTypePicker/openOwnerPicker/openCurrencyPicker가 공유하는 세로 .pk-item 목록, 자산유형별 .pk-cap 캡션은 querySelectorAll('.pk-item')이 버튼만 모아 자동으로 건너뜀)에 onkeydown 인라인 속성으로 배선. (3) pkGridNextIdx(idx,len,cols,key)(ArrowLeft/Right/Up/Down+Home/End, cols=3은 .pk-cat-grid의 CSS grid-template-columns:repeat(3,1fr)과 짝)와 pkCatKeydown(e)을 신설해 #catGrid에 기존 onclick 위임과 같은 이유로 프로퍼티 할당(catGridEl.onkeydown=pkCatKeydown)으로 배선 — innerHTML 교체에도 안 끊김. 계획이 언급한 '재검색 후 포커스 복원'(roving tabindex 포함)은 구현하지 않음: #pkQ/#pkCatQ 입력이 그리드 바깥에 있어 타이핑 중 포커스는 항상 입력에 있고, refreshPkAssetList/refreshPkCatList가 다시 그리는 동안 그리드 안에 포커스가 있을 수 있는 경로 자체가 없어(날짜 선택기의 dpFocusDate/dpExtend처럼 스크롤 중 아직 안 렌더된 날짜로 포커스를 옮기는 상황과 다름) 일어날 수 없는 상황에 대한 코드를 추가하지 않았다(코드에 그 판단 근거를 주석으로 남김). 버튼들은 이미 네이티브 포커스 가능(tabindex 기본값)이라 날짜 선택기의 .dp-cell과 동일하게 별도 roving tabindex 없이 포커스만 이동한다. pkListNextIdx/pkGridNextIdx를 test/run.js FUNCTIONS에 추가하고 dpStepDate 테스트 바로 뒤에 순수 테스트 7건 추가(pkListNextIdx 3건: 상/하 이동+양끝 클램프, Home/End, 모르는 key; pkGridNextIdx 4건: 좌/우 이동+양끝 클램프, 상/하가 cols만큼 건너뛰며 해당 줄이 없으면 머묾, Home/End, 모르는 key) — pkItemKeydown/pkCatKeydown 자체는 dpGridKeydown과 동일한 이유로 실행형 테스트 대상에서 제외. node test/run.js 3829->3836/3836 통과, node --check(메인 <script> 블록 추출)/logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.511->1.47.512, sw.js CACHE v778->v779.",
-      "commit": null
-    },
     {
       "cycle": 390,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-24T00:00:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-394 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드·날짜 선택기 방향키, .seg/.mseg 전역 방향키(segKeydown), monthNav/nwCarousel 방향키, openSheet() 탭 전환 포커스 보존(prevSegGroup/prevSegLabel), 카테고리 관리 일괄선택 3종, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt 가드, transfer 통화 불일치, CSV 비대칭, SRI, 음력 공휴일표 상한, duplicateTx 등 포커스, sanitizeAmount 상한, owner undo, amortizationPayoffMonths 가드, 거래내역 가상화 등)를 주고 전략적 재검토시킴. 이제까지의 사이클이 거의 전부 키보드 접근성(방향키/Escape/undo/포커스)에 집중돼 있었음을 지적하고 다른 차원을 우선 보라고 지시. renderTxSheet()의 #txMemo 메모 입력이 완전히 새로 타이핑해야만 하고, logic.js의 suggestCategoryForMemo()(완전일치 시에만 카테고리 추천 칩을 띄움)는 메모를 다 입력한 '후'에만 작동해 타이핑 자체를 돕지 않음을 발견 — grep으로 datalist/autocomplete=/추천 메모/최근 사용 관련 코드가 전무함을 확인. '점심 김밥'처럼 반복되는 메모를 매번 새로 입력하는 마찰이 거래 누적에 따라 비용이 커지는 빠진 제품 기능으로 판단. pending_advance_plan에 저장(logic.js에 frequentMemosForType(type,txns,limit=10) 순수 함수 신설(suggestCategoryForMemo와 동일 관례: splitLines로 분할줄 메모까지, type 필터, NFC), renderTxSheet()의 #txMemo에 list=\"txMemoList\" + <datalist> 렌더, 네이티브 위젯이라 커스텀 키보드 리스너 불필요, test/run.js에 빈도/동률 최근우선/분할줄/type필터/빈 메모 제외/limit 테스트 추가; 분할줄 개별 메모·반복내역 메모·기타 자유텍스트 입력은 범위 제외, suggestCategoryForMemo 기존 로직 불변, DB 스키마 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 394,
+      "phase": "advance",
+      "timestamp": "2026-11-24T00:40:00.000Z",
+      "summary": "critique(cycle394)의 계획대로 거래 메모 입력에 자주 쓴 메모 자동완성(datalist)을 추가. logic.js에 frequentMemosForType(type,txns,limit=10) 순수 함수를 suggestCategoryForMemo(1006행) 바로 뒤에 신설 — 동일 관례(splitLines로 분할 거래의 각 줄 memo까지 훑기, line.memo||t.memo 폴백, type 필터)를 쓰지만 완전일치 판정이 아니라 정규화(NFC·대소문자 무시)한 메모 문자열별로 빈도를 집계하고, 동빈도면 더 최근 거래(date desc, 같으면 배열 뒤쪽=나중 추가 우선)를 그 메모의 '대표값'으로 써 count desc, 최근성 desc로 정렬한 뒤 상위 limit개를 '가장 최근 등장한 원본 표기(raw, 정규화 전)' 문자열 배열로 돌려준다. renderTxSheet()의 #txMemo input에 list=\"txMemoList\" 속성을 추가하고 바로 옆에 `<datalist id=\"txMemoList\">${frequentMemosForType(d.type,DB.txns,10).map(m=>`<option value=\"${esc(m)}\">`).join('')}</datalist>`를 렌더 — d.type이 바뀌면 renderTxSheet() 전체가 다시 그려지므로(txType() 호출부) 목록도 자동 갱신돼 별도 디바운스/증분 로직이 필요 없다. 네이티브 datalist는 브라우저가 방향키·Escape·열기/닫기를 자체 처리하므로 커스텀 키보드 리스너를 추가하지 않았다. test/run.js에 frequentMemosForType 테스트 8건 추가: 빈도 내림차순, 동빈도 시 최근 거래 우선(date/배열 인덱스 둘 다), 대소문자·NFC/NFD 정규화 병합과 원본 표기 반환, 분할 거래 각 줄 집계, type 필터, 빈 메모 제외+limit 적용, 빈 배열/기본 limit=10 — suggestCategoryForMemo 테스트 스위트 바로 뒤에 추가. vm 샌드박스가 돌려준 배열은 recDates 테스트와 동일한 이유로 Array.from()으로 host realm 배열로 정규화한 뒤 deepStrictEqual로 비교(처음엔 안 하고 돌려써 실패, 그 자리에서 수정). node test/run.js 3876->3884/3884 통과, node --check(logic.js/sw.js)/메인 <script> 블록 4개(HTML 주석 제거 후 추출) new Function 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.522->1.47.523, sw.js CACHE v789->v790. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
