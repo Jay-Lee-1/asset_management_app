@@ -1,15 +1,8 @@
 {
   "cycle": 396,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 391,
-      "phase": "review",
-      "timestamp": "2026-11-22T01:07:19.052Z",
-      "summary": "develop(cycle391) 커밋 84d02ca(accentCellKeydown 신설, .accent-grid 방향키 탐색)를 검토. iconCellKeydown(8748행)·pkCatKeydown(13737행)과 완전히 동일한 조기-return 가드 구조(알려진 방향키 아니면 return, closest(.accent-sw) 없으면 return)를 그대로 재사용했고, pkGridNextIdx(idx,len,cols,key)는 cols=3(pkCatKeydown)/5(iconCellKeydown)로 이미 순수 테스트된 범용 헬퍼라 cols=4 재사용에 새 위험이 없음을 확인. CSS .accent-grid의 grid-template-columns:repeat(4,1fr)과 accentCellKeydown의 cols=4 하드코딩이 실제로 일치함을 직접 grep으로 재확인(966행). .accent-sw가 <button>이라 별도 tabindex 없이도 포커스 가능. 테스트 3851/3851 통과 재확인. 버그 없음.",
-      "commit": null
-    },
     {
       "cycle": 391,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-24T11:19:14.559Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-395 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드·날짜 선택기 방향키, .seg/.mseg 전역 방향키(segKeydown), monthNav/nwCarousel 방향키, openSheet() 탭 전환 포커스 보존, 카테고리 관리 일괄선택 3종, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt 가드, transfer 통화 불일치, CSV 비대칭, SRI, 음력 공휴일표 상한, duplicateTx 등 포커스, sanitizeAmount/interestRate/setRate 상한, owner undo, amortizationPayoffMonths 가드, 거래내역 가상화, 거래 메모 자동완성 datalist, 전역 에러 배너 복구 경로 등)을 주고 조사시킴. 코어 순수 로직(날짜/반복/정산/부채/목표 계산, CSV 가져오기, 검색/금액 파싱, sw.js 캐싱)에서 실제 정합성 버그를 찾으려 상당한 시간을 들였으나 전부 이미 테스트로 두텁게 방어돼 있어 기각하고, cycle394가 renderTxSheet()의 #txMemo에만 frequentMemosForType()+datalist 자동완성을 달았을 때 반복거래 등록/수정 화면(renderRecSheet()의 #rMemo)은 같은 처리를 받지 못해 빠져 있던 비대칭을 발견(배제 목록은 #txMemo 배선만 언급, #rMemo는 다룬 적 없음). frequentMemosForType(type,txns,limit)은 이미 DB 비의존 순수 함수라 그대로 재사용해 #rMemo에 list=\"rMemoList\" datalist를 연결하고 d.type+DB.txns로 같은 유형의 빈도순 메모를 옵션으로 채웠다. test/run.js에 renderRecSheet [실행형] 테스트 2건 추가((1) #rMemo-rMemoList 연결과 같은 type 메모만 빈도 내림차순으로 들어가는지, (2) d.type 변경 재렌더 시 datalist가 갈아끼워지는지) + #rMemo 마크업 esc() 왕복 회귀 가드 테스트를 새 list 속성에 맞게 갱신. node test/run.js 3894->3896/3896 통과, node --check(logic.js/sw.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.525->1.47.526, sw.js CACHE v792->v793. 커밋 7f818d9. (참고: 이 사이클 종료 시점에 로컬 git이 detached HEAD 상태였고 main/origin/main이 cycle394 review(51c4fcd)에서 멈춰 cycle394 critique~cycle396 develop까지 8개 커밋이 어느 브랜치에도 안 얹혀 있던 것을 메인 세션이 발견 — main을 HEAD로 fast-forward 후 origin에 push해 복구함. 이후 사이클은 매번 종료 시 git status/branch 상태와 origin 반영 여부를 반드시 재확인할 것.)",
       "commit": "7f818d9"
+    },
+    {
+      "cycle": 396,
+      "phase": "review",
+      "timestamp": "2026-11-24T12:10:00.000Z",
+      "summary": "develop(cycle396) 커밋 7f818d9(반복거래 메모 입력 #rMemo에 frequentMemosForType()+datalist 자동완성 추가)를 검토. cycle394가 renderTxSheet()의 #txMemo에 쓴 것과 완전히 동일한 배선(list=\"...List\" + frequentMemosForType(d.type,DB.txns,10).map(m=>`<option value=\"${esc(m)}\">`))을 #rMemo/rMemoList에 그대로 재사용했을 뿐 새 로직이 없어 frequentMemosForType 자체의 정확성은 cycle394에서 이미 검증됐음을 확인. txMemoList와 rMemoList가 서로 다른 id라 한 시트 안에서 동시에 열릴 수 없는 #sheet 공용 바텀시트 구조상 id 충돌 가능성이 없음을 grep으로 재확인. #rMemo의 value 표시 조건((d.memo&&d.memo!==d.category)?esc(d.memo):'')은 이번 diff가 건드리지 않은 기존 로직이라 자동완성 추가와 무관함을 확인. 실제 버그는 발견하지 못함. node test/run.js 3896/3896 통과(재실행), node --check(sw.js/logic.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. CACHE v793/APP_VERSION 1.47.526 일치 확인. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
     }
   ]
 }
