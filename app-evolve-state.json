@@ -1,15 +1,8 @@
 {
   "cycle": 397,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 392,
-      "phase": "review",
-      "timestamp": "2026-11-22T07:05:00.000Z",
-      "summary": "develop(cycle392) 커밋 97b175f(fcWire()의 _fcw 1회성 배선 가드 안에 Escape 지우기 keydown 리스너 중앙 추가)를 검토. 검색창 6곳(goalQ 등)·공용 피커 2곳(pkQ/pkCatQ)이 이미 가진 인라인 onkeydown 속성이 HTML 파싱 시점(innerHTML 대입)에 등록되고 fcWire()의 addEventListener는 그 뒤 렌더 완료 후에야 호출되므로, 같은 keydown 이벤트에서 인라인 핸들러가 먼저 실행돼 el.value를 비우고 stopPropagation한 뒤 새 중앙 리스너가 돌면 el.value가 이미 빈 문자열이라 조건(e.key==='Escape'&&el.value)에서 자연히 걸러짐을 리스너 등록 순서 규칙(동일 타겟·동일 단계에서는 등록 순서대로 실행)으로 직접 확인 — 코드 주석의 '자연히 걸러져 중복 동작하지 않는다' 주장이 사실임을 검증. 날짜 선택(acquiredAt/maturityDate/목표일)과 PIN/비밀번호(pw-wrap) 입력은 .field-clear 안에 <input>이 없거나 .pw-wrap을 쓰므로 querySelectorAll('.field-clear input') 선택자에 전혀 걸리지 않아 영향 없음을 grep으로 확인. 새 리스너가 clrInput()을 호출하는 대신 동일 로직(value='', input 디스패치, fcToggle)을 인라인으로 복제했는데 el.focus()만 호출하지 않음 — 그러나 Escape는 이미 포커스가 그 입력에 있을 때만 발생하므로 focus 호출 누락은 실질적 차이가 없음을 확인. sbUrlIn/kkeyIn2처럼 oninput 속성이 없는 입력에 input 이벤트를 디스패치해도 리스너가 없어 부작용이 없음도 확인. 실제 버그는 발견하지 못함. node test/run.js 3857/3857 통과(재실행), 메인 <script> 블록(HTML 주석 제거 후 추출) new Function 파싱/logic.js·sw.js node --check 통과. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 392,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-24T15:13:32.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-397 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape/방향키, 카테고리 아이콘 피커/메인 색 그리드/날짜 선택기 방향키, .seg/.mseg 전역 방향키(segKeydown), monthNav/nwCarousel 방향키, openSheet() 탭 전환 포커스 보존, 카테고리 관리 일괄선택 3종, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt 범위가드, setRate AMOUNT_MAX 클램프, txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지 등)을 주고 조사시킴. stock/crypto 자산 폼의 종목코드/심볼 입력(asCode)이 oninput=\"this.value=this.value.toUpperCase()\"로 매 입력마다 .value를 재대입해 fmtAmt(cycle387)/fmtQty(cycle393)와 같은 버그 클래스(값이 실제로 안 바뀌어도 브라우저가 캐럿을 끝으로 이동)를 그대로 안고 있던 것을 발견. codeUpperInput(inp) 헬퍼를 신설해 selectionStart를 기록 후 toUpperCase 대입하고 같은 오프셋으로 caret을 복원(길이 불변이라 자릿수 재계산 불필요), 템플릿 2곳(stock/crypto asCode) 교체. test/run.js에 FUNCTIONS 추출 대상 추가 및 신규 회귀 테스트 3건(중간 수정 캐럿 보존, 끝부분 무변화 케이스, DOM 없는 방어적 호출) 추가, index.html 4개 <script> 블록 + logic.js/sw.js/test/run.js node --check 통과, node test/run.js 3911/3911 통과. index.html/sw.js 수정으로 APP_VERSION 1.47.527->1.47.528, sw.js CACHE v794->v795.",
       "commit": "e6f79e6"
+    },
+    {
+      "cycle": 397,
+      "phase": "review",
+      "timestamp": "2026-11-24T16:05:00.000Z",
+      "summary": "develop(cycle397) 커밋 e6f79e6(codeUpperInput() 신설, asCode(종목코드/심볼) 대문자 변환 입력 캐럿 복원)를 검토. fmtAmt/fmtQty와 동일한 패턴(oldCaret 기록 → 값 재대입 → setSelectionRange 복원)을 그대로 따르고 있고, toUpperCase()는 길이를 바꾸지 않는다는 전제가 ASCII 알파벳(stock/crypto 코드가 실제로 쓰는 문자셋)에서는 항상 성립함을 확인. 다만 toUpperCase()가 일부 문자(독일어 'ß'→'SS', 리가처 'ﬁ'→'FI' 등)에서 길이를 늘릴 수 있어 'oldCaret이 그대로 유효하다'는 주석의 전제가 완전히 보편적이진 않음을 node로 직접 확인했으나, 이 경로는 (1) 이 diff가 새로 만든 게 아니라 원래 this.value=this.value.toUpperCase()도 똑같이 겪던 길이 변화이고(캐럿 위치만 바뀌지 값 자체 로직은 동일, 회귀가 아님) (2) 길이가 줄어드는 case-mapping은 실질적으로 없어 setSelectionRange가 범위를 벗어나거나 크래시하지 않으며(최악의 경우도 캐럿이 몇 글자 안쪽에 위치) (3) 종목코드/심볼 입력란에 그런 문자를 타이핑할 실사용 시나리오가 거의 없어 급하지 않은 지적사항으로 분류 — 코드는 고치지 않고 이 노트에만 남김(다음 critique가 참고용으로 쓸 수 있으나 우선순위는 낮음). stock/crypto 템플릿 2곳의 oninput이 정확히 codeUpperInput(this)로 교체됐는지, maxlength=20(CODE_MAX)이 그대로 유지되는지 재확인. 실제 버그(회귀)는 발견하지 못함. node test/run.js 3911/3911 통과(재실행), node --check(logic.js/sw.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
     }
   ]
 }
