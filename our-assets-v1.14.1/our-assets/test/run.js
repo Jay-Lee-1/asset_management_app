@@ -33132,6 +33132,41 @@ test('confirmRecNow: 완료 처리한 반복 이체 회차의 반복(r)에는 to
   assert.strictEqual(r.updatedAt, 'test-updatedAt', 'confirmedDates가 바뀐 반복에는 touch()가 호출되어야 함');
 });
 
+/* app-evolve cycle398 develop가 발견한 공백의 회귀 테스트: 하단 네비(#nav)의 "이체 확인" 알림
+ * 카드는 addOwner 등(cycle308)과 동일하게 twStage 오버레이 밖의 실제 화면이라 튜토리얼 중에도
+ * 항상 열 수 있는데, 이 네 액션(완료 처리/내일로 미루기 - 일반 이체·반복 이체 회차)만
+ * twGuard가 없어 튜토리얼 샌드박스 약속("튜토리얼 중에는 실제로 저장되지 않아요")이 깨져 있었다. */
+test('confirmTransferNow: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 완료 처리되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { txns: [{ id: 't1', type: 'transfer', confirmed: false, amount: 5000 }], recurrences: [], settings: {} };
+  sandbox.confirmTransferNow('t1');
+  assert.strictEqual(sandbox.DB.txns[0].confirmed, false, '튜토리얼 중에는 완료 처리가 막혀야 함');
+  sandbox.TWi = -1;
+});
+test('postponeTransfer: 튜토리얼 모드 중에는 twGuard가 막아서 날짜가 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.TODAY = '2026-09-17';
+  sandbox.DB = { txns: [{ id: 't1', type: 'transfer', date: '2026-09-17', confirmed: false, amount: 5000 }], recurrences: [], settings: {} };
+  sandbox.postponeTransfer('t1');
+  assert.strictEqual(sandbox.DB.txns[0].date, '2026-09-17', '튜토리얼 중에는 날짜 변경이 막혀야 함');
+  sandbox.TWi = -1;
+});
+test('confirmRecNow: 튜토리얼 모드 중에는 twGuard가 막아서 confirmedDates가 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  setupRecTransferDB();
+  sandbox.confirmRecNow('r1', '2026-09-17');
+  assert.deepStrictEqual(sandbox.DB.recurrences[0].confirmedDates, undefined, '튜토리얼 중에는 완료 처리가 막혀야 함');
+  sandbox.TWi = -1;
+});
+test('postponeRecTransfer: 튜토리얼 모드 중에는 twGuard가 막아서 skip도 새 거래도 생기지 않는다', () => {
+  sandbox.TWi = 0;
+  setupRecTransferDB();
+  sandbox.postponeRecTransfer('r1', '2026-09-17');
+  assert.deepStrictEqual(sandbox.DB.recurrences[0].skip, [], '튜토리얼 중에는 skip 추가가 막혀야 함');
+  assert.strictEqual(sandbox.DB.txns.length, 0, '튜토리얼 중에는 새 거래가 생기면 안 됨');
+  sandbox.TWi = -1;
+});
+
 /* ---------- openConfirmTransfer/confirmRecTransfer: 이체 확인 시트에 자산명을 esc() 없이
  * 꽂던 self-XSS(app-evolve cycle50 develop) — assetPickBtn()/renderPlan()/accountName() 등은
  * 이미 esc()로 감싸져 있었는데, assetNm()이 반환하는 자산명(살아있는 자산의 a.name 또는

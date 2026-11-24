@@ -1,15 +1,8 @@
 {
   "cycle": 398,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 393,
-      "phase": "develop",
-      "timestamp": "2026-11-22T08:18:52.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-392 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx/saveAsset undo, 트래시 허브 통합, 전역 field-clear Escape, monthNav 방향키 등)를 주고 조사시킴. fmtAmt()가 cycle387에서 고친 '매 oninput마다 .value 재대입으로 커서가 끝으로 튀는 버그'와 정확히 같은 클래스의 버그가 fmtQty()(보유수량 FX/금/주식·코인, 연이자율 등 6곳이 사용)에는 그대로 남아있었음을 발견(제외 목록의 'fmtAmt 커서버그 수정'은 fmtAmt 하나만 다뤘고 fmtQty는 범위 밖이었음). qtyCaretAfterFilter(oldValue,oldCaret) 신설 — fmtQty의 기존 필터 규칙(숫자 유지, 첫 소수점만 유지, 나머지 제거)을 한 번의 순회로 수행하면서 'oldCaret 앞에서 살아남은 문자 수'로 caret을 직접 계산(fmtAmt의 caretPosAfterFormat과 달리 콤마 삽입이 없어 더 단순). fmtQty(inp)를 이 함수를 쓰도록 재작성해 inp.setSelectionRange로 커서를 복원(fmtAmt와 동일한 try/catch 안전망, selectionStart 없는 평범한 객체에도 안 터짐). test/run.js FUNCTIONS에 qtyCaretAfterFilter 추가, 테스트 8건 추가(순수 4건: 필터 불필요/문자 제거/둘째 소수점 제거/oldCaret clamp, 실행형 2건: 숫자 중간 삽입 시 커서가 끝이 아니라 삽입 지점에 남음·둘째 소수점 삽입 시 지워진 자리로 복원, 기존 평범한 객체 안전망 1건 재확인+신규 케이스 추가). node test/run.js 3861->3868/3868 통과, node --check sw.js/logic.js 통과, index.html HTML주석 제거 후 <script> 블록 4개(src 없는 블록) 전부 node Function 파싱 통과(메인 리뷰 세션이 직접 재실행해 재확인). index.html/sw.js를 수정했으므로 APP_VERSION 1.47.518->1.47.519, sw.js CACHE v785->v786.",
-      "commit": null
-    },
     {
       "cycle": 393,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-24T18:12:27.615Z",
       "summary": "critique(cycle397)의 계획대로 자산 수량 변경(매수/매도) 기록에 선택적 거래일 입력을 추가해 yearRealizedGain() 연간 실현손익 귀속 오류를 고쳤다. costBasisField()의 매입일(acquiredAt) pick 필드 바로 아래, needsUpdate||needsSale일 때만(asAddedCostField/asSaleProceedsField와 동일한 표시 조건) \"거래일(선택)\" pick 필드(#asQtyChangeDateField)를 추가 — acquiredAt과 동일한 openFieldDatePicker(asDraft._qtyChangeDate||TODAY, ds=>{ds>TODAY면 toastFail로 막음; asDraft._qtyChangeDate=ds; renderAssetSheet}) 패턴, 비워두면 \"오늘 날짜로 기록해요\" placeholder. syncAssetInputs()에 asAcquiredAt과 동일한 패턴으로 #asQtyChangeDate 히든 입력 동기화를 추가. saveAsset()에서 const qtyChangeDate=d._qtyChangeDate||TODAY를 settleAssetId 캡처 바로 옆에서 뽑아(delete 정리 블록 전에 로컬 변수로 고정하는 기존 addedCost/saleProceeds 관례와 동일) qtyLogEntry.date와 settleTxnForQtyChange(...)의 마지막 인자에 TODAY 대신 그 값을 쓰도록 바꾸고, 정리 블록에 delete d._qtyChangeDate를 추가했다. 날짜 하한 가드는 계획대로 acquiredAt과 동일하게 미래만 막고(ds>TODAY) RANGE_FROM 체크는 범위 제외. test/run.js에 saveAsset 실행형 테스트 3건(거래일 입력 시 assetQtyLog.date가 그 값으로 기록, 비우면 TODAY로 폴백하는 회귀 가드, 결제·수령 통장 transfer 거래의 date도 같은 값을 씀) + costBasisField 표시조건 테스트 1건(신규 등록은 숨김, needsUpdate/needsSale 각각 보임) 총 4건 추가, 기존 costBasisField 전체 HTML 스냅샷 테스트 1건을 새 필드 블록 포함하도록 갱신. node test/run.js 3911->3915/3915 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.528->1.47.529, sw.js CACHE v795->v796. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 398,
+      "phase": "develop",
+      "timestamp": "2026-11-24T19:05:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-397 전체 배제 목록(검색창/필드 Escape, 공용 피커·세그먼트·날짜선택기·카테고리 피커·monthNav·nwCarousel 방향키 전역화, openSheet 탭 전환 포커스 보존, 카테고리 관리 일괄선택, 트래시 허브 통합, fmtAmt/fmtQty/asCode 커서버그, commitTx/saveAsset/commitRec undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt/qtyChangeDate 가드, setRate AMOUNT_MAX 클램프, txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지 등 + 기각된 구조개편/성능캐시/CSV완성도/가상화)를 주고 조사시킴. addOwner/delOwner/doRenameOwner(cycle308), addCat류(cycle309), mergeAssetInto(cycle310), saveGoal/delGoal(cycle307) 등 과거 사이클들이 하나씩 메워온 '튜토리얼 중에는 저장되지 않는다'(twGuard) 불변식 — 하단 네비(#nav)가 twStage 오버레이 밖의 실제 DOM이라 튜토리얼 중에도 늘 클릭 가능해, 메뉴로 벗어나면 twGuard 없는 함수는 실제로 DB를 건드린다는 구조적 공백 — 가 홈 화면의 실제 '이체 확인' 알림 카드에서 열리는 confirmTransferNow/postponeTransfer(일반 이체)·confirmRecNow/postponeRecTransfer(반복 이체 회차)에는 끝까지 적용되지 않았음을 발견(grep으로 twGuard 호출이 전무함을 확인, openConfirmTransfer/confirmRecTransfer는 twScreen() 리플리카가 아니라 진짜 시트임도 확인). index.html 4곳(1882/1886/1892/1896행) 함수 시작부에 addOwner 등과 동일한 `if(twGuard())return;` 한 줄씩 추가. test/run.js에 동일 함수들의 기존 touch() 테스트(confirmTransferNow/postponeTransfer/confirmRecNow/postponeRecTransfer, 33112-33133행) 바로 뒤에 addOwner twGuard 테스트와 같은 관례로 4건 추가(TWi=0으로 설정 후 각각 confirmed/date/confirmedDates/skip·txns.length가 바뀌지 않음을 확인, TWi=-1로 복원) — FUNCTIONS 추출 목록은 이미 포함돼 있어 변경 불필요. node test/run.js 3915->3919/3919 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.529->1.47.530, sw.js CACHE v796->v797.",
       "commit": null
     }
   ]

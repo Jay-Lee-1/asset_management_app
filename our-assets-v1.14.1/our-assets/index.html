@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.529';
+const APP_VERSION='1.47.530';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -1879,21 +1879,21 @@ function openConfirmTransfer(id){const t=DB.txns.find(x=>x.id===id);if(!t)return
  openSheet(`<h3>이체 확인</h3><div class="desc"><b style="font-size:16px;color:var(--text)">${comma(t.amount)}원</b> 이체를 완료하셨나요?<br><span style="color:var(--text-2);font-size:13px">${esc(assetNm(t.fromAssetId,t.fromAssetName))} → ${esc(assetNm(t.toAssetId,t.toAssetName))} · ${shortDate(t.date)}</span></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="postponeTransfer('${id}')">내일로</button><button class="btn btn-primary" onclick="confirmTransferNow('${id}')">완료했어요</button></div>`);
 }
-function confirmTransferNow(id){const t=DB.txns.find(x=>x.id===id);if(!t)return;
+function confirmTransferNow(id){if(twGuard())return;const t=DB.txns.find(x=>x.id===id);if(!t)return;
  t.confirmed=true;touchSave(t);closeSheet();renderCurrent(); /* touchSave()가 touch() 다음 save()를 묶어서, mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 확인 처리를 조용히 되돌리는 걸 구조적으로 막는다(rollPendingTransfers와 동일한 불변식) */
  if(pendingTransferCount()===0)celebrate('이체 전부 완료! 🎉');else toast('이체를 완료 처리했어요');
 }
-function postponeTransfer(id){const t=DB.txns.find(x=>x.id===id);if(t){t.date=addDays(TODAY,1);touchSave(t);closeSheet();renderCurrent();toast('내일로 미뤘어요')}}
+function postponeTransfer(id){if(twGuard())return;const t=DB.txns.find(x=>x.id===id);if(t){t.date=addDays(TODAY,1);touchSave(t);closeSheet();renderCurrent();toast('내일로 미뤘어요')}}
 function confirmRecTransfer(recId,date){const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
  const ed=(r.edits||{})[date]||{};
  openSheet(`<h3>이체 확인</h3><div class="desc"><b style="font-size:16px;color:var(--text)">${comma(ed.amount!=null?ed.amount:r.amount)}원</b> 이체를 완료하셨나요?<br><span style="color:var(--text-2);font-size:13px">${esc(assetNm(r.fromAssetId,r.fromAssetName))} → ${esc(assetNm(r.toAssetId,r.toAssetName))} · ${shortDate(date)}</span></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="postponeRecTransfer('${recId}','${date}')">내일로</button><button class="btn btn-primary" onclick="confirmRecNow('${recId}','${date}')">완료했어요</button></div>`);
 }
-function confirmRecNow(recId,date){const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
+function confirmRecNow(recId,date){if(twGuard())return;const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
  (r.confirmedDates=r.confirmedDates||[]).push(date);touchSave(r);closeSheet();renderCurrent();
  if(pendingTransferCount()===0)celebrate('이체 전부 완료! 🎉');else toast('이체를 완료 처리했어요');
 }
-function postponeRecTransfer(recId,date){const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
+function postponeRecTransfer(recId,date){if(twGuard())return;const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
  const ed=(r.edits||{})[date]||{};
  const nd=addDays(TODAY,1);
  (r.skip=r.skip||[]).push(date);
