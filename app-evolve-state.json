@@ -1,15 +1,12 @@
 {
   "cycle": 397,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 수량 변경(매수/매도) 기록에 실제 거래일 입력 추가 — 연간 실현손익 귀속 오류 수정",
+    "why": "saveAsset()의 isMarketValued(fx/gold/stock/crypto) 분기(index.html:5636-5658)가 DB.assetQtyLog 신규 항목을 항상 date:TODAY로 찍고 settleTxnForQtyChange()에도 TODAY를 넘긴다(5651,5657행) — 사용자가 실제 매수/매도 당일이 아니라 며칠·몇 주 뒤에 앱에 반영하면, yearRealizedGain()(index.html:8531-8538, q.date.slice(0,4) 기준 연도 필터)이 그 실현손익을 엉뚱한 해로 집계해 '연간 요약' 리포트가 조용히 틀어진다. openAssetQtyLog()(7519-7534행)는 기록을 삭제만 할 수 있어 사용자가 직접 고칠 방법도 없다. acquiredAt(자산 1회성 취득일) 범위가드와는 다른 필드·다른 버그라 배제 목록과 겹치지 않는다.",
+    "approach": "1) costBasisField(d,editing)(index.html:5493) 안, '매입일(acquiredAt)' pick 필드 바로 아래 needsUpdate/needsSale일 때만(asAddedCostField/asSaleProceedsField와 같은 표시 조건) '거래일(선택)' pick 필드를 추가 — acquiredAt 필드와 동일한 openFieldDatePicker(asDraft._qtyChangeDate||TODAY, ds=>{ if(ds>TODAY){toastFail('거래일은 오늘보다 미래일 수 없어요');return} asDraft._qtyChangeDate=ds; renderAssetSheet(editing) }) 패턴을 쓰고, 비워두면 기존처럼 TODAY를 쓴다는 placeholder 문구를 둔다. 2) saveAsset()에서 d._qtyChangeDate를 읽어 qtyLogEntry.date = d._qtyChangeDate||TODAY로 바꾸고(5651행), settleTxnForQtyChange(...) 호출의 마지막 TODAY 인자도 같은 값으로 바꾼다(5657행) — 그 뒤 delete d._dispAmt;... 정리 블록(5601행 부근)에 delete d._qtyChangeDate;를 추가해 draft에 안 남게 한다. 3) 날짜 하한 가드는 기존 acquiredAt 가드와 동일하게 ds>TODAY만 막고(과거 날짜는 자유, CSV 가져오기의 dateBelowRangeFloor 같은 RANGE_FROM 체크는 선택사항), 비우면 undefined가 되어 ||TODAY로 기존 동작과 100% 동일하게 폴백해야 회귀가 없다. 4) test/run.js에 추가: (a) saveAsset 소스 패턴 테스트 — qtyLogEntry 생성부와 settleTxnForQtyChange 호출부가 bare TODAY가 아니라 d._qtyChangeDate||TODAY(또는 동일 의미의 표현)를 쓰는지 grep형 검증, (b) yearRealizedGain은 이미 순수 함수이므로 이번 변경 없이도 DB.assetQtyLog에 서로 다른 date를 가진 항목을 넣고 연도별로 올바르게 갈리는지 재확인하는 pure 테스트(회귀 가드), (c) costBasisField가 needsUpdate||needsSale일 때만 거래일 필드를 렌더하고 그 외엔 렌더하지 않는지 소스 패턴 테스트. node our-assets-v1.14.1/our-assets/test/run.js로 전체 통과 확인."
+  },
   "history": [
-    {
-      "cycle": 392,
-      "phase": "critique",
-      "timestamp": "2026-11-22T08:40:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-392 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx/saveAsset undo, 트래시 허브 통합, 전역 field-clear Escape 등)를 주고 전략적 재검토시킴. 가계부(ledger)/플랜(plan) 월 이동 캐러셀 monthNav(index.html:11891-11893, wireMonthCarousel:14182)가 touchstart/touchmove/touchend/touchcancel만 바인딩돼 있고(14200-14239) keydown이 전혀 없어, 스와이프를 못 쓰는 키보드 사용자는 ±1개월 이동 수단이 openYMSheet/openMonthSheet 휠뿐임을 발견. 같은 좌우 캐러셀 패턴인 nwCarousel(귀속 전환, 4763-4784)은 이미 ArrowLeft/Right keydown(gotoNwOwner)을 갖춰 앱 내 동일 패턴 캐러셀 2곳만 접근성이 비대칭하고, 가계부/플랜이 최고빈도 화면이라 공백의 체감 영향이 크다고 판단. monthStep('home',...) 분기(11945)는 renderHome()이 항상 이번 달로 고정돼(3366) 실제 도달 불가한 죽은 코드라 범위에서 제외(변경하지 않음). pending_advance_plan에 monthNavKeydown(e,which) 신설 + monthNav 버튼 onkeydown 배선 + monthStep 재사용 + 재렌더 후 mnLbl-{which} 포커스 복귀 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 392,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-24T16:05:00.000Z",
       "summary": "develop(cycle397) 커밋 e6f79e6(codeUpperInput() 신설, asCode(종목코드/심볼) 대문자 변환 입력 캐럿 복원)를 검토. fmtAmt/fmtQty와 동일한 패턴(oldCaret 기록 → 값 재대입 → setSelectionRange 복원)을 그대로 따르고 있고, toUpperCase()는 길이를 바꾸지 않는다는 전제가 ASCII 알파벳(stock/crypto 코드가 실제로 쓰는 문자셋)에서는 항상 성립함을 확인. 다만 toUpperCase()가 일부 문자(독일어 'ß'→'SS', 리가처 'ﬁ'→'FI' 등)에서 길이를 늘릴 수 있어 'oldCaret이 그대로 유효하다'는 주석의 전제가 완전히 보편적이진 않음을 node로 직접 확인했으나, 이 경로는 (1) 이 diff가 새로 만든 게 아니라 원래 this.value=this.value.toUpperCase()도 똑같이 겪던 길이 변화이고(캐럿 위치만 바뀌지 값 자체 로직은 동일, 회귀가 아님) (2) 길이가 줄어드는 case-mapping은 실질적으로 없어 setSelectionRange가 범위를 벗어나거나 크래시하지 않으며(최악의 경우도 캐럿이 몇 글자 안쪽에 위치) (3) 종목코드/심볼 입력란에 그런 문자를 타이핑할 실사용 시나리오가 거의 없어 급하지 않은 지적사항으로 분류 — 코드는 고치지 않고 이 노트에만 남김(다음 critique가 참고용으로 쓸 수 있으나 우선순위는 낮음). stock/crypto 템플릿 2곳의 oninput이 정확히 codeUpperInput(this)로 교체됐는지, maxlength=20(CODE_MAX)이 그대로 유지되는지 재확인. 실제 버그(회귀)는 발견하지 못함. node test/run.js 3911/3911 통과(재실행), node --check(logic.js/sw.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 397,
+      "phase": "critique",
+      "timestamp": "2026-11-24T17:16:54.869Z",
+      "summary": "세션 시작 시 로컬 git이 detached HEAD였고(HEAD=ee483e5) main 브랜치와 origin이 16개 커밋 전인 51c4fcd(cycle394 review)에 멈춰 있어, cycle395-397의 실제 코드 변경(setRate AMOUNT_MAX 클램프, 에러 배너 복구 경로, txMemo/rMemo 자동완성, syncRates seenAt 정체 감지, asCode 캐럿 복원 등 609줄, 16개 커밋)이 컨테이너 재생성 시 통째로 사라질 위험한 상태였음을 발견(cycle396 critique가 이미 같은 증상을 지적했으나 원인 미파악으로 남겨둠). git branch -f main HEAD로 main을 HEAD까지 fast-forward한 뒤 git push origin main으로 origin과 동기화(fetch로 origin/main==ee483e5 재확인) — 근본 원인(왜 이전 사이클들이 detached HEAD에서 커밋했는지)은 여전히 불명이지만, 다음 사이클들도 사전점검 때마다 git status/git branch -vv로 HEAD가 분리됐는지, main이 origin과 일치하는지 계속 확인 필요. 이후 general-purpose 서브에이전트에게 cycle340-397 전체 배제 목록(검색창/필드 Escape, 공용 피커·세그먼트·날짜선택기·카테고리 피커·monthNav·nwCarousel 방향키 전역화, openSheet 탭 전환 포커스 보존, 카테고리 관리 일괄선택, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset/commitRec undo, 문의하기 메모 클램프, acquiredAt 가드, setRate AMOUNT_MAX 클램프, txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, asCode 캐럿 복원, 모놀리식 구조개편/렌더성능/CSV완성도 기각 등)을 주고 접근성 외 차원(아키텍처/성능/데이터 정합성/누락 기능)에서 전략적 재검토시킴. saveAsset()의 isMarketValued(fx/gold/stock/crypto) 분기(index.html:5636-5658)가 보유수량 변경(매수/매도) 시 DB.assetQtyLog와 settleTxnForQtyChange()에 실제 거래일이 아닌 항상 TODAY를 찍어, 사용자가 거래 당일이 아니라 며칠/몇주 뒤에 앱에 반영하면 yearRealizedGain()(8531-8538행, q.date.slice(0,4) 연도 필터)이 실현손익을 엉뚱한 해로 집계해 연간 요약 리포트가 조용히 틀어지는 데이터 정합성 버그를 발견 — openAssetQtyLog()(7519-7534행)는 삭제만 지원해 사용자가 직접 고칠 수도 없음. acquiredAt(자산 1회성 취득일) 가드와는 다른 필드·다른 버그라 배제 목록과 겹치지 않음을 확인. pending_advance_plan에 costBasisField()에 선택적 거래일 pick 필드 추가 + saveAsset()이 TODAY 대신 그 값(||TODAY 폴백)을 qtyLogEntry.date/settleTxnForQtyChange에 쓰도록 계획 저장. node test/run.js 3911/3911 통과(서브에이전트가 재실행, 코드 변경 없어 베이스라인과 동일). 코드 변경 없음(state.json만 커밋, git 복구는 별도 안전조치로 이번 커밋에 state.json과 함께 포함, phase를 advance로 회전).",
       "commit": null
     }
   ]
