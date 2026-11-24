@@ -1,15 +1,8 @@
 {
   "cycle": 396,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 391,
-      "phase": "develop",
-      "timestamp": "2026-11-22T00:20:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-391 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx undo, 트래시 허브 통합 등)을 주고 조사시킴. 날짜 선택기/공용 피커 5종/카테고리 아이콘 피커(.icon-grid)에 이어 openAccentSheet()의 메인 색 그리드(.accent-grid, ACCENTS 7개·CSS grid-template-columns:repeat(4,1fr))도 같은 모양의 정적 열거형 그리드인데 방향키 탐색이 유일하게 빠진 사각지대였음을 발견(grep으로 .accent-sw/.accent-grid에 onkeydown 없음 확인). iconCellKeydown과 완전히 같은 구조로 accentCellKeydown(e)을 신설해 .accent-grid에 id=\"accentGrid\" onkeydown=\"accentCellKeydown(event)\"로 인라인 배선했고, 기존 pkGridNextIdx(idx,len,cols,key) 순수 헬퍼를 cols=4로 재사용했다(cols는 이미 3/5로 범용성이 검증돼 있어 cols=4 전용 순수 테스트는 추가하지 않음). test/run.js FUNCTIONS에 openAccentSheet/setAccent/accentCellKeydown, CONSTS에 ACCENTS 추가. openAccentSheet 마크업 배선 테스트 1건(.accent-grid id·onkeydown, .accent-sw 버튼 수==ACCENTS.length) + accentCellKeydown 조기-return 가드 2건(closest null/방향키 아닌 key, iconCellKeydown과 동일 패턴 — DOM 깊이 흉내낸 전체 포커스 이동 실행형 테스트는 pkCatKeydown/iconCellKeydown과 같은 이유로 두지 않음)을 추가. node test/run.js 3841->3851/3851 통과, 메인 <script> 블록(HTML 주석 제거 후 추출) node vm.Script 파싱/logic.js/sw.js node --check 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.514->1.47.515, sw.js CACHE v781->v782. 커밋 84d02ca.",
-      "commit": "84d02ca"
-    },
     {
       "cycle": 391,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-24T10:15:10.093Z",
       "summary": "critique(cycle395)의 계획대로 전역 에러 배너(recordError()/showErrBanner(), index.html 1548-1563행 부근)에 데이터 손실 방지용 복구 경로 2개를 추가. errBannerBackup()은 canShareFiles() 판정에 따라 doExport('share') 또는 doExport('download')를 그대로 재사용해 새로고침/이동 전에 백업을 받게 하고, doExport가 async이므로 동기 try/catch와 .catch() 양쪽으로 감싸 복구 경로 자체가 또 터지지 않게 했다(APPLOCK PIN 게이트·사진 제외 폴백 등 doExport 내부 로직은 전혀 건드리지 않음). errBannerHome()은 location.reload() 없이 ST.tab='home' 설정 → hideErrBanner() → renderCurrent() 순서로 호출해(순서가 뒤바뀌면 재렌더 시점에 아직 이전 탭이라 탭별 크래시 루프를 못 벗어남) 현재 탭 상태가 원인인 크래시에서도 데이터를 유지한 채 홈으로 벗어나게 하고, 홈도 같은 원인으로 다시 깨지면 renderCurrent() 자체의 기존 try/catch가 recordError로 다시 잡아 배너가 재노출되므로 바깥으로 던지지 않는다. showErrBanner()의 배너 HTML에 기존 '새로고침' 버튼 옆에 '백업 저장'/'홈으로' 버튼 두 개를 추가하고, 접힌 네이티브 <details>/<summary>'자세히' 토글 안에 readonly textarea로 lastError.kind/message와 stack 앞 5줄(헤더 줄 포함)을 선택 가능한 텍스트로 노출해 자가진단이나 문의하기 메모에 붙여넣을 수 있게 했다(새 저장소 없음, recordError()의 캡처 로직 자체는 불변). el.childElementCount 가드로 마크업은 최초 1회만 구성되던 기존 동작은 그대로 두고, textarea 값만 매 showErrBanner() 호출마다 최신 lastError로 갱신해 배너가 떠 있는 동안 새 에러가 나도 자세히 내용이 갇히지 않게 했다. CSS .err-banner를 가로 1행(align-items:center)에서 세로 스택(flex-direction:column)으로 바꾸고 .err-row/.err-actions/.err-detail 서브클래스를 추가했지만, 기존 svg/span/button 선택자는 그대로 재사용해 색상·버튼 스타일은 변경하지 않았다. 계획대로 recordError 캡처 로직·문의하기 채널 신설·개별 버그 원인 제거·renderCurrent try/catch 구조·배너 키보드 탐색·index.html 모듈 분리는 범위 밖으로 남겼다. test/run.js: errBannerHome은 ST/hideErrBanner/renderCurrent만 의존해 FUNCTIONS에 실제로 올려 실행형으로 검증(ST.tab이 renderCurrent() 호출 전에 바뀌는지, 홈도 재발 크래시해도 밖으로 안 던지는지)했고, errBannerBackup은 doExport처럼 APPLOCK 등 비순수 의존이 커 FUNCTIONS에 올리지 않고 소스 패턴(canShareFiles 분기 + try/catch + .catch() 배선)으로만 검증했다. recordError 테스트는 err가 host-realm Error일 때 vm 샌드박스 realm의 instanceof Error 판정이 cross-realm으로 깨지는 문제를 vm.runInContext로 sandbox realm 안에서 직접 Error를 만들어 피했다(recDates의 Array.from 교훈과 동일). showErrBanner 마크업 와이어링(3버튼 onclick)·자세히 textarea 내용 갱신(stack 5줄 축약, 마크업 재구성 가드와 무관하게 최신화)까지 총 9건 테스트 추가(recordError 2건, showErrBanner 4건, errBannerHome 2건, errBannerBackup 소스 1건). node test/run.js 3886->3894/3894 통과, node --check(logic.js/sw.js)/index.html inline <script> 블록 4개(HTML 주석 제거 후 추출) new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.524->1.47.525, sw.js CACHE v791->v792. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 396,
+      "phase": "develop",
+      "timestamp": "2026-11-24T11:19:14.559Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-395 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드·날짜 선택기 방향키, .seg/.mseg 전역 방향키(segKeydown), monthNav/nwCarousel 방향키, openSheet() 탭 전환 포커스 보존, 카테고리 관리 일괄선택 3종, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt 가드, transfer 통화 불일치, CSV 비대칭, SRI, 음력 공휴일표 상한, duplicateTx 등 포커스, sanitizeAmount/interestRate/setRate 상한, owner undo, amortizationPayoffMonths 가드, 거래내역 가상화, 거래 메모 자동완성 datalist, 전역 에러 배너 복구 경로 등)을 주고 조사시킴. 코어 순수 로직(날짜/반복/정산/부채/목표 계산, CSV 가져오기, 검색/금액 파싱, sw.js 캐싱)에서 실제 정합성 버그를 찾으려 상당한 시간을 들였으나 전부 이미 테스트로 두텁게 방어돼 있어 기각하고, cycle394가 renderTxSheet()의 #txMemo에만 frequentMemosForType()+datalist 자동완성을 달았을 때 반복거래 등록/수정 화면(renderRecSheet()의 #rMemo)은 같은 처리를 받지 못해 빠져 있던 비대칭을 발견(배제 목록은 #txMemo 배선만 언급, #rMemo는 다룬 적 없음). frequentMemosForType(type,txns,limit)은 이미 DB 비의존 순수 함수라 그대로 재사용해 #rMemo에 list=\"rMemoList\" datalist를 연결하고 d.type+DB.txns로 같은 유형의 빈도순 메모를 옵션으로 채웠다. test/run.js에 renderRecSheet [실행형] 테스트 2건 추가((1) #rMemo-rMemoList 연결과 같은 type 메모만 빈도 내림차순으로 들어가는지, (2) d.type 변경 재렌더 시 datalist가 갈아끼워지는지) + #rMemo 마크업 esc() 왕복 회귀 가드 테스트를 새 list 속성에 맞게 갱신. node test/run.js 3894->3896/3896 통과, node --check(logic.js/sw.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.525->1.47.526, sw.js CACHE v792->v793. 커밋 7f818d9. (참고: 이 사이클 종료 시점에 로컬 git이 detached HEAD 상태였고 main/origin/main이 cycle394 review(51c4fcd)에서 멈춰 cycle394 critique~cycle396 develop까지 8개 커밋이 어느 브랜치에도 안 얹혀 있던 것을 메인 세션이 발견 — main을 HEAD로 fast-forward 후 origin에 push해 복구함. 이후 사이클은 매번 종료 시 git status/branch 상태와 origin 반영 여부를 반드시 재확인할 것.)",
+      "commit": "7f818d9"
     }
   ]
 }
