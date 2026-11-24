@@ -1,15 +1,8 @@
 {
   "cycle": 399,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 394,
-      "phase": "develop",
-      "timestamp": "2026-11-22T12:05:00.000Z",
-      "summary": "cycle340-393 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드·날짜 선택기 방향키, .seg/.mseg 전역 방향키, 카테고리 관리 일괄선택 3종, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt 범위가드 금지 등)을 직접 숙지한 뒤 index.html/sw.js/logic.js를 조사. duplicateTx/duplicateAsset/duplicateGoal/duplicateRec 포커스 일관성, sanitizeAmount/interestRate 상한, owner 이름 변경/삭제 undo, amortizationPayoffMonths 가드, KR_LUNAR_HOLIDAYS 상한(2028, 아직 여유) 등 여러 후보를 검토했으나 전부 이미 고쳐져 있거나 리스크 대비 가치가 낮아 기각. 최종적으로 openSheet()(index.html, #sheet 공용 바텀시트)의 포커스 복구 로직에서 실제 버그를 발견: openCatManage(지출/수입/저축 탭)·openTrashHub(트래시 7종 탭)·renderGoalForm의 목표 유형 세그먼트·txType/recType(거래·반복 구분 선택)·csvMapSetMode(CSV 금액 형식)처럼 .seg/.mseg 탭 버튼의 onclick이 openSheet()를 통째로 다시 불러 sh.innerHTML을 갈아끼우는 모든 화면에서, 눌렀던(또는 방향키로 포커스만 옮겨뒀던) 탭 버튼이 DOM에서 사라지는 순간 document.activeElement가 body로 밀려나고, 기존 350ms 포커스 복구 타이머가 조건 없이 매번 sheetFocusables(sh)[0](보통 맨 앞의 '닫기 ✕' 버튼)로 포커스를 되돌려버렸다 — 키보드·스크린리더 사용자가 탭을 전환할 때마다 포커스가 '닫기'로 튀어 방금 고른 탭 위치를 잃어버리는 재현 가능한 접근성 버그. 이 .seg/.mseg 탭들이 '전역 방향키 탐색'으로 이미 처리된 범위(화살표로 포커스 이동)와는 다른 공백(탭을 실제로 '활성화'한 뒤의 포커스 보존)이라 배제 목록과 겹치지 않음을 확인했다. openSheet() 안에 sh.innerHTML을 바꾸기 전 prevSegFocus=wasOpen&&document.activeElement가 .seg/.mseg 안에 있었는지 1줄로 기억해두고, 350ms 복구 분기에서 prevSegFocus일 때만 새로 그려진 쪽의 '.seg button.on,.mseg button.on'(방금 활성화된 탭)을 먼저 찾아 포커스하도록 (prevSegFocus&&sh.querySelector(...))||sheetFocusables(sh)[0] 한 줄로 수정 — 조건이 안 맞으면(처음 여는 시트, 다른 화면으로 드릴다운하는 일반 네비게이션, .on 버튼이 없는 화면) 기존 '첫 포커스 가능 요소' 동작이 그대로 유지돼 회귀 위험이 없음을 코드로 직접 확인(ownerSegHtml/.mseg 뷰 전환 등 시트 밖에서 쓰는 .seg/.mseg는 sh 바깥이라 영향 없음, 시트가 열려 있을 때는 syncOverlayInert()로 배경이 비활성화돼 포커스가 시트 밖으로 샐 수 없어 오탐 불가능함을 확인). openSheet()는 이미 이 스위트가 'jsdom 없어 실행형으로 못 돌림'으로 분류해 소스 패턴 검사로만 검증하는 함수(기존 aria-labelledby 테스트와 동일한 관례)라, 그 관례를 그대로 따라 테스트 2건을 같은 자리에 추가: (1) prevSegFocus가 sh.innerHTML 대입보다 먼저 선언되는지(순서가 뒤바뀌면 그 시점엔 document.activeElement가 이미 body로 밀려나 항상 false가 됨), (2) 350ms 복구 분기가 prevSegFocus일 때 .on 탭 버튼을 먼저 찾고 아니면 기존 동작으로 폴백하는 정확한 표현을 쓰는지. node test/run.js 3873->3875/3875 통과, node --check(logic.js/sw.js) 통과, 메인 인라인 <script> 블록은 테스트 스위트 안의 기존 vm.Script 파싱 검증(3875건 중 하나)이 그대로 통과해 문법 확인됨. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.520->1.47.521, sw.js CACHE v787->v788.",
-      "commit": null
-    },
     {
       "cycle": 394,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-24T22:31:00.901Z",
       "summary": "critique(cycle398)의 계획대로 예산 한도를 귀속(owner)별로 선택 설정 가능하게 구현해 지출분석의 '전역 한도 vs 귀속별 지출' 불일치를 해소했다. DB.ownerBudgets={owner:{cat:[{from,amount}]}}를 budgetHistory와 동일한 shape으로 신설(migrate()에서 ||{} 초기화). logic.js에 budgetHistoryValueAt(h,y,m)(budgetForMonth의 'from<=대상 중 최근값' 탐색을 h를 직접 받는 순수 함수로 분리)와 setBudgetHistoryAt(h,y,m,amount)(setBudgetFrom의 삽입/덮어쓰기 로직 분리)를 신설해 index.html의 budgetForMonth/setBudgetFrom과 신규 budgetForMonthOwner(owner,c,y,m)/setBudgetFromOwner(owner,c,y,m,amount)가 그대로 재사용 — 오버라이드가 없으면(DB.ownerBudgets[owner][c] 이력이 비어있음) household budgetForMonth로 폴백. budgetForMonthWithCarry에 owner 인자(기본 '전체')를 추가해 오버라이드가 있으면 이월(catBudgetRollover) 없이 그 값을 그대로 쓰고, 없으면 기존 household+이월 경로로 폴백(계획대로 이월은 household 전역 개념으로 범위 밖에 남김). totalBudgetSummary에도 동일한 owner 분기를 추가해 지출분석 요약 카드가 오버라이드 카테고리는 이월 없이 집계하도록. spendByCategory의 '예산 있으면 지출 0이어도 노출' 유니온 스텝을 owner별 오버라이드에도 확장. openSpendAnalysis가 ST.spendOwner를 budgetForMonthWithCarry/totalBudgetSummary에 전달하도록 배선하고, openBudgetPrompt/saveBudget/delBudget을 ST.spendOwner!=='전체'일 때 ownerBudgets 경로로, '전체'면 기존 household 경로로 분기(오버라이드가 없으면 household 값을 보여주며 '가구 전체 한도를 따르고 있어요' 안내, 삭제 버튼은 실제 오버라이드가 있을 때만). 카테고리 삭제/일괄삭제(doDeleteCat/doDeleteCatsUndo, 트래시 장기보존 restoreTrashCat 포함)·이름변경(doRenameCat)·합치기(mergeCatInto)와 귀속 삭제(delOwner)·이름변경(doRenameOwner)·합치기(mergeOwnerInto) 전부에 ownerBudgets cascade를 추가(popOwnerBudgetsForCat/restoreOwnerBudgetsForCat/moveOwnerBudgetsForCat/undoMoveOwnerBudgetsForCat/mergeOwnerBudgetsForCat/undoMergeOwnerBudgetsForCat 헬퍼 신설) — 기존 catIcon/catVar/budgetHistory가 받던 것과 동일한 보호(유령 방지, undoToast 복원)를 귀속별 오버라이드에도 적용. mergeRemoteDataIntoLocal에 ownerBudgets 병합(귀속마다 mergeBudgetHistory 재사용 + 카테고리 톰스톤 + 귀속 자체 톰스톤 이중 필터) 배선, sanitizeBackup에 ownerBudgets 검증(budgetHistory와 동일한 from/amount 클램프 + validOwners 필터) 및 백업 JSON 포함 배선 추가(계획대로 CSV는 노출 안 함). test/run.js에 핵심 함수+UI 분기+모든 cascade+migrate+병합+백업 검증까지 40건 추가(3919->3959/3959 통과), FUNCTIONS 목록에 신규 함수 8개 등록. node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.530->1.47.531, sw.js CACHE v797->v798. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 399,
+      "phase": "develop",
+      "timestamp": "2026-11-24T23:10:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-398 전체 배제 목록(키보드 접근성 전체, 데이터 클램프(setRate/sanitizeAmount/interestRate/acquiredAt/qtyChangeDate/amortizationPayoffMonths), txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, owner별 예산 오버라이드, 모놀리식 구조개편/렌더성능/CSV완성도/가상화/통화·CSV·SRI·음력표/esc() XSS/OS알림 설계상 기각 등)를 주고 조사시킴. txMemo/rMemo(cycle394/396)가 받은 자주 쓴 메모 자동완성이 splitFieldHTML()의 분할 입력(여러 카테고리로 나누기) 항목별 메모(splitMemo{i}, cycle255에서 신설)에는 적용되지 않은 비대칭을 발견 — 습관적으로 같은 방식으로 나누는 지출(예: '마트'를 식비+생활용품으로 분할)의 각 줄 메모를 매번 새로 입력해야 하는 실사용 공백. splitFieldHTML(d,pfx,noToggle)에 frequentMemosForType(d.type,DB.txns,10)로 만든 공유 <datalist id=\"splitMemoList\"> 하나를 모든 분할 줄(splitMemo0, splitMemo1, ...)에 list=\"splitMemoList\"로 공통 연결(한 트랜잭션의 모든 줄이 같은 type이라 datalist 하나로 충분, tx/rec 폼이 이 함수를 공유해 한 번의 수정으로 둘 다 처리됨). test/run.js의 기존 splitFieldHTML 테스트 3건이 logic.js(frequentMemosForType/splitLines)와 DB.txns를 로드하도록 갱신하고, 공유 datalist 배선·빈도순 옵션·다른 type 메모 배제를 확인하는 실행형 테스트 1건을 추가. node test/run.js 3959->3960/3960 통과, node --check(logic.js/sw.js) 통과, index.html inline <script> 블록 전체 파싱(vm.Script) 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.531->1.47.532, sw.js CACHE v798->v799. 커밋 f512b91.",
+      "commit": "f512b91"
     }
   ]
 }
