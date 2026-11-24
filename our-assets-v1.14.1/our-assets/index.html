@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.528';
+const APP_VERSION='1.47.529';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -5474,6 +5474,7 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asCode')){const v=cleanCode(g('asCode').value);if(d.type==='crypto')d.cryptoCode=v;else d.stockCode=v;}
  if(g('asQty')){const v=sanitizeAmount(parseFloat((g('asQty').value||'0').replace(/,/g,'')),0);if(d.type==='crypto')d.cryptoQty=v;else d.stockQty=v;}
  if(g('asAcquiredAt')){const v=g('asAcquiredAt').value;if(v)d.acquiredAt=v;} /* 사용자가 매입일 pick 필드로 직접 고른 날짜가 있으면 먼저 반영 — 비어 있으면(아직 안 고름) 건드리지 않아 아래 자동 TODAY 스탬프 로직이 그대로 동작한다(app-evolve cycle281 advance) */
+ if(g('asQtyChangeDate')){const v=g('asQtyChangeDate').value;if(v)d._qtyChangeDate=v;} /* costBasisField의 "거래일(선택)" pick 필드 — acquiredAt과 동일한 관례, 비어 있으면 saveAsset()이 TODAY로 폴백(app-evolve cycle397 advance) */
  if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;
    if(d.costBasis>0){if(!d.acquiredAt&&!d._hadCostBasis)d.acquiredAt=TODAY;}else delete d.acquiredAt;} /* 매입 금액을 처음 입력하는 순간에만 최초 매입일(acquiredAt)을 오늘로 찍는다(annualizedReturn의 보유기간 기준) — 추가매수로 액수만 바뀌는 addCostBasisForBuy 경로는 이미 acquiredAt이 있는 상태에서만 열리므로 건드리지 않음(app-evolve cycle276 critique/advance). cycle276 이전부터 costBasis가 있던 기존 자산(_hadCostBasis)은 acquiredAt이 없어도 무관한 필드만 바꿔 저장할 때 오늘 날짜로 잘못 채워지지 않도록 비워 둔다 — 틀린 연환산 수익률보다 미표시가 안전(app-evolve cycle277 critique/advance) */
  if(g('asAddedCost'))d._addedCost=num(g('asAddedCost'),false);
@@ -5506,6 +5507,9 @@ function costBasisField(d,editing){ /* fx/gold/stock 공통 — 매입 원가는
  <div class="field"><label>매입일 (선택)</label><div class="pick ${d.acquiredAt?'':'placeholder'}" style="cursor:pointer" onclick="syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail('매입일은 오늘보다 미래일 수 없어요');return}asDraft.acquiredAt=ds;renderAssetSheet(${editing})})">
    <div class="row-tap" tabindex="0" role="button" aria-label="매입일 ${d.acquiredAt?fmtDateFull(d.acquiredAt):'선택'}" onkeydown="rowKeydown(event,()=>{syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail('매입일은 오늘보다 미래일 수 없어요');return}asDraft.acquiredAt=ds;renderAssetSheet(${editing})})})"><div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.acquiredAt?fmtDateFull(d.acquiredAt):'모르면 비워두세요'}</div></div></div><div class="pc">${d.acquiredAt?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="매입일 지우기" onclick="event.stopPropagation();asDraft.acquiredAt='';renderAssetSheet(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div>
    <input id="asAcquiredAt" type="hidden" value="${d.acquiredAt||''}"></div>
+ <div class="field" id="asQtyChangeDateField" style="display:${(needsUpdate||needsSale)?'block':'none'}"><label>거래일 (선택)</label><div class="pick ${d._qtyChangeDate?'':'placeholder'}" style="cursor:pointer" onclick="syncAssetInputs();openFieldDatePicker(asDraft._qtyChangeDate||TODAY,ds=>{if(ds>TODAY){toastFail('거래일은 오늘보다 미래일 수 없어요');return}asDraft._qtyChangeDate=ds;renderAssetSheet(${editing})})">
+   <div class="row-tap" tabindex="0" role="button" aria-label="거래일 ${d._qtyChangeDate?fmtDateFull(d._qtyChangeDate):'선택'}" onkeydown="rowKeydown(event,()=>{syncAssetInputs();openFieldDatePicker(asDraft._qtyChangeDate||TODAY,ds=>{if(ds>TODAY){toastFail('거래일은 오늘보다 미래일 수 없어요');return}asDraft._qtyChangeDate=ds;renderAssetSheet(${editing})})})"><div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d._qtyChangeDate?fmtDateFull(d._qtyChangeDate):'비우면 오늘 날짜로 기록해요'}</div></div></div><div class="pc">${d._qtyChangeDate?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="거래일 지우기" onclick="event.stopPropagation();asDraft._qtyChangeDate='';renderAssetSheet(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div>
+   <input id="asQtyChangeDate" type="hidden" value="${d._qtyChangeDate||''}"></div>
  <div class="field" id="asAddedCostField" style="display:${needsUpdate?'block':'none'}"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="${d._addedCost?comma(d._addedCost):''}" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput('asAddedCost')">✕</button></div></div>
  <div class="field" id="asSaleProceedsField" style="display:${needsSale?'block':'none'}"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="${d._saleProceeds?comma(d._saleProceeds):''}" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput('asSaleProceeds')">✕</button></div></div>
  <div class="field" id="asSettleField" style="display:${(needsUpdate||needsSale)?'block':'none'}"><label>결제·수령 통장 (선택)</label>${assetPickBtn(d._settleAssetId,'asOpenSettle()')}<p style="font-size:12px;color:var(--text-2);margin-top:6px">선택하면 위 금액만큼 통장 잔액도 같이 조정되고 거래 내역에 남아요. 비워두면 매입 금액만 바뀌어요</p></div>`;
@@ -5602,7 +5606,8 @@ function saveAsset(editing){
  const addedCost=d._addedCost>0?d._addedCost:0; /* costBasisField의 "이번에 추가로 투입한 금액" — 추가매수(수량 증가) 시 addCostBasisForBuy로 더해줄 몫 */
  const saleProceeds=d._saleProceeds>0?d._saleProceeds:0; /* costBasisField의 "이번에 받은 매도 금액" — 일부 매도(수량 감소) 시 realizedGainForSale로 실현손익을 계산할 몫 */
  const settleAssetId=d._settleAssetId&&DB.assets.some(a=>a.id===d._settleAssetId&&isCashLike(a))?d._settleAssetId:null; /* costBasisField의 "결제·수령 통장" — settleTxnForQtyChange가 쓸 몫(선택 안 하면 null, 기존 동작과 동일) */
- delete d._dispAmt;delete d._pensionAutoExcl;delete d._pensionPrevIncl;delete d._origQty;delete d._addedCost;delete d._saleProceeds;delete d._hadCostBasis;delete d._settleAssetId;
+ const qtyChangeDate=d._qtyChangeDate||TODAY; /* costBasisField의 "거래일(선택)" — 비워두면 기존처럼 TODAY로 폴백(app-evolve cycle397 advance) */
+ delete d._dispAmt;delete d._pensionAutoExcl;delete d._pensionPrevIncl;delete d._origQty;delete d._addedCost;delete d._saleProceeds;delete d._hadCostBasis;delete d._settleAssetId;delete d._qtyChangeDate;
  const dup=DB.assets.find(a=>a.id!==d.id&&normName(a.name)===normName(d.name)&&a.type===d.type); /* 살아있는 동명(대소문자·연속 공백 개수 무시)·동종 (신규/수정 공통) */
  if(dup){toast(dup.name===d.name?'같은 이름·종류의 자산이 이미 있어요':`비슷한 이름의 자산이 있어요: ${dup.name}`);return;} /* 중복 차단 */
  _savedDrafts.add(d); /* 검증을 모두 통과한 뒤에만 추가 — saveTx/saveRec과 동일하게, 검증 실패 후 고쳐서 다시 저장하는 경로는 막지 않는다 */
@@ -5648,13 +5653,13 @@ function saveAsset(editing){
      DB.assets[i]=d;
      if(prevQty!==newQty){
        DB.assetQtyLog=DB.assetQtyLog||[];
-       const qtyLogEntry={id:uid(),assetId:d.id,date:TODAY,prevQty,newQty,field:qtyField};
+       const qtyLogEntry={id:uid(),assetId:d.id,date:qtyChangeDate,prevQty,newQty,field:qtyField};
        if(newQty>prevQty&&addedCost>0)qtyLogEntry.addedAmount=addedCost; /* 투입액 이력을 openAssetQtyLog에서 재구성할 수 있도록 남김 */
        if(saleResult&&saleResult.realizedGain!=null){qtyLogEntry.saleProceeds=saleProceeds;qtyLogEntry.realizedGain=saleResult.realizedGain;} /* 실현손익 이력을 openAssetQtyLog에서 재구성할 수 있도록 남김 */
        DB.assetQtyLog.push(touch(qtyLogEntry));
        qtyLogId=qtyLogEntry.id; /* undo가 이 기록만 지목해 제거할 근거(app-evolve cycle391 advance) */
      }
-     const settleTxn=settleTxnForQtyChange(prevQty,newQty,addedCost,saleProceeds,settleAssetId,d.name,TODAY); /* 결제·수령 통장을 골랐을 때만 그 통장 쪽에 돈이 움직였다는 거래를 남김(app-evolve cycle357 advance) */
+     const settleTxn=settleTxnForQtyChange(prevQty,newQty,addedCost,saleProceeds,settleAssetId,d.name,qtyChangeDate); /* 결제·수령 통장을 골랐을 때만 그 통장 쪽에 돈이 움직였다는 거래를 남김(app-evolve cycle357 advance) — qtyChangeDate는 costBasisField의 "거래일(선택)" 입력, 비워두면 TODAY(app-evolve cycle397 advance) */
      if(settleTxn){settleTxnId=uid();DB.txns.push(touch(Object.assign({id:settleTxnId},settleTxn)));} /* id를 미리 뽑아 쥐고 있어야 undo가 이 거래만 지목해 제거할 수 있음(app-evolve cycle391 advance) */
    }else{
      d[balKey]=origBase; /* 원래 기준값 유지한 채 교체 */

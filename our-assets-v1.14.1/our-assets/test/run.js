@@ -21879,6 +21879,47 @@ test('saveAsset: 결제 통장으로 고른 id가 이미 삭제돼 더는 존재
   sandbox.saveAsset(true);
   assert.strictEqual(sandbox.DB.txns.length, 0);
 });
+/* ---------- saveAsset: costBasisField의 "거래일(선택)"(_qtyChangeDate)이 있으면 assetQtyLog의
+ * date와 settleTxnForQtyChange에 넘기는 날짜 모두 TODAY 대신 그 값을 쓴다 — 사용자가 매수/매도
+ * 당일이 아니라 며칠·몇 주 뒤에 앱에 반영해도 yearRealizedGain()의 연도 집계가 실제 거래일 기준으로
+ * 맞게 갈리도록 한다(app-evolve cycle397 advance) ---------- */
+test('saveAsset: "거래일"(_qtyChangeDate)을 입력하면 assetQtyLog.date가 TODAY가 아니라 그 값으로 기록된다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 100000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 15000 }, goldPerG: 0 } };
+  sandbox.TODAY = '2026-11-24';
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 100000, _addedCost: 150000, _qtyChangeDate: '2026-10-05' };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assetQtyLog[0].date, '2026-10-05', '거래일을 입력했으면 그 날짜가 기록돼야 함(연간 실현손익 집계가 엉뚱한 해로 틀어지는 버그 수정)');
+  assert.ok(!('_qtyChangeDate' in sandbox.DB.assets[0]), '_qtyChangeDate는 임시 입력값이라 저장된 자산에 남으면 안 됨');
+});
+test('saveAsset: "거래일"을 비워두면 기존처럼 TODAY로 기록된다(회귀 가드)', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 100000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 15000 }, goldPerG: 0 } };
+  sandbox.TODAY = '2026-11-24';
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 100000, _addedCost: 150000 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assetQtyLog[0].date, '2026-11-24');
+});
+test('saveAsset: "거래일"을 입력하면 결제·수령 통장(_settleAssetId)의 transfer 거래 날짜도 TODAY가 아니라 그 값으로 남는다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 300000 };
+  const cash = { id: 'c1', type: 'cash', owner: '나', includeInTotal: true, name: '우리은행', baseAmount: 500000 };
+  sandbox.DB = { assets: [asset, cash], assetQtyLog: [], txns: [], rates: { fx: {}, stocks: { '005930': 20000 }, goldPerG: 0 } };
+  sandbox.TODAY = '2026-11-24';
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 300000, _saleProceeds: 200000, _settleAssetId: 'c1', _qtyChangeDate: '2026-10-05' };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.txns[0].date, '2026-10-05', '통장 쪽 거래도 실제 거래일로 남아야 잔액 이력이 날짜 기준으로 어긋나지 않음');
+});
+/* costBasisField: "거래일" pick 필드는 "매입일"과 달리 needsUpdate||needsSale일 때만(실제로
+ * 수량이 바뀌는 중일 때만) 뜬다 — 처음 등록이나 수량 변화가 없는 수정에는 날짜를 물을 이유가
+ * 없다(asAddedCostField/asSaleProceedsField와 동일한 표시 조건). */
+test('costBasisField: "거래일" pick 필드는 needsUpdate/needsSale 조건에 따라 asAddedCostField/asSaleProceedsField처럼 보이거나 숨겨진다', () => {
+  const hidden = sandbox.costBasisField({ costBasis: 0 }, false);
+  assert.ok(hidden.includes('<div class="field" id="asQtyChangeDateField" style="display:none">'), '신규 등록(editing=false)이면 거래일 필드가 숨겨져야 함');
+  const needsUpdateHtml = sandbox.costBasisField({ type: 'stock', stockQty: 20, costBasis: 100000, _origQty: 10 }, true);
+  assert.ok(needsUpdateHtml.includes('<div class="field" id="asQtyChangeDateField" style="display:block">'), '추가매수(needsUpdate)면 거래일 필드가 보여야 함');
+  const needsSaleHtml = sandbox.costBasisField({ type: 'stock', stockQty: 10, costBasis: 100000, _origQty: 20 }, true);
+  assert.ok(needsSaleHtml.includes('<div class="field" id="asQtyChangeDateField" style="display:block">'), '매도(needsSale)면 거래일 필드가 보여야 함');
+});
 /* ---------- addCostBasisForBuy(logic.js, 순수): 추가매수 시 "이번에 추가로 투입한 금액"만 기존
  * costBasis에 더한다 — scaleCostBasisForSale의 반대 방향 짝(app-evolve cycle191 advance) ---------- */
 test('addCostBasisForBuy: addedAmount를 기존 costBasis에 더한다', () => {
@@ -32183,6 +32224,9 @@ test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 E
     ' <div class="field"><label>매입일 (선택)</label><div class="pick placeholder" style="cursor:pointer" onclick="syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail(\'매입일은 오늘보다 미래일 수 없어요\');return}asDraft.acquiredAt=ds;renderAssetSheet(false)})">\n' +
     '   <div class="row-tap" tabindex="0" role="button" aria-label="매입일 선택" onkeydown="rowKeydown(event,()=>{syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail(\'매입일은 오늘보다 미래일 수 없어요\');return}asDraft.acquiredAt=ds;renderAssetSheet(false)})})"><div class="pav a-save">' + sandbox.svg('calendar') + '</div><div class="pbody"><div class="pn">모르면 비워두세요</div></div></div><div class="pc">' + sandbox.svg('chev') + '</div></div>\n' +
     '   <input id="asAcquiredAt" type="hidden" value=""></div>\n' +
+    ' <div class="field" id="asQtyChangeDateField" style="display:none"><label>거래일 (선택)</label><div class="pick placeholder" style="cursor:pointer" onclick="syncAssetInputs();openFieldDatePicker(asDraft._qtyChangeDate||TODAY,ds=>{if(ds>TODAY){toastFail(\'거래일은 오늘보다 미래일 수 없어요\');return}asDraft._qtyChangeDate=ds;renderAssetSheet(false)})">\n' +
+    '   <div class="row-tap" tabindex="0" role="button" aria-label="거래일 선택" onkeydown="rowKeydown(event,()=>{syncAssetInputs();openFieldDatePicker(asDraft._qtyChangeDate||TODAY,ds=>{if(ds>TODAY){toastFail(\'거래일은 오늘보다 미래일 수 없어요\');return}asDraft._qtyChangeDate=ds;renderAssetSheet(false)})})"><div class="pav a-save">' + sandbox.svg('calendar') + '</div><div class="pbody"><div class="pn">비우면 오늘 날짜로 기록해요</div></div></div><div class="pc">' + sandbox.svg('chev') + '</div></div>\n' +
+    '   <input id="asQtyChangeDate" type="hidden" value=""></div>\n' +
     ' <div class="field" id="asAddedCostField" style="display:none"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput(\'asAddedCost\')">✕</button></div></div>\n' +
     ' <div class="field" id="asSaleProceedsField" style="display:none"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput(\'asSaleProceeds\')">✕</button></div></div>\n' +
     ' <div class="field" id="asSettleField" style="display:none"><label>결제·수령 통장 (선택)</label><button class="pick placeholder" onclick="asOpenSettle()"><div class="pbody"><div class="pn">선택하세요</div></div><div class="pc">' + sandbox.svg('chevR') + '</div></button><p style="font-size:12px;color:var(--text-2);margin-top:6px">선택하면 위 금액만큼 통장 잔액도 같이 조정되고 거래 내역에 남아요. 비워두면 매입 금액만 바뀌어요</p></div>'

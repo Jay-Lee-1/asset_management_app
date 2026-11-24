@@ -1,19 +1,8 @@
 {
-  "cycle": 397,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "자산 수량 변경(매수/매도) 기록에 실제 거래일 입력 추가 — 연간 실현손익 귀속 오류 수정",
-    "why": "saveAsset()의 isMarketValued(fx/gold/stock/crypto) 분기(index.html:5636-5658)가 DB.assetQtyLog 신규 항목을 항상 date:TODAY로 찍고 settleTxnForQtyChange()에도 TODAY를 넘긴다(5651,5657행) — 사용자가 실제 매수/매도 당일이 아니라 며칠·몇 주 뒤에 앱에 반영하면, yearRealizedGain()(index.html:8531-8538, q.date.slice(0,4) 기준 연도 필터)이 그 실현손익을 엉뚱한 해로 집계해 '연간 요약' 리포트가 조용히 틀어진다. openAssetQtyLog()(7519-7534행)는 기록을 삭제만 할 수 있어 사용자가 직접 고칠 방법도 없다. acquiredAt(자산 1회성 취득일) 범위가드와는 다른 필드·다른 버그라 배제 목록과 겹치지 않는다.",
-    "approach": "1) costBasisField(d,editing)(index.html:5493) 안, '매입일(acquiredAt)' pick 필드 바로 아래 needsUpdate/needsSale일 때만(asAddedCostField/asSaleProceedsField와 같은 표시 조건) '거래일(선택)' pick 필드를 추가 — acquiredAt 필드와 동일한 openFieldDatePicker(asDraft._qtyChangeDate||TODAY, ds=>{ if(ds>TODAY){toastFail('거래일은 오늘보다 미래일 수 없어요');return} asDraft._qtyChangeDate=ds; renderAssetSheet(editing) }) 패턴을 쓰고, 비워두면 기존처럼 TODAY를 쓴다는 placeholder 문구를 둔다. 2) saveAsset()에서 d._qtyChangeDate를 읽어 qtyLogEntry.date = d._qtyChangeDate||TODAY로 바꾸고(5651행), settleTxnForQtyChange(...) 호출의 마지막 TODAY 인자도 같은 값으로 바꾼다(5657행) — 그 뒤 delete d._dispAmt;... 정리 블록(5601행 부근)에 delete d._qtyChangeDate;를 추가해 draft에 안 남게 한다. 3) 날짜 하한 가드는 기존 acquiredAt 가드와 동일하게 ds>TODAY만 막고(과거 날짜는 자유, CSV 가져오기의 dateBelowRangeFloor 같은 RANGE_FROM 체크는 선택사항), 비우면 undefined가 되어 ||TODAY로 기존 동작과 100% 동일하게 폴백해야 회귀가 없다. 4) test/run.js에 추가: (a) saveAsset 소스 패턴 테스트 — qtyLogEntry 생성부와 settleTxnForQtyChange 호출부가 bare TODAY가 아니라 d._qtyChangeDate||TODAY(또는 동일 의미의 표현)를 쓰는지 grep형 검증, (b) yearRealizedGain은 이미 순수 함수이므로 이번 변경 없이도 DB.assetQtyLog에 서로 다른 date를 가진 항목을 넣고 연도별로 올바르게 갈리는지 재확인하는 pure 테스트(회귀 가드), (c) costBasisField가 needsUpdate||needsSale일 때만 거래일 필드를 렌더하고 그 외엔 렌더하지 않는지 소스 패턴 테스트. node our-assets-v1.14.1/our-assets/test/run.js로 전체 통과 확인."
-  },
+  "cycle": 398,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 392,
-      "phase": "advance",
-      "timestamp": "2026-11-22T09:50:00.000Z",
-      "summary": "critique(cycle392)의 계획대로 가계부/플랜 월 이동 캐러셀 monthNav에 키보드 화살표 탐색 추가. monthNav(which,label)의 mn-lbl 버튼에 onkeydown=\"monthNavKeydown(event,'${which}')\" 배선, nwCarousel의 ArrowLeft/Right keydown(gotoNwOwner, 4779-4784행)과 완전히 동일한 조기-return 구조로 monthNavKeydown(e,which) 신설 — ArrowLeft/Right 아니면 return, preventDefault 후 기존 monthStep(which, delta) 그대로 재사용(ledger/plan 분기 이미 존재, 새 분기 없음). monthStep이 renderLedger()/renderPlan()으로 화면을 통째로 다시 그려 포커스가 끊기므로, 호출 직후 $('mnLbl-'+which).focus()로 같은 id의 버튼에 포커스를 되돌림(refreshNwHistoryCard 4707-4709행과 동일 원칙). monthStep('home',...) 분기(11945행, renderHome이 항상 이번 달로 고정돼 실제 도달 불가)는 계획대로 범위 제외하고 변경하지 않음. test/run.js에 monthStep 호출을 스파이로 기록하는 lastMonthStepCall 스텁(openMonthSheet와 동일 패턴)을 추가하고, monthNav 마크업에 onkeydown 배선 확인 1건 + monthNavKeydown ArrowRight(+1월, ledger 포커스 복귀)/ArrowLeft(-1월, plan 포커스 복귀)/방향키 아닌 key 무시(가드) 테스트 3건, 총 4건 추가. 'monthNavKeydown'을 FUNCTIONS에 추가. node test/run.js 3857->3861/3861 통과, 메인 <script> 4블록(HTML 주석 제거 후 추출) new Function 파싱 통과, sw.js node --check 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.517->1.47.518, sw.js CACHE v784->v785. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 393,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-24T17:16:54.869Z",
       "summary": "세션 시작 시 로컬 git이 detached HEAD였고(HEAD=ee483e5) main 브랜치와 origin이 16개 커밋 전인 51c4fcd(cycle394 review)에 멈춰 있어, cycle395-397의 실제 코드 변경(setRate AMOUNT_MAX 클램프, 에러 배너 복구 경로, txMemo/rMemo 자동완성, syncRates seenAt 정체 감지, asCode 캐럿 복원 등 609줄, 16개 커밋)이 컨테이너 재생성 시 통째로 사라질 위험한 상태였음을 발견(cycle396 critique가 이미 같은 증상을 지적했으나 원인 미파악으로 남겨둠). git branch -f main HEAD로 main을 HEAD까지 fast-forward한 뒤 git push origin main으로 origin과 동기화(fetch로 origin/main==ee483e5 재확인) — 근본 원인(왜 이전 사이클들이 detached HEAD에서 커밋했는지)은 여전히 불명이지만, 다음 사이클들도 사전점검 때마다 git status/git branch -vv로 HEAD가 분리됐는지, main이 origin과 일치하는지 계속 확인 필요. 이후 general-purpose 서브에이전트에게 cycle340-397 전체 배제 목록(검색창/필드 Escape, 공용 피커·세그먼트·날짜선택기·카테고리 피커·monthNav·nwCarousel 방향키 전역화, openSheet 탭 전환 포커스 보존, 카테고리 관리 일괄선택, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset/commitRec undo, 문의하기 메모 클램프, acquiredAt 가드, setRate AMOUNT_MAX 클램프, txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, asCode 캐럿 복원, 모놀리식 구조개편/렌더성능/CSV완성도 기각 등)을 주고 접근성 외 차원(아키텍처/성능/데이터 정합성/누락 기능)에서 전략적 재검토시킴. saveAsset()의 isMarketValued(fx/gold/stock/crypto) 분기(index.html:5636-5658)가 보유수량 변경(매수/매도) 시 DB.assetQtyLog와 settleTxnForQtyChange()에 실제 거래일이 아닌 항상 TODAY를 찍어, 사용자가 거래 당일이 아니라 며칠/몇주 뒤에 앱에 반영하면 yearRealizedGain()(8531-8538행, q.date.slice(0,4) 연도 필터)이 실현손익을 엉뚱한 해로 집계해 연간 요약 리포트가 조용히 틀어지는 데이터 정합성 버그를 발견 — openAssetQtyLog()(7519-7534행)는 삭제만 지원해 사용자가 직접 고칠 수도 없음. acquiredAt(자산 1회성 취득일) 가드와는 다른 필드·다른 버그라 배제 목록과 겹치지 않음을 확인. pending_advance_plan에 costBasisField()에 선택적 거래일 pick 필드 추가 + saveAsset()이 TODAY 대신 그 값(||TODAY 폴백)을 qtyLogEntry.date/settleTxnForQtyChange에 쓰도록 계획 저장. node test/run.js 3911/3911 통과(서브에이전트가 재실행, 코드 변경 없어 베이스라인과 동일). 코드 변경 없음(state.json만 커밋, git 복구는 별도 안전조치로 이번 커밋에 state.json과 함께 포함, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 397,
+      "phase": "advance",
+      "timestamp": "2026-11-24T18:12:27.615Z",
+      "summary": "critique(cycle397)의 계획대로 자산 수량 변경(매수/매도) 기록에 선택적 거래일 입력을 추가해 yearRealizedGain() 연간 실현손익 귀속 오류를 고쳤다. costBasisField()의 매입일(acquiredAt) pick 필드 바로 아래, needsUpdate||needsSale일 때만(asAddedCostField/asSaleProceedsField와 동일한 표시 조건) \"거래일(선택)\" pick 필드(#asQtyChangeDateField)를 추가 — acquiredAt과 동일한 openFieldDatePicker(asDraft._qtyChangeDate||TODAY, ds=>{ds>TODAY면 toastFail로 막음; asDraft._qtyChangeDate=ds; renderAssetSheet}) 패턴, 비워두면 \"오늘 날짜로 기록해요\" placeholder. syncAssetInputs()에 asAcquiredAt과 동일한 패턴으로 #asQtyChangeDate 히든 입력 동기화를 추가. saveAsset()에서 const qtyChangeDate=d._qtyChangeDate||TODAY를 settleAssetId 캡처 바로 옆에서 뽑아(delete 정리 블록 전에 로컬 변수로 고정하는 기존 addedCost/saleProceeds 관례와 동일) qtyLogEntry.date와 settleTxnForQtyChange(...)의 마지막 인자에 TODAY 대신 그 값을 쓰도록 바꾸고, 정리 블록에 delete d._qtyChangeDate를 추가했다. 날짜 하한 가드는 계획대로 acquiredAt과 동일하게 미래만 막고(ds>TODAY) RANGE_FROM 체크는 범위 제외. test/run.js에 saveAsset 실행형 테스트 3건(거래일 입력 시 assetQtyLog.date가 그 값으로 기록, 비우면 TODAY로 폴백하는 회귀 가드, 결제·수령 통장 transfer 거래의 date도 같은 값을 씀) + costBasisField 표시조건 테스트 1건(신규 등록은 숨김, needsUpdate/needsSale 각각 보임) 총 4건 추가, 기존 costBasisField 전체 HTML 스냅샷 테스트 1건을 새 필드 블록 포함하도록 갱신. node test/run.js 3911->3915/3915 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.528->1.47.529, sw.js CACHE v795->v796. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
