@@ -249,7 +249,13 @@ const FUNCTIONS = [
   // 실행형으로 검증하는 데 쓴다 — pushCloud/mergeRemoteDataIntoLocal과 같은 sandbox에 올라가야 한다.
   'applyPendingCloudConflictMerge',
   'bytesToBase64', 'base64ToBytes', 'encodeCloudPayload', 'decodeCloudPayload',
-  'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
+  // errBannerHome(에러 배너 '홈으로' 버튼, app-evolve cycle395 critique → advance)은 ST/
+  // hideErrBanner/renderCurrent만 쓰므로 이 공유 sandbox에 실제로 올려 실행형으로 검증한다.
+  // errBannerBackup(같은 배너의 '백업 저장' 버튼)은 doExport/canShareFiles를 부르는데, 그 둘은
+  // APPLOCK/promptExportPin/navigator.share 등 이 sandbox에 없는 비순수 의존이 커서(doExport
+  // 자체도 소스 패턴으로만 검증되는 함수, 위 286줄 주석과 같은 기준) 여기 올리지 않고 소스
+  // 패턴으로만 검증한다.
+  'recordError', 'showErrBanner', 'hideErrBanner', 'errBannerHome', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'commitTx', 'commitTxAsRec', 'duplicateTx', 'editTx', 'delTx', 'openAdjustEdit', 'delAdjust', 'recEditScope', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers', 'resetStaleDebtPayoffAcks',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'interestRateField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'openOwnerPicker', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
@@ -759,6 +765,13 @@ const sandbox = {
     set innerHTML(v) { this._html = v; },
     get innerHTML() { return this._html; },
   },
+  // showErrBanner()가 매번(최초 마크업 구성과 무관하게) $('errDetailTa').value를 lastError로
+  // 갱신하는 '자세히' textarea의 최소 DOM 흉내 — errBannerEl과 같은 getter/setter 패턴.
+  errDetailTaEl: {
+    _value: '',
+    set value(v) { this._value = v; },
+    get value() { return this._value; },
+  },
   // importFile <input type=file>의 최소 DOM 흉내 — 실제 코드가 쓰는 건 change 리스너
   // 등록(addEventListener)뿐이라, 콜백을 모듈 스코프 _importFileChangeCb에 캡처해 두면 테스트가
   // 가짜 change 이벤트로 직접 호출할 수 있다(app-evolve cycle175 advance, 아래
@@ -860,7 +873,7 @@ const sandbox = {
   // 있음) 안전하게 넘어가는 분기를 검증한다.
   bootSplashEl: { remove: () => { sandbox.bootSplashRemoveCalls++; } },
   bootSplashRemoveCalls: 0,
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : id === 'debtPlanExtra' ? (sandbox.debtPlanExtraValue === undefined ? null : { value: sandbox.debtPlanExtraValue }) : id === 'debtPlanBody' ? (sandbox.debtPlanBodyMissing ? null : sandbox.debtPlanBodyEl) : id === 'txCatSuggest' ? (sandbox.txCatSuggestMissing ? null : sandbox.txCatSuggestEl) : id === 'recCatSuggest' ? (sandbox.recCatSuggestMissing ? null : sandbox.recCatSuggestEl) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'errDetailTa' ? sandbox.errDetailTaEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : id === 'debtPlanExtra' ? (sandbox.debtPlanExtraValue === undefined ? null : { value: sandbox.debtPlanExtraValue }) : id === 'debtPlanBody' ? (sandbox.debtPlanBodyMissing ? null : sandbox.debtPlanBodyEl) : id === 'txCatSuggest' ? (sandbox.txCatSuggestMissing ? null : sandbox.txCatSuggestEl) : id === 'recCatSuggest' ? (sandbox.recCatSuggestMissing ? null : sandbox.recCatSuggestEl) : null,
   // debtWhatIfResultEl은 debtWhatIfUpdate()가 textContent를 직접 대입하는 결과 표시 엘리먼트
   // (부채 상환 추가 납입 시뮬레이터, app-evolve cycle262 advance) — bkTextEl처럼 호출 간에도
   // 값이 남는 공유 객체로 선언해 textContent 갱신을 검사할 수 있게 한다.
@@ -25560,6 +25573,7 @@ test('invalidateBalances(): fromDate를 생략하면 기존처럼 세 캐시를 
 function resetErrBanner() {
   sandbox.errBannerEl._html = '';
   sandbox.errBannerEl.classList.list = [];
+  sandbox.errDetailTaEl._value = '';
   sandbox.lastError = null;
 }
 test('renderCurrent: 정상 렌더러는 그대로 실행되고 에러 배너는 뜨지 않는다', () => {
@@ -25592,6 +25606,92 @@ test('renderCurrent: 예외 이후 재렌더가 성공하면 에러 배너가 �
   sandbox.renderers = { home: () => {} };
   sandbox.renderCurrent();
   assert.strictEqual(sandbox.errBannerEl.classList.contains('show'), false, '재렌더 성공 후에도 에러 배너가 남아있음');
+});
+/* ---------- 에러 배너 복구 액션(백업 저장/홈으로) + '자세히' 상세 (app-evolve cycle395 critique → advance) ----------
+ * recordError()의 err가 Error 인스턴스가 아닐 때도(crossorigin 'Script error.' 등, 위 1552행
+ * 주석) lastError 자체는 정상적으로 채워져야 자세히 토글이 보여줄 내용이 있다 — 배너를 안
+ * 띄우는 소음 필터(kind==='renderCurrent'||err instanceof Error)와 lastError 기록은 별개임을
+ * 확인한다. */
+test('recordError: err가 Error 인스턴스가 아니어도(crossorigin Script error. 등) lastError.message는 채워지지만 배너는 뜨지 않는다', () => {
+  resetErrBanner();
+  sandbox.recordError('그냥 문자열 에러', 'onerror');
+  assert.ok(sandbox.lastError, 'lastError가 기록되지 않음');
+  assert.strictEqual(sandbox.lastError.kind, 'onerror');
+  assert.strictEqual(sandbox.lastError.message, '그냥 문자열 에러');
+  assert.strictEqual(sandbox.lastError.stack, '', 'Error가 아닌 err는 stack이 없어야 함');
+  assert.strictEqual(sandbox.errBannerEl.classList.contains('show'), false, '정보 없는 비-Error err는 소음 필터에 걸려 배너가 뜨지 않아야 함');
+});
+test('recordError: err가 Error 인스턴스면 lastError.stack도 채워지고 배너가 뜬다', () => {
+  resetErrBanner();
+  // recordError()의 `err instanceof Error` 판정은 vm 샌드박스 realm에서 도므로, 이 테스트 파일
+  // (host realm)에서 만든 new Error()를 그냥 넘기면 realm이 달라 instanceof가 false로 나와(위
+  // Array.from/JSON round-trip 패턴과 같은 realm 문제) 소음 필터에 잘못 걸려 배너가 안 뜬다 —
+  // vm.runInContext로 sandbox realm 안에서 직접 Error를 만들어야 진짜 Error 인스턴스 경로를 검증한다.
+  const err = vm.runInContext("new Error('진짜 에러')", sandbox);
+  sandbox.recordError(err, 'onerror');
+  assert.strictEqual(sandbox.lastError.message, '진짜 에러');
+  assert.strictEqual(sandbox.lastError.kind, 'onerror');
+  assert.ok(sandbox.lastError.stack.length > 0, 'Error 인스턴스는 stack이 채워져야 함');
+  assert.strictEqual(sandbox.errBannerEl.classList.contains('show'), true);
+});
+test("showErrBanner: 마크업에 '백업 저장'/'홈으로'/'새로고침' 세 버튼이 각각 올바른 핸들러로 배선된다", () => {
+  resetErrBanner();
+  sandbox.lastError = { kind: 'renderCurrent', message: 'x', stack: '', time: 1 };
+  sandbox.showErrBanner();
+  const html = sandbox.errBannerEl.innerHTML;
+  assert.ok(html.includes('onclick="errBannerBackup()"'), "'백업 저장' 버튼이 errBannerBackup()으로 배선되지 않음");
+  assert.ok(html.includes('onclick="errBannerHome()"'), "'홈으로' 버튼이 errBannerHome()으로 배선되지 않음");
+  assert.ok(html.includes('onclick="location.reload()"'), "'새로고침' 버튼이 빠짐 — 기존 최후 수단은 그대로 남아야 함");
+});
+test("showErrBanner: '자세히' textarea에 lastError.kind/message와 stack 앞부분이 선택 가능한 텍스트로 채워진다", () => {
+  resetErrBanner();
+  sandbox.lastError = { kind: 'renderCurrent', message: '강제 렌더 실패', stack: 'Error: 강제 렌더 실패\n at a\n at b\n at c\n at d\n at e\n at f', time: 1 };
+  sandbox.showErrBanner();
+  const detail = sandbox.errDetailTaEl.value;
+  assert.ok(detail.includes('renderCurrent'), '자세히 내용에 kind가 없음');
+  assert.ok(detail.includes('강제 렌더 실패'), '자세히 내용에 message가 없음');
+  // stack.split('\n').slice(0,5)의 5줄에는 맨 앞 "Error: ..." 헤더 줄도 포함되므로(위 stack
+  // 문자열 기준) 실제로 남는 호출 프레임은 at a~at d까지 4줄뿐이다.
+  assert.ok(detail.includes(' at d'), 'stack 앞부분(5줄, 헤더 포함)이 잘려 들어가지 않음');
+  assert.ok(!detail.includes(' at e'), 'stack을 5줄로 축약하지 않고 전부 넣음(소음 방지 실패)');
+});
+test("showErrBanner: 배너가 이미 떠 있는 상태(마크업 재구성 없음)에서 다시 불려도 '자세히' 내용은 최신 lastError로 갱신된다", () => {
+  resetErrBanner();
+  sandbox.lastError = { kind: 'onerror', message: '첫 에러', stack: '', time: 1 };
+  sandbox.showErrBanner();
+  assert.ok(sandbox.errDetailTaEl.value.includes('첫 에러'));
+  const htmlAfterFirst = sandbox.errBannerEl.innerHTML;
+  sandbox.lastError = { kind: 'unhandledrejection', message: '두번째 에러', stack: '', time: 2 };
+  sandbox.showErrBanner();
+  assert.strictEqual(sandbox.errBannerEl.innerHTML, htmlAfterFirst, 'el.childElementCount 가드로 마크업 자체는 재구성되지 않아야 함(기존 동작)');
+  assert.ok(sandbox.errDetailTaEl.value.includes('두번째 에러'), "마크업은 그대로여도 '자세히' 내용은 최신 에러로 갱신되어야 함");
+});
+test("errBannerHome: ST.tab을 'home'으로 바꾼 뒤에야 renderCurrent()를 불러, renderers.home()이 실행되는 시점엔 이미 홈 탭이다", () => {
+  resetErrBanner();
+  let tabWhenRendered = null;
+  sandbox.ST = { tab: 'ledger' };
+  sandbox.renderers = { home: () => { tabWhenRendered = sandbox.ST.tab; } };
+  sandbox.errBannerEl.classList.list = ['show'];
+  sandbox.errBannerHome();
+  assert.strictEqual(sandbox.ST.tab, 'home');
+  assert.strictEqual(tabWhenRendered, 'home', 'renderCurrent() 호출 시점에 이미 ST.tab이 home으로 바뀌어 있어야 함(순서가 바뀌면 다른 탭이 다시 그려짐)');
+  assert.strictEqual(sandbox.errBannerEl.classList.contains('show'), false, '홈으로 복귀에 성공하면 배너가 사라져야 함');
+});
+test('errBannerHome: 홈 탭도 같은 원인으로 다시 깨지면(크래시 루프) 예외가 밖으로 새지 않고 배너가 다시 뜬다', () => {
+  resetErrBanner();
+  sandbox.ST = { tab: 'ledger' };
+  sandbox.renderers = { home: () => { throw new Error('홈도 깨짐'); } };
+  assert.doesNotThrow(() => sandbox.errBannerHome(), "errBannerHome()이 renderCurrent()의 재발 예외를 밖으로 새게 하면 복구 경로 자체가 또 터짐");
+  assert.strictEqual(sandbox.ST.tab, 'home', 'renderCurrent()가 다시 실패해도 ST.tab은 이미 home으로 바뀐 채 남아야 함');
+  assert.strictEqual(sandbox.errBannerEl.classList.contains('show'), true, 'renderCurrent() 내부 try/catch가 다시 캐치해 배너를 다시 띄워야 함');
+});
+/* errBannerBackup은 doExport()/canShareFiles()를 부르는데 그 둘은 APPLOCK/promptExportPin/
+ * navigator.share 등 이 공유 sandbox에 없는 비순수 의존이 커서(doExport 자체도 위 286줄
+ * 주석의 기준대로 소스 패턴으로만 검증되는 함수) 직접 실행하지 않고 소스 패턴으로 검증한다. */
+test('errBannerBackup 소스: doExport(canShareFiles()면 share, 아니면 download) 호출을 try/catch와 .catch() 양쪽으로 감싸 복구 경로 자체가 또 터지지 않게 한다', () => {
+  const fnSrc = extractFunction('errBannerBackup');
+  assert.ok(fnSrc.includes("doExport(canShareFiles()?'share':'download')"), 'canShareFiles() 판정에 따라 share/download를 고르지 않음');
+  assert.ok(fnSrc.includes('if(p&&p.catch)p.catch('), 'doExport()가 async라 거부(rejection)될 수 있는데 .catch()로 받지 않음 — try/catch만으로는 비동기 거부를 못 잡음');
 });
 test('rowKeydown: Enter를 누르면 preventDefault 후 콜백을 부른다', () => {
   let called = 0, prevented = false;

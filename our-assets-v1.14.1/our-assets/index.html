@@ -1008,11 +1008,16 @@ html[data-theme="dark"] .toast.undo .toast-undo{color:var(--brand-ink)}
 .install-bar .ib-txt{flex:1}
 .install-bar .ib-x{flex-shrink:0;background:transparent;border:0;color:var(--on-brand);font-weight:700;font-size:13px;padding:6px 10px;opacity:.85;cursor:pointer}
 .install-bar .row-tap{gap:10px} /* 공유 .row-tap(기본 gap:12px, 515행)을 install-bar 자체의 기존 gap(10px)과 맞춘다 — role="button"을 아이콘+문구만 감싸는 .row-tap으로 좁히면서(app-evolve cycle364 develop) 아이콘-문구 간격이 바뀌지 않도록 유지 */
-.err-banner{display:none;position:fixed;left:0;right:0;top:0;z-index:400;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;background:var(--expense);color:#fff;font-size:13.5px;font-weight:700;box-shadow:var(--sh-lg)}
+.err-banner{display:none;position:fixed;left:0;right:0;top:0;z-index:400;flex-direction:column;align-items:stretch;gap:8px;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;background:var(--expense);color:#fff;font-size:13.5px;font-weight:700;box-shadow:var(--sh-lg)}
 .err-banner.show{display:flex}
+.err-banner .err-row{display:flex;align-items:center;gap:10px}
 .err-banner svg{width:18px;height:18px;flex-shrink:0}
 .err-banner span{flex:1}
+.err-banner .err-actions{display:flex;gap:8px;flex-wrap:wrap}
 .err-banner button{flex-shrink:0;background:rgba(255,255,255,.22);color:#fff;border-radius:var(--r-pill);padding:7px 14px;font-size:13px;font-weight:700}
+.err-banner .err-detail{font-size:12px;font-weight:500}
+.err-banner .err-detail summary{cursor:pointer;text-decoration:underline;font-weight:700}
+.err-banner .err-detail textarea{display:block;width:100%;margin-top:6px;background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:8px;font-size:11.5px;font-family:ui-monospace,monospace;resize:none}
 .empty{text-align:center;padding:40px 20px;color:var(--text-3)}
 .empty .ei{width:56px;height:56px;border-radius:20px;background:var(--sunken);display:grid;place-items:center;margin:0 auto 14px;color:var(--text-3)}
 .empty .ei svg{width:28px;height:28px}
@@ -1424,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.524';
+const APP_VERSION='1.47.525';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -1544,7 +1549,14 @@ window.addEventListener('appinstalled',()=>{
  * 여기로 모여 배너로 노출된다 — 그래야 "탭해도 반응 없음"으로만 보이는 silent failure가
  * 없다. crossorigin 속성 없는 서드파티 스크립트(Supabase 등)에서 오는 정보 없는
  * 'Script error.'(err가 Error 인스턴스가 아님)까지 배너로 띄우면 소음이 되므로,
- * renderCurrent 예외이거나 err가 Error 인스턴스인 경우에만 노출한다. */
+ * renderCurrent 예외이거나 err가 Error 인스턴스인 경우에만 노출한다.
+ *
+ * 배너는 지금까지 '새로고침' 1개뿐이었다 — 에러 원인이 지금 탭의 상태 자체라면 새로고침은
+ * 같은 탭을 다시 그려 같은 에러를 재발시켜 사용자가 빠져나올 방법 없이 갇힐 수 있고, 백업 없이
+ * 새로고침하면 그 사이 변경이 날아갈 수도 있었다(app-evolve cycle395 critique → advance).
+ * '백업 저장'(doExport 재사용)과 '홈으로'(reload 없이 ST.tab만 바꿔 renderCurrent)를 추가해
+ * 새로고침 전에 데이터를 지키고, 지금 탭이 원인인 크래시 루프에서는 reload 없이 벗어날 수 있게
+ * 한다. 두 액션 다 복구 경로 자체가 또 터지면 사용자가 완전히 갇히므로 개별 try/catch로 감싼다. */
 let lastError=null;
 function recordError(err,kind){
  lastError={kind,message:(err&&err.message)||String(err),stack:(err&&err.stack)||'',time:Date.now()};
@@ -1553,9 +1565,32 @@ function recordError(err,kind){
 }
 window.onerror=(msg,src,line,col,err)=>{recordError(err||msg,'onerror')};
 window.addEventListener('unhandledrejection',e=>{recordError(e&&e.reason,'unhandledrejection')});
+/* doExport()는 async라 동기 try/catch로는 함수 안에서 던진 거부(rejected promise)를 못 잡으므로
+ * .catch()도 함께 건다 — 둘 다 조용히 콘솔에만 남기고(사용자는 이미 에러 배너를 보고 있어 추가
+ * toast로 소음을 더하지 않음), 백업이 실패해도 배너의 다른 두 버튼은 그대로 쓸 수 있다. */
+function errBannerBackup(){
+ try{
+  const p=doExport(canShareFiles()?'share':'download');
+  if(p&&p.catch)p.catch(e=>console.error('[app-error] errBannerBackup',e));
+ }catch(e){console.error('[app-error] errBannerBackup',e)}
+}
+/* location.reload() 없이 홈 탭으로 돌아간다 — renderCurrent()가 성공하면 배너를 다시 숨기고,
+ * 실패해도(홈도 같은 원인으로 깨짐) renderCurrent() 자체의 try/catch가 recordError로 다시
+ * 잡아 배너를 유지하므로 여기서 또 던지지 않는다. */
+function errBannerHome(){
+ try{
+  ST.tab='home';
+  hideErrBanner();
+  renderCurrent();
+ }catch(e){console.error('[app-error] errBannerHome',e)}
+}
 function showErrBanner(){
  const el=$('errBanner');if(!el)return;
- if(!el.childElementCount)el.innerHTML=svg('alert',20)+'<span>문제가 발생했어요. 새로고침해 주세요.</span><button onclick="location.reload()">새로고침</button>';
+ if(!el.childElementCount)el.innerHTML=`<div class="err-row">${svg('alert',20)}<span>문제가 발생했어요. 복구를 시도해 보세요.</span></div>
+  <div class="err-actions"><button onclick="errBannerBackup()">백업 저장</button><button onclick="errBannerHome()">홈으로</button><button onclick="location.reload()">새로고침</button></div>
+  <details class="err-detail"><summary>자세히</summary><textarea id="errDetailTa" readonly rows="4" onclick="this.select()"></textarea></details>`;
+ const ta=$('errDetailTa');
+ if(ta)ta.value=lastError?`[${lastError.kind}] ${lastError.message}\n${(lastError.stack||'').split('\n').slice(0,5).join('\n')}`:'';
  el.classList.add('show');
 }
 function hideErrBanner(){
