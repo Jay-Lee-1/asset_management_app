@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.525';
+const APP_VERSION='1.47.526';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -7211,10 +7211,18 @@ function renderRecSheet(){
   * 함수라 새 계산식 없이 그대로 재사용한다. */
  const nextDue=d.freq==='monthly'?recNthDate({freq:d.freq,day:d.day,startDate:d.startDate,weekend:d.weekend},1):null;
  const nextDueHint=nextDue?`<div class="psub" style="margin:-10px 0 14px 2px">다음 결제일: ${fmtDateFull(nextDue)}${nextDue!==d.startDate?' (말일/주말·공휴일 조정됨)':''}</div>`:'';
+ /* 거래 메모(#txMemo)는 cycle394에서 frequentMemosForType()로 자주 쓴 메모 자동완성을 받았지만,
+  * 반복(#rMemo)은 renderTxSheet의 datalist 추가 때 함께 다루지 않아 똑같은 자동완성 뼈대(frequentMemosForType
+  * +datalist, list="...List" 연결 방식)가 txMemo에만 남아 있었다(app-evolve cycle396 develop) — "넷플릭스
+  * 구독"처럼 반복에도 매번 비슷한 메모를 새로 타이핑해야 하는 마찰은 거래 입력과 동일한데, 반복 등록
+  * 화면만 그 혜택이 없었다. frequentMemosForType은 이미 DB 없이 순수하게 (type,txns,limit)만 받으므로
+  * 새 계산 없이 그대로 재사용 — 반복의 d.type과 실제 거래 내역(DB.txns)으로 같은 유형의 자주 쓴 메모를
+  * 뽑는다(반복의 "넷플릭스 구독" 같은 memo 자체도 매번 생성되는 거래의 memo로 그대로 복제되므로
+  * DB.txns에 쌓인 과거 메모가 추천 후보로 타당하다). */
  openFormSheet(`<div class="tx-head"><h3>${editing?'반복 수정':'반복 설정'}</h3>${sharedChip}</div><div class="desc">고정지출·정기수입·이체·저축을 자동 기록해요</div>
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${typeSeg}</div>
   ${catField}
-  <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" maxlength="${MEMO_MAX}" value="${(d.memo&&d.memo!==d.category)?esc(d.memo):''}" placeholder="예: 넷플릭스 구독" oninput="recMemoInput(this)"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
+  <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" list="rMemoList" maxlength="${MEMO_MAX}" value="${(d.memo&&d.memo!==d.category)?esc(d.memo):''}" placeholder="예: 넷플릭스 구독" oninput="recMemoInput(this)"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div><datalist id="rMemoList">${frequentMemosForType(d.type,DB.txns,10).map(m=>`<option value="${esc(m)}">`).join('')}</datalist></div>
   <div id="recCatSuggest" style="display:none;margin:-4px 0 14px;text-align:right"></div>
   <div class="field"><label for="rAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="recAmtInput(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
   ${assetFields}

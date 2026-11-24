@@ -36051,7 +36051,7 @@ test('[실행형] renderRecSheet: rMemo(recDraft.memo)에 &/"가 있어도 esc()
   sandbox.recDraft = { id: null, type: 'expense', category: '식비', memo: 'R&D "테스트"', amount: 0, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 1, startDate: '2026-03-10', endDate: null, count: null, skip: [], edits: {} };
   sandbox.renderRecSheet();
   const html = sandbox.lastSheetHtml;
-  assert.ok(html.includes(`id="rMemo" maxlength="${sandbox.MEMO_MAX}" value="R&amp;D &quot;테스트&quot;"`), 'rMemo의 value가 esc(d.memo)로 이스케이프되지 않음(풀린 &가 그대로 남아 디코드 드리프트 위험)');
+  assert.ok(html.includes(`id="rMemo" list="rMemoList" maxlength="${sandbox.MEMO_MAX}" value="R&amp;D &quot;테스트&quot;"`), 'rMemo의 value가 esc(d.memo)로 이스케이프되지 않음(풀린 &가 그대로 남아 디코드 드리프트 위험)');
   assert.ok(!html.includes('value="R&D'), 'rMemo의 value에 이스케이프 안 된 생 &가 남아있으면 안 됨');
 });
 /* renderRecSheet: '다음 결제일' 미리보기 (app-evolve cycle386 develop) — 매월 반복은 반복일이
@@ -36078,6 +36078,37 @@ test('[실행형] renderRecSheet: monthly가 아닌 주기(weekly 등)는 "다�
   sandbox.recDraft = { id: null, type: 'expense', category: '식비', memo: '', amount: 0, fromAssetId: 'a1', toAssetId: null, freq: 'weekly', day: null, startDate: '2026-03-10', endDate: null, count: null, skip: [], edits: {} };
   sandbox.renderRecSheet();
   assert.ok(!sandbox.lastSheetHtml.includes('다음 결제일'), 'weekly는 weekend 조정 UI 자체가 없어(freq==monthly 전용) 힌트가 불필요한 정보만 반복하므로 숨겨야 함');
+});
+/* renderTxSheet의 #txMemo는 frequentMemosForType()으로 자주 쓴 메모 자동완성을 받았지만(app-evolve
+ * cycle394 develop/advance), 반복 등록 화면(#rMemo)은 그 추가 때 함께 다루지 않아 똑같은 자동완성이
+ * 빠져 있었다(app-evolve cycle396 develop) — DB.txns를 그대로 재사용해 d.type과 같은 유형의 과거
+ * 메모를 datalist 후보로 보여준다. */
+test('[실행형] renderRecSheet: #rMemo가 rMemoList datalist로 연결되고, DB.txns 중 같은 type의 자주 쓴 메모가 빈도 내림차순으로 옵션에 들어간다', () => {
+  setupTxSheetDB();
+  sandbox.DB.txns = [
+    { type: 'expense', date: '2026-01-01', memo: '스타벅스', amount: 4500 },
+    { type: 'expense', date: '2026-01-02', memo: '스타벅스', amount: 4500 },
+    { type: 'expense', date: '2026-01-03', memo: '편의점', amount: 3000 },
+    { type: 'income', date: '2026-01-04', memo: '월급', amount: 3000000 }, // type이 달라 섞이면 안 됨
+  ];
+  sandbox.recDraft = { id: null, type: 'expense', category: '식비', memo: '', amount: 0, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 1, startDate: '2026-03-10', endDate: null, count: null, skip: [], edits: {} };
+  sandbox.renderRecSheet();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('id="rMemo" list="rMemoList"'), '#rMemo가 rMemoList datalist와 연결돼야 함(txMemo/txMemoList와 동일한 배선)');
+  assert.ok(html.includes('<datalist id="rMemoList"><option value="스타벅스"><option value="편의점"></datalist>'), '빈도 내림차순(스타벅스 2회 > 편의점 1회)으로 옵션이 들어가야 함');
+  assert.ok(!html.includes('월급'), 'type이 다른(income) 거래의 메모는 datalist에 섞이면 안 됨');
+});
+test('[실행형] renderRecSheet: d.type을 바꿔 다시 그리면 datalist도 그 유형의 메모로 바뀐다(frequentMemosForType(d.type,...)이 매 렌더마다 현재 유형을 그대로 반영)', () => {
+  setupTxSheetDB();
+  sandbox.DB.txns = [
+    { type: 'expense', date: '2026-01-01', memo: '스타벅스', amount: 4500 },
+    { type: 'income', date: '2026-01-02', memo: '월급', amount: 3000000 },
+  ];
+  sandbox.recDraft = { id: null, type: 'income', category: '급여', memo: '', amount: 0, fromAssetId: null, toAssetId: 'a1', freq: 'monthly', day: 1, startDate: '2026-03-10', endDate: null, count: null, skip: [], edits: {} };
+  sandbox.renderRecSheet();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('<option value="월급">'), 'type=income이면 income 메모가 옵션에 들어가야 함');
+  assert.ok(!html.includes('스타벅스'), 'type=income일 때 expense 메모가 섞이면 안 됨');
 });
 test('renderTxSheet: type별로 자산 필드가 from/to 중 올바른 조합으로 나온다', () => {
   setupTxSheetDB();
