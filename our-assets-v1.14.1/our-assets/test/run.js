@@ -240,7 +240,7 @@ const FUNCTIONS = [
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals', 'makeMonthCatCache',
   'yearSpendByCategory', 'yearIncomeByCategory', 'yearRealizedGain', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'caretPosAfterFormat', 'fmtAmt', 'qtyCaretAfterFilter', 'fmtQty',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'caretPosAfterFormat', 'fmtAmt', 'qtyCaretAfterFilter', 'fmtQty', 'codeUpperInput',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'confirmCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
@@ -2407,6 +2407,35 @@ test('fmtQty(): selectionStart/setSelectionRange가 없는 평범한 객체(기�
   const inp = { value: '1.2.3' };
   assert.doesNotThrow(() => sandbox.fmtQty(inp));
   assert.strictEqual(inp.value, '1.23');
+});
+
+/* ---------- codeUpperInput(): 종목코드/심볼 입력 중간 편집 시 커서가 끝으로 튀던 버그
+ * (app-evolve cycle398 develop) — asCode는 fmtAmt(cycle387)/fmtQty(cycle393)와 같은 버그 클래스를
+ * 그대로 안고 있었다: this.value=this.value.toUpperCase()도 .value 재대입이라 값이 실제로
+ * 안 바뀌어도(이미 대문자인 글자) 브라우저가 캐럿을 끝으로 옮긴다. toUpperCase()는 문자 개수를
+ * 바꾸지 않으므로 caretPosAfterFormat/qtyCaretAfterFilter처럼 다시 셀 필요 없이 같은 절대
+ * 위치만 복원하면 된다. */
+test('codeUpperInput(): 소문자를 대문자로 바꾸되 값 자체가 안 바뀌어도 끝으로 튀지 않고 입력하던 자리에 커서를 유지한다', () => {
+  const inp = domstub.createElement('input');
+  inp.value = 'aaXpl'; // "aapl"의 "aa" 뒤에 'X'를 끼워 넣은 raw 값
+  inp.selectionStart = 3; inp.selectionEnd = 3; // 방금 입력한 'X' 바로 뒤
+  sandbox.codeUpperInput(inp);
+  assert.strictEqual(inp.value, 'AAXPL');
+  assert.strictEqual(inp.selectionStart, 3, '커서가 값 끝(5)이 아니라 방금 입력한 글자 뒤에 남아야 함');
+  assert.strictEqual(inp.selectionEnd, 3);
+});
+test('codeUpperInput(): 이미 전부 대문자여서 값이 안 바뀌어도(끝에서 입력) 커서가 끝에 남는다(회귀 방지)', () => {
+  const inp = domstub.createElement('input');
+  inp.value = 'AAPL';
+  inp.selectionStart = 4; inp.selectionEnd = 4;
+  sandbox.codeUpperInput(inp);
+  assert.strictEqual(inp.value, 'AAPL');
+  assert.strictEqual(inp.selectionStart, 4);
+});
+test('codeUpperInput(): selectionStart/setSelectionRange가 없는 평범한 객체에도 에러 없이 값만 대문자로 바뀐다', () => {
+  const inp = { value: 'btc' };
+  assert.doesNotThrow(() => sandbox.codeUpperInput(inp));
+  assert.strictEqual(inp.value, 'BTC');
 });
 
 /* ---------- catVar / doRenameCat: 카테고리 이름변경 시 '변동' 플래그 마이그레이션 (c38ee65) ---------- */
@@ -32017,7 +32046,7 @@ test('renderAssetSheet: stock 타입의 asCode(종목코드)도 asName/asQty와 
   const html = renderAsset({ type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 });
   assert.ok(html.includes('<div class="field-clear"><input id="asCode" maxlength="20"'), 'asCode 입력이 field-clear로 감싸져 있지 않음(또는 CODE_MAX maxlength가 없음)');
   assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">`), 'asCode에 fc-x 지우기 버튼의 clrInput 연결이 없음');
-  assert.ok(html.includes(`oninput="this.value=this.value.toUpperCase()"`), 'asCode의 대문자 변환 oninput이 유지되지 않음');
+  assert.ok(html.includes(`oninput="codeUpperInput(this)"`), 'asCode의 대문자 변환 oninput(codeUpperInput)이 유지되지 않음');
 });
 /* crypto(코인, app-evolve cycle219 advance)도 stock과 동일한 asCode/asQty 공유 필드 패턴을
  * 쓴다 — asCode/asQty에 들어가는 값만 cryptoCode/cryptoQty일 뿐, UI 구조(field-clear/대문자
@@ -32037,7 +32066,7 @@ test('renderAssetSheet: crypto 타입의 asCode(심볼)도 stock의 asCode와 �
   const html = renderAsset({ type: 'crypto', owner: '나', includeInTotal: true, name: '비트코인', cryptoCode: 'BTC', cryptoQty: 0.5 });
   assert.ok(html.includes('<div class="field-clear"><input id="asCode" maxlength="20" value="BTC"'), 'asCode 입력에 cryptoCode 값이 들어가지 않음(또는 CODE_MAX maxlength가 없음)');
   assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="심볼 지우기" onclick="clrInput('asCode')">`), 'asCode에 fc-x 지우기 버튼의 clrInput 연결이 없음');
-  assert.ok(html.includes(`oninput="this.value=this.value.toUpperCase()"`), 'asCode의 대문자 변환 oninput이 유지되지 않음');
+  assert.ok(html.includes(`oninput="codeUpperInput(this)"`), 'asCode의 대문자 변환 oninput(codeUpperInput)이 유지되지 않음');
 });
 test('renderAssetSheet: savings 타입은 만기일 필드를 보여주고, cash 타입은 만기일 필드가 없다', () => {
   const savingsHtml = renderAsset({ type: 'savings', owner: '나', includeInTotal: true, name: '', baseAmount: 0 });

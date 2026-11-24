@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.527';
+const APP_VERSION='1.47.528';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -5552,14 +5552,14 @@ function renderAssetSheet(editing){
      ${costBasisField(d,editing)}`;
  }else if(d.type==='stock'){
    fields=`<div class="field"><label for="asName">종목명</label><div class="field-clear"><input id="asName" maxlength="${NAME_MAX}" value="${esc(d.name||'')}" placeholder="예: 삼성전자"><button type="button" class="fc-x" aria-label="종목명 지우기" onclick="clrInput('asName')">✕</button></div></div>
-     <div class="field"><label for="asCode">종목코드</label><div class="field-clear"><input id="asCode" maxlength="${CODE_MAX}" value="${esc(d.stockCode||'')}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">✕</button></div>
+     <div class="field"><label for="asCode">종목코드</label><div class="field-clear"><input id="asCode" maxlength="${CODE_MAX}" value="${esc(d.stockCode||'')}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="codeUpperInput(this)"><button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">✕</button></div>
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">국내는 6자리 숫자, 해외는 티커(AAPL·TSLA·NVDA)를 넣어주세요. 해외는 원화로 환산돼요.</p></div>
      <div class="field"><label for="asQty">보유 주식 수</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">주</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>
      ${costBasisField(d,editing)}`;
  }else if(d.type==='crypto'){
    fields=`<div class="field"><label for="asName">코인명</label><div class="field-clear"><input id="asName" maxlength="${NAME_MAX}" value="${esc(d.name||'')}" placeholder="예: 비트코인"><button type="button" class="fc-x" aria-label="코인명 지우기" onclick="clrInput('asName')">✕</button></div></div>
-     <div class="field"><label for="asCode">심볼</label><div class="field-clear"><input id="asCode" maxlength="${CODE_MAX}" value="${esc(d.cryptoCode||'')}" placeholder="예: BTC, ETH" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="심볼 지우기" onclick="clrInput('asCode')">✕</button></div>
+     <div class="field"><label for="asCode">심볼</label><div class="field-clear"><input id="asCode" maxlength="${CODE_MAX}" value="${esc(d.cryptoCode||'')}" placeholder="예: BTC, ETH" autocapitalize="characters" oninput="codeUpperInput(this)"><button type="button" class="fc-x" aria-label="심볼 지우기" onclick="clrInput('asCode')">✕</button></div>
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">업비트 KRW 마켓에 있는 심볼을 넣어주세요(BTC·ETH·XRP 등).</p></div>
      <div class="field"><label for="asQty">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.cryptoQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">개</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>
@@ -11692,6 +11692,19 @@ function fmtQty(inp){
  const r=qtyCaretAfterFilter(oldValue,oldCaret);
  inp.value=r.value;
  try{inp.setSelectionRange(r.caret,r.caret);}catch(e){}
+}
+/* asCode(종목코드/심볼) 입력란은 fmtAmt/fmtQty와 같은 '매 oninput마다 inp.value를 통째로
+ * 재대입'을 this.value=this.value.toUpperCase()로 직접 해 왔다 — toUpperCase()는 문자 개수를
+ * 바꾸지 않지만, .value 대입 자체가 값이 실제로 안 바뀌어도 브라우저 커서를 끝으로 옮기는
+ * 문제는 fmtAmt/fmtQty와 동일하게 그대로 있다(caretPosAfterFormat/qtyCaretAfterFilter 주석과
+ * 같은 근거, cycle387/393이 금액·수량 입력에서 고친 바로 그 버그 클래스가 종목코드 입력에는
+ * 안 옮겨져 있었다 — app-evolve cycle398 develop). 길이가 안 바뀌므로 caretPosAfterFormat처럼
+ * 숫자 개수를 다시 셀 필요 없이 같은 절대 위치만 복원하면 된다 — "aapl"의 중간 글자를 고쳐
+ * 쓸 때마다 커서가 끝으로 튀어 연속 수정이 불가능했던 문제를 fmtQty와 동일한 방식으로 없앤다. */
+function codeUpperInput(inp){
+ const oldCaret=typeof inp.selectionStart==='number'?inp.selectionStart:inp.value.length;
+ inp.value=inp.value.toUpperCase();
+ try{inp.setSelectionRange(oldCaret,oldCaret);}catch(e){}
 }
 
 function wireLongPress(root,onLong){
