@@ -1,15 +1,12 @@
 {
   "cycle": 396,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "보유 종목 코드가 시세 동기화 응답에서 조용히 빠지면 영구적으로 신선해 보이는 가격이 남는 문제 수정",
+    "why": "syncRates()(index.html:4538 부근)는 응답에 실제로 포함된 코드만 R.stocks[code]/R.crypto[code]를 갱신하고, 배치 호출 자체가 성공하면(HTTP 레벨) code 유무와 무관하게 R.stockFail=false/failStreak=0을 설정한다. 상장폐지·오입력 등으로 특정 보유 코드가 응답에서 영구히 빠지면 그 코드의 가격은 마지막 값에 그대로 멈추는데, rateUnknown()(index.html:3250 부근)은 'R.stocks[code]==null'만 검사하므로 한 번이라도 가격을 받은 코드는 다시는 '시세 모름'으로 뜨지 않는다. rateStatusText()가 보여주는 '방금 갱신'/'10분마다 자동' 문구와 평가액/손익이 실제로는 조용히 정체된 채 사용자를 신뢰시킬 수 있는 데이터 정합성 공백이며, cycle382의 anyRateSourceStale(소스 전체의 HTTP 실패 감지)과는 범위가 달라(개별 코드 단위 vs 소스 전체) 겹치지 않는다.",
+    "approach": "1) syncRates()에서 code가 p>0으로 응답에 실제 포함될 때만 R.stocksSeenAt[code]/R.cryptoSeenAt[code]=Date.now()를 함께 갱신(기존 R.stocks[code]=p 대입 바로 옆). 2) logic.js에 순수 함수 staleCodeIds(heldCodes, seenAt, now, maxAgeMs) 신설 — seenAt이 없거나 임계값보다 오래된 보유 코드만 반환(한 번의 일시적 누락으로 바로 오탐하지 않도록 여러 동기화 주기치의 여유를 둠). 3) rateUnknown(a) 또는 자매 함수를 확장해 seenAt이 오래된 코드도 '시세 모름' 배지/홈 알림으로 노출(기존 rateUnknown의 '한 번도 못 받음' 시맨틱은 원가 가드 등 다른 곳에서 의존하므로 깨지 않도록 주의). 4) migrate()에서 신규 seenAt 맵을 기존 R.stocks/R.crypto 보유 코드에 대해 '지금 막 봤다'로 안전하게 초기화(업그레이드 직후 오탐 방지). 5) test/run.js에 테스트 추가: 응답에서 빠진 코드는 seenAt 미갱신, staleCodeIds가 임계값 초과/누락 코드만 플래그, rateUnknown/표시 경로가 stale seenAt 코드를 '모름'과 동일하게 처리. 거부된 대안: 코드 누락 시 배치 전체 실패 처리(다른 정상 보유까지 오염시켜 cycle382가 고친 '혼재 보유가 지속 실패를 가림' 버그를 더 미세한 단위로 재도입), 토스트만으로 알림(자동 동기화는 대부분 무음이라 놓치기 쉽고 지속 신호가 안 됨), 전역 failStreak 증가(개별 코드 단위가 맞는 범위인데 전역으로 올리면 범위가 틀려짐)."
+  },
   "history": [
-    {
-      "cycle": 391,
-      "phase": "critique",
-      "timestamp": "2026-11-22T06:30:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-391 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx undo, 트래시 허브 통합 등)을 주고 전략적 재검토시킴. saveAsset()(index.html:5518)의 editing 분기 3갈래(hasAdj/isMarketValued/else, 5553-5588행)가 전부 DB.assets[i]=d로 직접 덮어쓰고 평범한 toast만 띄워 undo가 없음을 재확인 — commitTx()(cycle386)/commitRec()(cycle293)은 이미 orig캡처+undoToast로 같은 위험을 막았는데 saveAsset()만 비대칭으로 빠져 있고, 이 자체는 cycle386 critique가 이미 발견해 '3갈래라 범위가 더 크다'며 별도 사이클로 명시적으로 미뤄둔 채 cycle387~391 동안 아무도 집지 않은 항목이다. hasAdj 분기는 updateBalanceAdjust()가 '잔액 조정' 거래를 신규/수정/톰스톤 삭제하고, isMarketValued 분기는 DB.assetQtyLog push + settleTxnForQtyChange() 결제거래 추가까지 만들어내는 부작용이 있어, 단순 필드 교체보다 되돌릴 범위가 넓다. 조사 중 기각한 가설들: transfer 통화 불일치(openAssetPicker가 excludeMarketValued로 이미 원천 차단), CSV 가져오기 비대칭(cycle275에서 '내보내기 전용' 설계로 이미 명문화), SRI TODO(이 컨테이너가 jsdelivr/kakaocdn을 403 차단해 구현 불가 재확인), 음력 공휴일표 2028년 상한(아직 여유 있어 보류). pending_advance_plan에 saveAsset() 3갈래 전체(필드 복원 + hasAdj의 조정거래 원복 3케이스 + isMarketValued의 신규 assetQtyLog/정산거래 제거, i>=0일 때만 undoToast)를 범위로 한 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 391,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-24T12:10:00.000Z",
       "summary": "develop(cycle396) 커밋 7f818d9(반복거래 메모 입력 #rMemo에 frequentMemosForType()+datalist 자동완성 추가)를 검토. cycle394가 renderTxSheet()의 #txMemo에 쓴 것과 완전히 동일한 배선(list=\"...List\" + frequentMemosForType(d.type,DB.txns,10).map(m=>`<option value=\"${esc(m)}\">`))을 #rMemo/rMemoList에 그대로 재사용했을 뿐 새 로직이 없어 frequentMemosForType 자체의 정확성은 cycle394에서 이미 검증됐음을 확인. txMemoList와 rMemoList가 서로 다른 id라 한 시트 안에서 동시에 열릴 수 없는 #sheet 공용 바텀시트 구조상 id 충돌 가능성이 없음을 grep으로 재확인. #rMemo의 value 표시 조건((d.memo&&d.memo!==d.category)?esc(d.memo):'')은 이번 diff가 건드리지 않은 기존 로직이라 자동완성 추가와 무관함을 확인. 실제 버그는 발견하지 못함. node test/run.js 3896/3896 통과(재실행), node --check(sw.js/logic.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. CACHE v793/APP_VERSION 1.47.526 일치 확인. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 396,
+      "phase": "critique",
+      "timestamp": "2026-11-24T13:05:00.000Z",
+      "summary": "이번 사이클 시작 시 로컬 git이 또 detached HEAD였고(HEAD는 cycle396 review 7fc5261) main이 cycle394 review(51c4fcd)에서 멈춰 10개 커밋이 브랜치에 얹혀 있지 않았음을 재발견 — main을 HEAD로 fast-forward했고 origin/main은 이미 7fc5261까지 받아둔 상태라 push는 변화 없이 확인만 됨(원인은 아직 파악 못함, 다음 사이클도 계속 git branch/status 확인 필요). general-purpose 서브에이전트에게 cycle340-396 전체 배제 목록(검색창/필드 Escape, 공용 피커·세그먼트·날짜선택기·카테고리 피커·monthNav·nwCarousel 방향키 전역화, openSheet 탭 전환 포커스 보존, 카테고리 관리 일괄선택, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset/commitRec undo, 문의하기 메모 클램프, acquiredAt 가드, transfer 통화 불일치·CSV 비대칭·SRI·음력 공휴일표 상한(설계상 의도/범위 밖으로 기각됨), duplicateX 포커스, sanitizeAmount/interestRate/setRate AMOUNT_MAX 클램프, owner undo, amortizationPayoffMonths 가드, 거래내역 가상화, 거래/반복거래 메모 자동완성 datalist, 전역 에러 배너 복구 경로)을 주고 방향키 접근성 외 차원(아키텍처/에러처리/데이터 정합성/빠진 기능)을 우선 보라고 지시해 전략적 재검토시킴. syncRates()(index.html:4538 부근)가 시세 동기화 응답에 실제로 포함된 코드만 R.stocks[code]/R.crypto[code]를 갱신하면서도 배치 HTTP 호출 자체가 성공하면 코드 유무와 무관하게 R.stockFail=false로 '성공'을 선언하는 비대칭을 발견 — 상장폐지/오입력 등으로 특정 보유 코드가 응답에서 영구히 빠지면 그 코드의 가격이 조용히 멈추는데, rateUnknown()은 'null 여부'만 보므로 한 번이라도 받은 가격은 다시는 '모름'으로 못 돌아가 rateStatusText()가 계속 '방금 갱신'을 보여주는 데이터 정합성 공백. cycle382의 anyRateSourceStale(소스 전체 HTTP 실패 감지)과는 코드 단위 vs 소스 단위로 범위가 달라 배제 목록과 안 겹침을 코드로 확인. 기각한 대안: 코드 누락 시 배치 전체 실패 처리(다른 정상 보유까지 오염, cycle382가 고친 버그 재도입), 토스트만으로 알림(무음 자동 동기화라 놓치기 쉬움), 전역 failStreak 증가(범위가 틀림). pending_advance_plan에 R.stocksSeenAt/cryptoSeenAt 타임스탬프 맵 신설 + staleCodeIds() 순수 함수 + rateUnknown 확장 + migrate() 안전 초기화 + 테스트 3건 계획 저장. node test/run.js 3896/3896 통과 확인(서브에이전트가 재실행). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
