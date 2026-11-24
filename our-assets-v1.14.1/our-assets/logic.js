@@ -2145,6 +2145,24 @@ function anyRateSourceStale(streaks,threshold){
  const s=streaks||{};
  return (s.fx||0)>=t||(s.stock||0)>=t||(s.crypto||0)>=t;
 }
+/* ================= 보유 코드별 시세 정체 판정 (순수) ================= */
+/* syncRates()(index.html)는 응답에 실제로 포함된 코드만 R.stocks[code]/R.crypto[code]를 갱신하면서도
+ * 배치 호출 자체가 성공하면(HTTP 레벨) 코드 유무와 무관하게 R.stockFail=false를 찍는다 — 상장폐지/
+ * 오입력 등으로 특정 보유 코드가 응답에서 계속 빠지면 그 코드의 가격이 마지막 값에 멈춘 채
+ * rateUnknown()(한 번이라도 받았으면 거짓)도 anyRateSourceStale()(배치 전체 성공/실패만 봄)도
+ * 못 잡는 공백이 있었다(app-evolve cycle396 critique). syncRates()가 코드가 실제로 응답에 있을 때만
+ * seenAt[code]=Date.now()를 함께 찍어두면, 이 함수가 "마지막으로 실제 갱신된 지 maxAgeMs 넘은 코드"를
+ * 가려낸다. seenAt에 기록이 아예 없는 코드(마이그레이션 전 구버전 데이터, 테스트가 직접 꽂아넣은 값
+ * 등)는 "한 번도 못 받음"과 구분할 수 없으므로 여기서는 stale로 보지 않는다 — 그 경우는 이미
+ * rateUnknown()의 몫이고, migrate()가 부팅마다 보유 코드에 seenAt을 보강해두므로 실제 운영에서는
+ * 결국 빈틈없이 덮인다. */
+function staleCodeIds(heldCodes,seenAt,now,maxAgeMs){
+ const sa=seenAt||{};
+ return (heldCodes||[]).filter(code=>{
+  const t=sa[code];
+  return t!=null&&(now-t)>=maxAgeMs;
+ });
+}
 /* ================= 테마/강조색 첫 페인트 캐시 (순수) ================= */
 /* head 최상단 동기 인라인 스크립트(index.html)가 localStorage의 'asset_app_theme_cache' 키를
  * 읽어 JS 실행 전에도 <html data-theme>/data-accent를 맞춰 그리는데, 쓰는 쪽(migrate/setTheme/

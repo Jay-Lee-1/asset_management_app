@@ -279,7 +279,7 @@ const FUNCTIONS = [
   // 전혀 없던 공백이었다(app-evolve cycle373 critique/advance). debtPayoffPtsFor를 그대로
   // 재사용하므로 바로 위 줄과 같은 sandbox에 올려야 한다.
   'debtPlanDebts', 'debtPlanBodyHTML', 'openDebtPlan', 'debtPlanStrategySel', 'debtPlanUpdate',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'qtyLogTrashBody', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'catsTrashBody', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  'rateUnknown', 'rateStale', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'qtyLogTrashBody', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'catsTrashBody', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   // histEnsureRange/goLedgerTo는 가계부(ledger)의 날짜 행을 탭해 전체내역으로 드릴다운하는
   // 경로 — openCatHistory/openAssetHistory와 같은 "필터 리셋 후 화면 전환" 계열인데 여태
   // FUNCTIONS 밖이라 실행형 테스트가 전혀 없었다(app-evolve cycle377 develop).
@@ -479,7 +479,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'CAT_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'TRASH_HUB_KINDS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET', 'ACCENTS',
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOAL_HIST_CACHE_MAX', '_goalHistCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'RATE_CODE_STALE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'CAT_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'TRASH_HUB_KINDS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET', 'ACCENTS',
   // WK(주말·공휴일 조정 어휘)는 renderRecSheet가 d.freq==='monthly'일 때 WK[d.weekend||'none'][0]로
   // 직접 참조한다(app-evolve cycle372 advance, openTxSheet/openRecSheet 실행형 테스트 추가 — 이
   // 전까지 renderRecSheet() 자체가 한 번도 실행된 적이 없어 빠져 있었다).
@@ -4789,6 +4789,39 @@ test('migrate: DB.rates 자체가 없어도(더 오래된 데이터) 예외 없�
   assert.strictEqual(Object.keys(sandbox.DB.rates.fx).length, 0);
   assert.strictEqual(Object.keys(sandbox.DB.rates.stocks).length, 0);
 });
+/* rateStale()이 쓰는 stocksSeenAt/cryptoSeenAt — 이 필드를 처음 들이는 기존 계정(또는 백업/클라우드
+ * 풀로 들어온 이 필드가 없는 옛 데이터)에서 이미 가격을 알고 있는 보유 코드에 seenAt이 하나도 없으면
+ * staleCodeIds가 "한 번도 못 받음"과 구분할 수 없어 업그레이드 직후 전부 즉시 '모름'으로 오탐한다 —
+ * migrate()가 "지금 막 봤다"로 안전하게 초기화한다(app-evolve cycle396 advance). */
+test('migrate: stocksSeenAt/cryptoSeenAt이 없는 기존 DB의 보유 코드는 "지금 막 봤다"로 안전하게 백필된다(업그레이드 직후 오탐 방지)', () => {
+  const before = Date.now();
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    rates: { fx: {}, stocks: { '005930': 70000 }, crypto: { BTC: 140000000 }, goldPerG: 0 },
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox.migrate();
+  assert.ok(sandbox.DB.rates.stocksSeenAt['005930'] >= before, '보유 코드에 seenAt이 지금 시각으로 채워져야 함');
+  assert.ok(sandbox.DB.rates.cryptoSeenAt.BTC >= before);
+  assert.strictEqual(sandbox.rateStale({ type: 'stock', stockCode: '005930' }), false, '방금 백필됐으니 아직 stale이면 안 됨(업그레이드 직후 오탐 방지)');
+});
+test('migrate: 재실행해도(이미 seenAt이 있는 코드) 기존 seenAt 값을 덮어쓰지 않는다', () => {
+  const old = Date.now() - sandbox.RATE_CODE_STALE_TTL - 1;
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    rates: { fx: {}, stocks: { '005930': 70000 }, stocksSeenAt: { '005930': old }, crypto: {}, cryptoSeenAt: {}, goldPerG: 0 },
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox.migrate();
+  assert.strictEqual(sandbox.DB.rates.stocksSeenAt['005930'], old, '실제로 정체된 코드를 재실행 때마다 "방금 봤다"로 덮어쓰면 rateStale이 영원히 못 뜸');
+  assert.strictEqual(sandbox.rateStale({ type: 'stock', stockCode: '005930' }), true);
+});
 test('migrate: seed()/emptyDB()가 만드는 형태(catIcon/catVar/budgets 필드 없음)에 돌리면 세 필드 모두 빈 객체로 채워진다', () => {
   sandbox.DB = {
     version: 5, catsV2: true,
@@ -7383,6 +7416,32 @@ test('anyRateSourceStale(logic.js): fx/stock/crypto 중 하나라도 threshold �
   assert.strictEqual(sandbox.anyRateSourceStale(null), false, 'null 입력도 안 터지고 false');
   assert.strictEqual(sandbox.anyRateSourceStale({ stock: 5 }, 5), true, 'threshold를 직접 넘기면 그 값을 쓴다');
   assert.strictEqual(sandbox.anyRateSourceStale({ stock: 4 }, 5), false);
+});
+/* staleCodeIds(logic.js): syncRates()가 응답에 실제로 포함된 코드에만 seenAt을 찍어두면, 코드가
+ * 응답에서 계속 빠져 seenAt이 갱신되지 않는 채 maxAgeMs를 넘긴 보유 코드만 "정체"로 가려낸다
+ * (app-evolve cycle396 critique/advance, rateStale()의 기반). seenAt이 아예 없는 코드는 "한 번도
+ * 못 받음"과 구분할 수 없어 stale로 보지 않는다 — 그건 rateUnknown()의 몫. */
+test('staleCodeIds(logic.js): seenAt이 maxAgeMs보다 오래된 보유 코드만 반환하고, 신선하거나 seenAt이 없는 코드는 빼놓는다', () => {
+  const now = 1_000_000_000;
+  const seenAt = { A: now - 100, B: now - 5000, C: now - 1 };
+  assert.deepStrictEqual(sandbox.staleCodeIds(['A', 'B', 'C'], seenAt, now, 1000), ['B'], 'B만 임계값(1000ms)을 넘겼다');
+  assert.deepStrictEqual(sandbox.staleCodeIds(['A', 'B', 'C', 'D'], seenAt, now, 1000), ['B'], 'seenAt이 아예 없는 D는 "한 번도 못 받음"과 구분 못 해 stale 목록에서 빠진다');
+  assert.deepStrictEqual(sandbox.staleCodeIds([], seenAt, now, 1000), [], '보유 코드가 없으면 빈 배열');
+  assert.deepStrictEqual(sandbox.staleCodeIds(['A'], null, now, 1000), [], 'seenAt 자체가 없어도(null) 안 터지고 전부 제외');
+});
+test('staleCodeIds(logic.js): 경계값(now-seenAt===maxAgeMs)은 stale로 포함된다(>= 비교)', () => {
+  const now = 2_000_000;
+  assert.deepStrictEqual(sandbox.staleCodeIds(['X'], { X: now - 1000 }, now, 1000), ['X']);
+  assert.deepStrictEqual(sandbox.staleCodeIds(['X'], { X: now - 999 }, now, 1000), [], '경계값 바로 아래는 아직 신선');
+});
+/* syncRates()는 Promise.allSettled/fetchWithTimeout 등 이 공유 sandbox에 없는 네트워크 의존이 커
+ * (위 670행 syncRatesCalls 스텁 주석 참고) 직접 실행하지 않고 소스 패턴으로 검증한다 — errBannerBackup
+ * 소스 테스트(25781행 부근)와 동일한 근거. rateStale()의 전제(코드가 응답에 실제로 있을 때만 seenAt을
+ * 찍어, 빠진 코드는 seenAt이 그대로 멈춰 나이를 먹는다)가 실제 코드에 반영됐는지 확인한다. */
+test('syncRates 소스: 응답에 실제로 포함된 코드만 R.stocks[code]/R.crypto[code]와 함께 stocksSeenAt/cryptoSeenAt을 같이 찍는다(응답에서 빠진 코드는 seenAt이 갱신되지 않아야 함)', () => {
+  const fnSrc = extractFunction('syncRates');
+  assert.ok(/R\.stocks\[code\]=p;R\.stocksSeenAt=R\.stocksSeenAt\|\|\{\};R\.stocksSeenAt\[code\]=Date\.now\(\)/.test(fnSrc), 'stock 응답 forEach 안에서 price 대입과 seenAt 갱신이 같은 조건(code!=="_debug"&&p>0) 블록 안에 함께 있어야 함');
+  assert.ok(/R\.crypto\[code\]=p;R\.cryptoSeenAt=R\.cryptoSeenAt\|\|\{\};R\.cryptoSeenAt\[code\]=Date\.now\(\)/.test(fnSrc), 'crypto 응답도 동일 패턴');
 });
 test('homeAlerts: 주식+코인 혼합 보유 중 코인 소스만 3회 이상 지속 실패하면 staleRates가 뜬다(주식은 매번 성공해 전역 failStreak는 0인 상황, app-evolve cycle382 critique→advance)', () => {
   setupHomeAlertsDB();
@@ -21346,6 +21405,46 @@ test('rateUnknown: 시세와 무관한 자산 타입(현금·저축 등)은 항�
   assert.strictEqual(sandbox.rateUnknown({ type: 'savings' }), false);
   assert.strictEqual(sandbox.rateUnknown({ type: 'debt' }), false);
 });
+/* ---------- rateStale: rateUnknown의 "한 번도 못 받음" 시맨틱은 그대로 두고, "한 번은 받았지만
+ * 코드가 동기화 응답에서 계속 빠져 seenAt이 RATE_CODE_STALE_TTL을 넘긴" 상태까지 추가로 잡는
+ * 자매 함수(app-evolve cycle396 critique/advance). syncRates()의 실제 동작을 vm에서 재현하지
+ * 않고, DB.rates.stocksSeenAt/cryptoSeenAt을 직접 꽂아넣어 staleCodeIds 배선만 검증한다. ---------- */
+test('rateStale: 한 번도 못 받아온 상태(rateUnknown=true)는 seenAt과 무관하게 항상 참', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, crypto: {}, goldPerG: 0, stocksSeenAt: {}, cryptoSeenAt: {} } };
+  assert.strictEqual(sandbox.rateStale({ type: 'stock', stockCode: '005930' }), true);
+  assert.strictEqual(sandbox.rateStale({ type: 'crypto', cryptoCode: 'BTC' }), true);
+});
+test('rateStale: 가격은 있지만 seenAt이 RATE_CODE_STALE_TTL보다 오래됐으면(코드가 응답에서 계속 빠짐) 참, 그 안이면 거짓', () => {
+  const now = Date.now();
+  sandbox.DB = { rates: {
+    fx: {}, goldPerG: 0,
+    stocks: { '005930': 70000 }, stocksSeenAt: { '005930': now - sandbox.RATE_CODE_STALE_TTL - 1 },
+    crypto: { BTC: 140000000 }, cryptoSeenAt: { BTC: now - sandbox.RATE_CODE_STALE_TTL + 60000 },
+  } };
+  assert.strictEqual(sandbox.rateUnknown({ type: 'stock', stockCode: '005930' }), false, '가격 자체는 있으니 rateUnknown은 거짓이어야 함');
+  assert.strictEqual(sandbox.rateStale({ type: 'stock', stockCode: '005930' }), true, 'seenAt이 임계값을 넘겨 rateStale은 참');
+  assert.strictEqual(sandbox.rateStale({ type: 'crypto', cryptoCode: 'BTC' }), false, 'seenAt이 아직 임계값 안이라 거짓');
+});
+test('rateStale: seenAt이 방금 갱신되면(syncRates 성공 재현) 다시 거짓으로 돌아온다', () => {
+  const now = Date.now();
+  sandbox.DB = { rates: { fx: {}, goldPerG: 0, stocks: { '005930': 70000 }, stocksSeenAt: { '005930': now - sandbox.RATE_CODE_STALE_TTL - 1 } } };
+  assert.strictEqual(sandbox.rateStale({ type: 'stock', stockCode: '005930' }), true);
+  sandbox.DB.rates.stocksSeenAt['005930'] = now;
+  assert.strictEqual(sandbox.rateStale({ type: 'stock', stockCode: '005930' }), false, '다음 성공 동기화로 seenAt이 갱신되면 자연 소멸해야 함');
+});
+test('rateStale: fx/gold는 코드 단위 seenAt 추적이 없어 rateUnknown과 완전히 동일하게 동작한다(범위 밖)', () => {
+  sandbox.DB = { rates: { fx: { USD: 1350 }, stocks: {}, goldPerG: 152000 } };
+  assert.strictEqual(sandbox.rateStale({ type: 'fx', currency: 'USD' }), false);
+  assert.strictEqual(sandbox.rateStale({ type: 'gold' }), false);
+  sandbox.DB.rates.fx = {};
+  sandbox.DB.rates.goldPerG = 0;
+  assert.strictEqual(sandbox.rateStale({ type: 'fx', currency: 'USD' }), true);
+  assert.strictEqual(sandbox.rateStale({ type: 'gold' }), true);
+});
+test('rateStale: 시세와 무관한 자산 타입(현금 등)은 항상 거짓', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  assert.strictEqual(sandbox.rateStale({ type: 'cash' }), false);
+});
 /* ---------- setRate: 시세 연동 관리 시트에서 입력을 지우면(onchange로 빈 문자열이 넘어옴)
  * n=Number('')||0 으로 0이 되는데, 이걸 그대로 DB.rates.fx/stocks에 저장하면
  * rateUnknown()의 ==null 판정을 피해가 '미확인' 배지 없이 조용히 ₩0으로 평가되던 버그
@@ -34177,6 +34276,22 @@ test('homeAlertCard: rateUnknownTotal은 openRateSheet()로 연결되고 건수�
   assert.ok(html.includes('openRateSheet()'));
   assert.ok(html.includes('2건'));
 });
+/* rateUnknownTotal이 rateStale()로 확장돼(app-evolve cycle396 critique/advance), "한 번도 못
+ * 받음"뿐 아니라 "가격은 있지만 코드가 응답에서 계속 빠져 seenAt이 정체된" 자산도 같은 알림으로
+ * 잡는지 확인한다. 가격 자체는 있으니 rateUnknown만 보던 옛 조건이면 이 테스트가 깨진다. */
+test('homeAlerts: 가격은 받았지만 코드가 응답에서 계속 빠져 seenAt이 RATE_CODE_STALE_TTL을 넘긴 stock/crypto도 rateUnknownTotal에 집계된다', () => {
+  setupHomeAlertsDB();
+  const now = Date.now();
+  sandbox.DB.rates = { fx: {}, goldPerG: 0, stocks: { '005930': 70000 }, stocksSeenAt: { '005930': now - sandbox.RATE_CODE_STALE_TTL - 1 }, crypto: {}, cryptoSeenAt: {} };
+  sandbox.DB.assets.push({ id: 'a_stock', name: '삼성전자', owner: '나', type: 'stock', stockCode: '005930', stockQty: 1, includeInTotal: true });
+  const alerts = sandbox.homeAlerts([]);
+  const ru = alerts.filter((a) => a.kind === 'rateUnknownTotal');
+  assert.strictEqual(ru.length, 1, '가격은 있어도 정체된 코드는 여전히 알림이 떠야 함');
+  assert.strictEqual(ru[0].count, 1);
+
+  sandbox.DB.rates.stocksSeenAt['005930'] = now; // 다음 동기화가 성공해 seenAt이 갱신되면
+  assert.ok(!sandbox.homeAlerts([]).some((a) => a.kind === 'rateUnknownTotal'), 'seenAt이 갱신되면 알림이 사라져야 함');
+});
 /* ---------- nwPane()/assetBodyHTML(): 홈 알림 카드와 별개로, 순자산 히어로 숫자와 자산관리
  * 그룹소계 자체에도 "일부 미확인" 캡션을 붙인다(산술은 그대로, 캡션만 추가) ---------- */
 test('renderAssets: 시세 미확인 시장가 자산이 있으면 순자산 히어로/그룹소계에 "일부 미확인" 캡션이 붙고, 시세가 확인되면 사라진다', () => {
@@ -37158,6 +37273,17 @@ test('assetBodyHTML: 시세가 있는(rateUnknown 아님) 시세평가 자산은
   const openTagEnd = html.indexOf('>', divOpenIdx);
   const openTag = html.slice(divOpenIdx, openTagEnd);
   assert.ok(!/가격 미확인/.test(openTag), '시세를 아는 자산인데 aria-label에 "가격 미확인"이 잘못 붙음');
+});
+/* assetBodyHTML()이 rateUnknown 대신 rateStale을 쓰게 되면서(app-evolve cycle396 critique/advance),
+ * 가격은 있지만 코드가 응답에서 계속 빠져 seenAt이 정체된 경우도 같은 "가격 미확인" 배지를 띄워야
+ * 한다 — 바로 위 두 테스트(한 번도 못 받음/정상)와 짝을 이루는 세 번째 상태. */
+test('assetBodyHTML: 가격은 받았지만 코드가 응답에서 계속 빠져 seenAt이 정체된(rateStale) 자산도 "가격 미확인" 배지가 뜬다', () => {
+  setupAssetsDB();
+  sandbox.DB.rates.stocks['005930'] = 70000;
+  sandbox.DB.rates.stocksSeenAt = { '005930': Date.now() - sandbox.RATE_CODE_STALE_TTL - 1 };
+  sandbox.DB.assets = [{ id: 'a1', name: '삼성전자', owner: '나', type: 'stock', stockCode: '005930', stockQty: 10, order: 0, includeInTotal: true }];
+  const html = sandbox.assetBodyHTML();
+  assert.ok(html.includes('가격 미확인</div>'), '가격 자체는 있어도 seenAt이 정체됐으면 배지가 떠야 함');
 });
 
 test('renderAssets: 편집 모드(ST.editAssets)에서는 드래그용 그룹 목록이 렌더되고, assetSort가 custom이면 그룹 헤더 아래 개별 자산 위/아래 버튼도 함께 렌더된다(app-evolve cycle134 advance 전에는 그룹만 나왔음)', () => {

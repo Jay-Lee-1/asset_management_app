@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.526';
+const APP_VERSION='1.47.527';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -2875,6 +2875,13 @@ function dismissWipeBackup(){
 function writeThemeCache(){try{localStorage.setItem('asset_app_theme_cache',JSON.stringify(themeCachePayload(DB.settings)))}catch(e){}}
 function migrate(){
  DB.rates=DB.rates||{};DB.rates.fx=DB.rates.fx||{};DB.rates.stocks=DB.rates.stocks||{};DB.rates.crypto=DB.rates.crypto||{}; /* crypto 자산 종류 신설(app-evolve cycle219) — 기존 계정엔 rates.crypto 버킷이 없어 assetEval()/rateUnknown()의 R.crypto[code] 접근이 터짐 */
+ /* rateStale()이 쓰는 코드별 마지막 실제수신 시각 맵 — 이미 가격을 알고 있는 보유 코드에 seenAt이
+  * 하나도 없으면(이 필드를 처음 들이는 기존 계정, 또는 백업/클라우드 풀로 들어온 옛 데이터) staleCodeIds가
+  * "한 번도 못 받음"과 구분할 수 없어 업그레이드 직후 전부 즉시 '모름'으로 오탐한다 — 지금 막 봤다고
+  * 안전하게 초기화해 다음 실제 동기화부터 정상적으로 나이를 먹게 한다(app-evolve cycle396 advance). */
+ DB.rates.stocksSeenAt=DB.rates.stocksSeenAt||{};DB.rates.cryptoSeenAt=DB.rates.cryptoSeenAt||{};
+ Object.keys(DB.rates.stocks).forEach(c=>{if(DB.rates.stocks[c]!=null&&DB.rates.stocksSeenAt[c]==null)DB.rates.stocksSeenAt[c]=Date.now()});
+ Object.keys(DB.rates.crypto).forEach(c=>{if(DB.rates.crypto[c]!=null&&DB.rates.cryptoSeenAt[c]==null)DB.rates.cryptoSeenAt[c]=Date.now()});
  DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',goalSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0,mergeDataLossFields:[],notifyMute:{},targetAllocation:{},settle:null,settledThrough:null},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
@@ -3248,6 +3255,18 @@ function rateUnknown(a){
  if(a.type==='gold')return !R.goldPerG;
  if(a.type==='crypto')return R.crypto[a.cryptoCode]==null;
  return R.stocks[a.stockCode]==null;
+}
+/* rateUnknown()의 "한 번도 못 받음" 시맨틱은 assetGainLoss/assetEval 등 ₩0 폴백을 가리는 원가
+ * 가드가 곳곳에서 의존하므로 건드리지 않는다(바로 아래 assetGainLoss 주석과 동일한 이유) — 대신
+ * "한 번은 받았지만 그 뒤로 응답에서 계속 빠져 조용히 정체된" 상태를 추가로 잡아내는 전용 배지/홈
+ * 알림용 자매 함수. stock/crypto만 코드 단위 seenAt을 추적하므로(syncRates(), migrate() 참고)
+ * fx/gold는 rateUnknown과 동일하게 동작한다(app-evolve cycle396 critique/advance). */
+function rateStale(a){
+ if(rateUnknown(a))return true;
+ const R=DB.rates,now=Date.now();
+ if(a.type==='stock')return staleCodeIds([a.stockCode],R.stocksSeenAt,now,RATE_CODE_STALE_TTL).length>0;
+ if(a.type==='crypto')return staleCodeIds([a.cryptoCode],R.cryptoSeenAt,now,RATE_CODE_STALE_TTL).length>0;
+ return false;
 }
 /* fx/gold/stock 전용 선택 입력 costBasis(매입 원가, 원)가 있을 때만 손익을 계산한다.
    0으로 기본값을 두면 "매입가 모름"과 "무료로 취득"을 구분할 수 없어 rateUnknown()과
@@ -4450,6 +4469,10 @@ function animNums(pageId,sel){ /* 값이 바뀔 때 숫자만 툭 튀지 않도�
    · 환율·금·주식: 모두 Netlify 중계 함수 경유 (네이버 금융)
    · 10분마다 자동 · 토 06시~월 08시는 휴장                          */
 const RATE_TTL=10*60*1000;
+/* 보유 코드가 동기화 응답에서 조용히 계속 빠질 때 쓰는 '정체' 임계값(logic.js staleCodeIds의
+ * maxAgeMs) — RATE_TTL의 6배(=1시간)로 둬 자동 동기화 한 번 거른 것 정도로는 오탐하지 않고,
+ * 여러 주기 연속으로 빠져야만 rateStale()이 '모름'으로 넘어간다(app-evolve cycle396 critique/advance). */
+const RATE_CODE_STALE_TTL=RATE_TTL*6;
 
 function heldCurrencies(){return [...new Set(DB.assets.filter(a=>a.type==='fx'&&a.currency).map(a=>a.currency))]}
 function heldStockCodes(){return [...new Set(DB.assets.filter(a=>a.type==='stock'&&a.stockCode).map(a=>a.stockCode))]}
@@ -4535,13 +4558,16 @@ async function syncRates(silent){
   R.fxFailStreak=R.fxFail?(R.fxFailStreak||0)+1:0;
 
   if(st.status==='fulfilled'){
-   if(st.value){Object.entries(st.value).forEach(([code,p])=>{if(code!=='_debug'&&p>0)R.stocks[code]=p});ok++}
+   /* 코드가 응답에 실제로 있을 때만 stocksSeenAt을 함께 찍는다 — 상장폐지/오입력 등으로 특정 코드가
+    * 응답에서 계속 빠지면 R.stocks[code]는 마지막 값에 멈추지만 seenAt은 그대로 오래된 채 남아,
+    * rateStale()이 결국 '모름'으로 넘어가게 한다(app-evolve cycle396 critique/advance). */
+   if(st.value){Object.entries(st.value).forEach(([code,p])=>{if(code!=='_debug'&&p>0){R.stocks[code]=p;R.stocksSeenAt=R.stocksSeenAt||{};R.stocksSeenAt[code]=Date.now()}});ok++}
    R.stockFail=false;
   }else{R.stockFail=true;fail++}
   R.stockFailStreak=R.stockFail?(R.stockFailStreak||0)+1:0;
 
   if(ct.status==='fulfilled'){
-   if(ct.value){Object.entries(ct.value).forEach(([code,p])=>{if(code!=='_debug'&&p>0)R.crypto[code]=p});ok++}
+   if(ct.value){Object.entries(ct.value).forEach(([code,p])=>{if(code!=='_debug'&&p>0){R.crypto[code]=p;R.cryptoSeenAt=R.cryptoSeenAt||{};R.cryptoSeenAt[code]=Date.now()}});ok++}
    R.cryptoFail=false;
   }else{R.cryptoFail=true;fail++}
   R.cryptoFailStreak=R.cryptoFail?(R.cryptoFailStreak||0)+1:0;
@@ -4876,7 +4902,7 @@ function assetBodyHTML(){
         * 엘리먼트에 aria-label이 있으면 하위 텍스트는 접근성 트리에서 완전히 무시되므로, 스크린리더
         * 사용자는 이 자산이 총자산에서 빠져 있거나 시세를 못 가져온 상태를 전혀 들을 수 없었다
         * (app-evolve cycle381 develop). */
-       const ariaWarn=(a.includeInTotal?'':' 총자산 미포함')+(showEval&&rateUnknown(a)?' 가격 미확인':'');
+       const ariaWarn=(a.includeInTotal?'':' 총자산 미포함')+(showEval&&rateStale(a)?' 가격 미확인':'');
        if(ST.aSel.mode){const on=ST.aSel.ids.has(a.id);
          return `<div class="asset-item${on?' sel-on':''}" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(a.name)} ${won(val)}${ariaWarn}" onclick="assetToggleSel('${a.id}')" onkeydown="rowKeydown(event,()=>assetToggleSel('${a.id}'))">
            <div class="sel-check ${on?'on':''}">${svg('check')}</div>
@@ -4900,7 +4926,7 @@ function assetBodyHTML(){
          <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
            <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div></div>
          <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(a.name)} 복제" onclick="event.stopPropagation();duplicateAsset('${a.id}')">${svg('copy')}</button><button type="button" class="act-btn" aria-label="${esc(a.name)} 내역 보기" onclick="event.stopPropagation();openAssetHistory('${a.id}')">${svg('receipt')}</button></div>
-         <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval?(rateUnknown(a)?'<div class="mini warn">가격 미확인</div>':'<div class="s">평가액</div>'):''}</div></div>`;
+         <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval?(rateStale(a)?'<div class="mini warn">가격 미확인</div>':'<div class="s">평가액</div>'):''}</div></div>`;
      }).join('')+`</div>`;
    });
  }
@@ -8113,12 +8139,12 @@ function globalSearchBody(qRaw){
     * develop)가 통합검색 결과(globalSearchBody)의 자산 행에만 전혀 없었다 — cycle380 develop이 같은
     * 함수의 목표 행에 적용한 것과 동일한 버그 클래스의 다섯 번째 자리(목표 쪽만 고치고 자산 쪽을
     * 깜빡함). assetBodyHTML과 동일한 조건을 그대로 재사용한다(app-evolve cycle382 develop). */
-   const ariaWarn=(a.includeInTotal?'':' 총자산 미포함')+(showEval&&rateUnknown(a)?' 가격 미확인':'');
+   const ariaWarn=(a.includeInTotal?'':' 총자산 미포함')+(showEval&&rateStale(a)?' 가격 미확인':'');
    return `<div class="asset-item" tabindex="0" role="button" aria-label="${esc(a.name)} ${won(val)}${ariaWarn}" onclick="openAssetSheet('${a.id}')" onkeydown="rowKeydown(event,()=>openAssetSheet('${a.id}'))">
     <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
     <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
      <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
-    <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval&&rateUnknown(a)?'<div class="mini warn">가격 미확인</div>':''}</div></div>`;
+    <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval&&rateStale(a)?'<div class="mini warn">가격 미확인</div>':''}</div></div>`;
   }).join('')}</div>${moreBtn('assets',assetsRemain)}`;
  if(catsAll.length)html+=`<div class="menu-cap" style="margin-top:14px">카테고리 · ${catsAll.length}개</div><div class="card">${catsCapped.map(c=>
    `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(c.name)} ${CAT_LABEL[c.kind]} 카테고리" onclick="openCatManage('${c.kind}')" onkeydown="rowKeydown(event,()=>openCatManage('${c.kind}'))"><div class="avatar ${catAv(c.kind)}" style="width:36px;height:36px;border-radius:11px">${catGlyph(c.kind,c.name,18,'tag')}</div><div class="mn">${esc(c.name)}</div><span class="chipmini">${CAT_LABEL[c.kind]}</span><div class="mc">${svg('chev')}</div></div>`
@@ -12590,8 +12616,10 @@ function homeAlerts(neg){
  /* 시세 미확인(rateUnknown) 시장가 자산은 assetEval()이 ||0으로 평가해 총자산/귀속소계/
   * nwPane 히어로 숫자에 경고 없이 ₩0으로 섞여 들어간다(개별 행 배지만으론 상단 숫자가
   * 틀렸다는 걸 알 수 없다) — openRateSheet()로 바로 연결해 시세를 받아오게 안내한다
-  * (app-evolve cycle183 critique/advance) */
- const _ruCount=DB.assets.filter(a=>a.includeInTotal&&rateUnknown(a)).length;
+  * (app-evolve cycle183 critique/advance). rateStale(a)로 확장해 "한 번도 못 받음"뿐 아니라
+  * "받았지만 코드가 응답에서 계속 빠져 정체된" 상태도 같은 카드로 잡는다(app-evolve cycle396
+  * critique/advance) — assetBodyHTML/globalSearchBody 개별 행 배지와 동일한 전환. */
+ const _ruCount=DB.assets.filter(a=>a.includeInTotal&&rateStale(a)).length;
  if(_ruCount)arr.push({kind:'rateUnknownTotal',count:_ruCount});
  const _spendTM=spendByCategory(TM.y,TM.m);const _bwc=new Map(); /* 이번 달 지출/이월 메모이즈를 budgetOver·budgetPaceWarn 판정 양쪽에 공유한다 — homeAlerts()는 updateAlerts()를 통해 renderCurrent()가 불릴 때마다(거래/자산/목표 저장 거의 전부, 탭 전환마다) 호출되는데, 예전엔 spendByCategory 스캔과 카테고리별 budgetCarryFor의 최대 24개월 재귀 체인을 이 함수 안에서만 4번(10182/10186/10196/10201) 반복했다(app-evolve cycle299 advance, openSpendAnalysis의 cache 공유(바로 위 totalBudgetSummary)와 같은 패턴) */
  const _bo=_spendTM.filter(r=>{const b=budgetForMonthWithCarry(r.c,TM.y,TM.m,0,_bwc);return b>0&&r.v>b}); /* 예산 초과 카테고리: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴).
