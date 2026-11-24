@@ -1,22 +1,8 @@
 {
   "cycle": 395,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 390,
-      "phase": "develop",
-      "timestamp": "2026-11-21T19:30:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-389 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 관리 일괄선택 3종, fmtAmt 커서버그, 문의하기 메모 클램프, commitTx undo 등)을 주고 조사시킴. cycle389 advance가 공용 피커(openAssetPicker/openCatPicker/openTypePicker/openOwnerPicker/openCurrencyPicker) 5종에 방향키 그리드 탐색을 적용했지만, 같은 '열거형 그리드' 모양인 카테고리 아이콘 피커(openIconPicker, .icon-grid, index.html:8727-8734, CSS grid-template-columns:repeat(5,1fr))는 그 5종 전수조사 범위에 들지 않아 유일하게 빠져 있었음을 발견 — pkQ/pkCatQ류 검색 UI가 없어 Escape-clear는 대상 없음(스코프 아님), 방향키만 사각지대. 카테고리 피커 그리드(pkCatKeydown, cols=3)와 완전히 같은 모양이라 범용 순수 함수 pkGridNextIdx(idx,len,cols,key)를 그대로 재사용해 iconCellKeydown(e)만 신설(.icon-grid에 id=\"iconGrid\"+인라인 onkeydown=\"iconCellKeydown(event)\" 배선, cols=5). 아이콘 피커는 검색/재렌더가 없는 정적 그리드라 pkCatKeydown(프로퍼티 할당, innerHTML 교체 대비)이 아니라 pkItemKeydown과 동일하게 인라인 속성으로 바로 배선. 테스트 5건 추가: pkGridNextIdx cols=5 전용 순수 테스트 2건(상/하 5칸 건너뛰기+양끝 클램프, 좌/우+Home/End), openIconPicker 마크업에 id/onkeydown 배선 확인 1건, iconCellKeydown 조기-return 가드 2건(.icon-cell 아닌 타겟, 방향키 아닌 key). test/run.js FUNCTIONS에 iconCellKeydown 추가. node test/run.js 3836->3841/3841 통과, node --check(메인 <script> 블록, HTML 주석 내 리터럴 '<script>' 텍스트로 인한 블록0 오탐은 cycle389 review가 이미 확인한 추출 스크립트 자체의 아티팩트)/logic.js/sw.js 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.512->1.47.513, sw.js CACHE v779->v780.",
-      "commit": null
-    },
-    {
-      "cycle": 390,
-      "phase": "review",
-      "timestamp": "2026-11-21T20:40:00.000Z",
-      "summary": "develop(cycle390)의 카테고리 아이콘 피커(.icon-grid) 방향키 그리드 탐색(iconCellKeydown) 추가를 검토. pkCatKeydown(카테고리 피커 그리드, cols=3)과 구조를 줄 단위로 대조해 완전히 동일한 가드 순서(key 목록 체크 -> closest('.icon-cell') -> closest('.icon-grid').querySelectorAll -> indexOf -> preventDefault -> focus)임을 확인했고, cols=5가 .icon-grid의 CSS grid-template-columns:repeat(5,1fr)(index.html:961)과 정확히 짝이 맞음을 확인했다(열이 바뀌면 같이 바꿔야 한다는 주석도 pkCatKeydown과 동일한 문구로 남아있음). .icon-cell이 네이티브 <button>이라 날짜 선택기/공용 피커와 동일하게 별도 tabindex 없이 포커스 가능함도 확인. 아이콘 피커는 정적 그리드(검색/재렌더 없음)라 pkCatKeydown처럼 프로퍼티 할당이 아니라 인라인 onkeydown 속성으로 배선한 선택도 pkItemKeydown과 일치해 타당함. 실제 버그는 발견하지 못함. node test/run.js 3841/3841 통과(재실행). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 390,
       "phase": "critique",
@@ -105,7 +91,7 @@
       "cycle": 393,
       "phase": "critique",
       "timestamp": "2026-11-22T10:35:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-393 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt/fmtQty 커서버그, 문의하기 메모 클램프, commitTx/saveAsset undo, 트래시 허브 통합, 전역 field-clear Escape, monthNav 방향키 등)를 주고 전략적 재검토시킴. .seg/.mseg role=\"group\" 세그먼트 토글(기간 선택/귀속 선택/목표 유형/상환 전략/구분 선택/달력·목록 전환/카테고리 관리 탭/최근 삭제함 탭 등 index.html 15곳 이상)이 aria-pressed+onclick만 있고 keydown이 전혀 없어, 날짜 선택기/공용 피커/카테고리 아이콘 피커·메인 색 그리드/monthNav/nwCarousel에 이미 적용된 방향키 네이티브 라디오그룹 탐색 패턴의 유일한 사각지대로 남아있음을 발견(grep으로 15곳 전수 확인, 기존 ArrowLeft/Right 핸들러들이 .seg/.mseg를 전혀 안 건드림도 확인). 기각한 후보: 트래시 허브 검색창(TRASH_MAX_AGE_DAYS로 데이터셋 작아 가치 낮음), 거래내역 리스트 가상화(ST.hist.page 기반 페이지네이션+_histCache 이미 존재). pending_advance_plan에 공용 segKeydown(e) 신설(iconCellKeydown/accentCellKeydown/monthNavKeydown과 동일한 조기-return 구조, document 위임 리스너로 15곳 개별 수정 없이 한 번에 배선) 계획 저장. node test/run.js 3868/3868 통과 확인(서브에이전트가 재실행). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "summary": "general-purpose 서브에이전트에게 cycle340-393 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드 방향키, 카테고리 관리 일괄선택 3종, fmtAmt/fmtQty 커서버그, 문의하기 메모 클램프, commitTx/saveAsset undo, 트래시 허브 통합, 전역 field-clear Escape, monthNav 방향키 등)을 주고 전략적 재검토시킴. .seg/.mseg role=\"group\" 세그먼트 토글(기간 선택/귀속 선택/목표 유형/상환 전략/구분 선택/달력·목록 전환/카테고리 관리 탭/최근 삭제함 탭 등 index.html 15곳 이상)이 aria-pressed+onclick만 있고 keydown이 전혀 없어, 날짜 선택기/공용 피커/카테고리 아이콘 피커·메인 색 그리드/monthNav/nwCarousel에 이미 적용된 방향키 네이티브 라디오그룹 탐색 패턴의 유일한 사각지대로 남아있음을 발견(grep으로 15곳 전수 확인, 기존 ArrowLeft/Right 핸들러들이 .seg/.mseg를 전혀 안 건드림도 확인). 기각한 후보: 트래시 허브 검색창(TRASH_MAX_AGE_DAYS로 데이터셋 작아 가치 낮음), 거래내역 리스트 가상화(ST.hist.page 기반 페이지네이션+_histCache 이미 존재). pending_advance_plan에 공용 segKeydown(e) 신설(iconCellKeydown/accentCellKeydown/monthNavKeydown과 동일한 조기-return 구조, document 위임 리스너로 15곳 개별 수정 없이 한 번에 배선) 계획 저장. node test/run.js 3868/3868 통과 확인(서브에이전트가 재실행). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     },
     {
@@ -149,6 +135,13 @@
       "timestamp": "2026-11-24T06:40:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-394 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드·날짜 선택기 방향키, .seg/.mseg 전역 방향키(segKeydown), monthNav/nwCarousel 방향키, openSheet() 탭 전환 포커스 보존(prevSegGroup/prevSegLabel), 카테고리 관리 일괄선택 3종, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt 가드, transfer 통화 불일치, CSV 비대칭, SRI, 음력 공휴일표 상한, duplicateTx 등 포커스, sanitizeAmount/interestRate 상한, owner undo, amortizationPayoffMonths 가드, 거래내역 가상화, 거래 메모 자동완성 datalist 등)을 주고 조사시킴. index.html 2038행 주석이 AMOUNT_MAX(999,999,999,999,999) 상한을 거는 경로 목록으로 fmtAmt/sanitizeAmount/syncAssetInputs/csvRowToImportTxn/taPctInput을 명시하는데, 실제로는 시세 연동 관리 시트의 수동 입력 함수 setRate(kind,key,val)(금/환율/주식/코인 현재가 수동 입력, 9274행)가 이 목록에서 빠져 있었음을 발견. 이 필드들은 fmtAmt처럼 oninput 실시간 포맷을 쓰지 않고 onchange=\"setRate(...,this.value)\"로 포맷 없는 원시 문자열을 받아 Number(...)||0만 거친 뒤 그대로 DB.rates에 저장돼, 클립보드 오입력 등으로 비정상적으로 큰 값이 들어오면 정밀도가 깨진 채 해당 자산 평가액(수량×시세)과 전체 자산 총액 계산으로 조용히 전파될 수 있는 실제 데이터 정합성 공백이었다. 백업 복원 경로(sanitizeBackup, 10845/10849행)는 이미 sanitizeAmount(srcRates[f],0)로 DB.rates를 클램프하는데 앱 내 수동 입력 경로만 이 보호가 빠진 비대칭이었고, 배제 목록의 'interestRate 상한'(자산 이자율 필드)과는 전혀 다른 필드(시세/현재가)라 중복이 아님을 코드로 직접 확인했다. setRate() 안에서 파싱한 숫자를 기존 0-이하 분기로 넘기기 전에 AMOUNT_MAX로 clamp(거부가 아니라 자르는 기존 철학 유지)하도록 수정하고, 2038행 AMOUNT_MAX 경로 목록 주석에도 setRate를 추가했다. test/run.js에 setRate 테스트 2건 추가: (1) fx/stock/crypto/gold 전부 AMOUNT_MAX+1 입력 시 AMOUNT_MAX로 클램프, (2) AMOUNT_MAX 경계값과 그 이하 정상 입력(소수점 포함 '1,500.25')은 클램프에 영향받지 않음. node test/run.js 3884->3886/3886 통과, node --check(logic.js/sw.js) 통과, index.html inline <script> 블록 4개(HTML 주석 제거 후 추출) new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.523->1.47.524, sw.js CACHE v790->v791. 커밋 795b289.",
       "commit": "795b289"
+    },
+    {
+      "cycle": 395,
+      "phase": "review",
+      "timestamp": "2026-11-24T07:30:00.000Z",
+      "summary": "develop(cycle395) 커밋 795b289(setRate() 시세 수동 입력에 AMOUNT_MAX 상한 클램프 추가)를 검토. setRate(kind,key,val)에서 n0=Number(replace로 숫자/소수점만 남긴 문자열)||0을 구한 뒤 n=n0>AMOUNT_MAX?AMOUNT_MAX:n0로 클램프하고, 이어지는 기존 n<=0 분기(지우기/미확인 처리)·gold/fx/fx100/stock/crypto 저장 분기는 전혀 건드리지 않아 클램프가 끼어들 뿐 기존 동작을 바꾸지 않음을 라인 단위로 확인. n0는 음수가 될 수 없고(정규식이 '-'를 제거) 빈 문자열/NaN은 ||0으로 이미 0이 되므로 클램프 분기가 음수·NaN 경로에 영향을 주지 않음도 확인. 2038행 AMOUNT_MAX 주석의 경로 목록에 setRate가 실제로 추가됐는지, fmtAmt/sanitizeAmount/syncAssetInputs/csvRowToImportTxn/taPctInput 기존 5개와 나란히 적혔는지 재확인. node test/run.js 재실행 3886/3886 통과, node --check(sw.js/logic.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록(setRate가 들어있는 메인 블록) new Function() 파싱 통과(블록 중 하나가 HTML 주석 내 리터럴 '<script>' 텍스트로 실패하는 건 cycle389부터 알려진 추출 스크립트 자체의 아티팩트이지 실제 코드 문제가 아님을 재확인). 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
     }
   ]
 }
