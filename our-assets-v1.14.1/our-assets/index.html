@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.531';
+const APP_VERSION='1.47.532';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -6755,10 +6755,17 @@ function splitFieldHTML(d,pfx,noToggle){
  pfx=pfx||'tx';
  const total=d.splits.reduce((s,x)=>s+(Number(x.amount)||0),0);
  const diff=(d.amount||0)-total;
+ /* txMemo/rMemo(전체 메모)는 frequentMemosForType()로 자주 쓴 메모 자동완성을 받았는데(app-evolve
+    cycle394/396), 분할 항목별 메모(splitMemo{i})는 txSplitMemo 신설(cycle255) 이후 한 번도 그
+    혜택을 받지 못했다 — "마트"처럼 분할로 자주 나누는 메모(식비+생활용품)일수록 매번 다시
+    타이핑해야 하는 비대칭이었다(app-evolve cycle399 develop). 항목이 몇 개든 d.type은 하나뿐이므로
+    (분할은 카테고리만 나뉘고 거래 종류는 거래 전체에 하나) 모든 분할 입력이 같은 datalist 하나를
+    공유해도 된다 — txMemo처럼 항목마다 새로 만들 필요가 없다. */
+ const splitMemoOpts=frequentMemosForType(d.type,DB.txns,10).map(m=>`<option value="${esc(m)}">`).join('');
  const rows=d.splits.map((s,i)=>`<div class="field" style="margin-bottom:8px"><label>항목 ${i+1}${d.splits.length>2?` <button type="button" class="txt-btn" style="padding:2px 6px" onclick="${pfx}SplitRemove(${i})" aria-label="항목 ${i+1} 삭제">${svg('trash',14)} 삭제</button>`:''}</label>
    <button class="pick" onclick="${pfx}SplitOpenCat(${i})"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,s.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(s.category||'카테고리 선택')}</div></div><div class="pc">${svg('chevR')}</div></button>
    <div class="field-clear" style="margin-top:6px"><input id="splitAmt${i}" class="amount-in num" inputmode="numeric" value="${s.amount?comma(s.amount):''}" placeholder="0" aria-label="항목 ${i+1} 금액" oninput="${pfx}SplitAmt(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 금액 지우기" onclick="clrInput('splitAmt${i}')">✕</button></div>
-   <div class="field-clear" style="margin-top:6px"><input id="splitMemo${i}" maxlength="${MEMO_MAX}" value="${esc(s.memo||'')}" placeholder="항목 ${i+1} 메모(선택)" aria-label="항목 ${i+1} 메모" oninput="${pfx}SplitMemo(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 메모 지우기" onclick="clrInput('splitMemo${i}')">✕</button></div>
+   <div class="field-clear" style="margin-top:6px"><input id="splitMemo${i}" list="splitMemoList" maxlength="${MEMO_MAX}" value="${esc(s.memo||'')}" placeholder="항목 ${i+1} 메모(선택)" aria-label="항목 ${i+1} 메모" oninput="${pfx}SplitMemo(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 메모 지우기" onclick="clrInput('splitMemo${i}')">✕</button></div>
   </div>`).join('');
  const hint=diff===0?'합계가 전체 금액과 일치해요':`합계가 전체 금액과 ${comma(Math.abs(diff))}원 ${diff>0?'모자라요':'많아요'}`;
  /* noToggle: 반복 내역 '간편 수정'(rc) 화면에서 쓴다 — 거기는 category 오버라이드를 저장할
@@ -6767,6 +6774,7 @@ function splitFieldHTML(d,pfx,noToggle){
     cycle292 advance) — txSplitAdd/Remove는 항상 2개 이상을 유지하므로 그대로 둬도 안전하다. */
  return `<div class="field" style="margin-bottom:4px"><label>카테고리 분할${noToggle?'':` <button type="button" class="txt-btn" style="padding:2px 6px" onclick="${pfx}ToggleSplit()">일반 입력으로</button>`}</label></div>
   ${rows}
+  <datalist id="splitMemoList">${splitMemoOpts}</datalist>
   <button type="button" class="btn btn-soft" style="margin-bottom:8px" onclick="${pfx}SplitAdd()">${svg('plus')} 분할 추가</button>
   <div class="psub" id="splitHint" style="margin:-4px 0 14px;${diff!==0?'color:var(--expense)':''}">${hint}</div>`;
 }

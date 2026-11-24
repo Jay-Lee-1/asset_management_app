@@ -27507,6 +27507,7 @@ test('[실행형] txSplitMemo: MEMO_MAX를 넘는 메모는 입력칸 값과 spl
 test('[실행형] splitFieldHTML: 각 분할 항목마다 메모 입력(id=splitMemo{i}, oninput=txSplitMemo)을 그려낸다', () => {
   const ctx = {
     MEMO_MAX: sandbox.MEMO_MAX,
+    DB: { txns: [] },
     esc: (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
     comma: (n) => String(n),
     svg: () => '',
@@ -27514,6 +27515,7 @@ test('[실행형] splitFieldHTML: 각 분할 항목마다 메모 입력(id=split
     catGlyph: () => '',
   };
   vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
   vm.runInContext(extractFunction('splitFieldHTML'), ctx, { filename: 'splitFieldHTML-real' });
   const d = {
     type: 'expense', amount: 5000,
@@ -27531,6 +27533,7 @@ test('[실행형] splitFieldHTML: 각 분할 항목마다 메모 입력(id=split
 test('[실행형] splitFieldHTML: pfx="rec"를 넘기면 onclick/oninput이 rec* 핸들러로 배선된다', () => {
   const ctx = {
     MEMO_MAX: sandbox.MEMO_MAX,
+    DB: { txns: [] },
     esc: (s) => String(s == null ? '' : s),
     comma: (n) => String(n),
     svg: () => '',
@@ -27538,6 +27541,7 @@ test('[실행형] splitFieldHTML: pfx="rec"를 넘기면 onclick/oninput이 rec*
     catGlyph: () => '',
   };
   vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
   vm.runInContext(extractFunction('splitFieldHTML'), ctx, { filename: 'splitFieldHTML-rec-real' });
   const d = { type: 'expense', amount: 50000, splits: [{ category: '통신', amount: 30000, memo: '' }, { category: 'OTT', amount: 20000, memo: '' }] };
   const html = ctx.splitFieldHTML(d, 'rec');
@@ -27556,6 +27560,7 @@ test('[실행형] splitFieldHTML: pfx="rec"를 넘기면 onclick/oninput이 rec*
 test('[실행형] splitFieldHTML: noToggle=true를 넘기면 "일반 입력으로" 버튼만 숨기고 나머지는 그대로다', () => {
   const ctx = {
     MEMO_MAX: sandbox.MEMO_MAX,
+    DB: { txns: [] },
     esc: (s) => String(s == null ? '' : s),
     comma: (n) => String(n),
     svg: () => '',
@@ -27563,6 +27568,7 @@ test('[실행형] splitFieldHTML: noToggle=true를 넘기면 "일반 입력으�
     catGlyph: () => '',
   };
   vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
   vm.runInContext(extractFunction('splitFieldHTML'), ctx, { filename: 'splitFieldHTML-notoggle-real' });
   const d = { type: 'expense', amount: 50000, splits: [{ category: '통신', amount: 30000, memo: '' }, { category: 'OTT', amount: 20000, memo: '' }] };
   const html = ctx.splitFieldHTML(d, 'tx', true);
@@ -27571,6 +27577,40 @@ test('[실행형] splitFieldHTML: noToggle=true를 넘기면 "일반 입력으�
   assert.ok(html.includes('oninput="txSplitAmt(0,this)"'), '금액 입력은 여전히 나와야 함');
   const htmlDefault = ctx.splitFieldHTML(d, 'tx');
   assert.ok(htmlDefault.includes('txToggleSplit()'), 'noToggle을 안 넘기면(기존 호출부) 여전히 토글 버튼이 나와야 함(하위호환)');
+});
+/* txMemo/rMemo(전체 메모)는 frequentMemosForType()로 자주 쓴 메모 자동완성을 받았는데(app-evolve
+ * cycle394/396), 분할 항목별 메모(splitMemo{i})는 txSplitMemo 신설(cycle255) 이후 그 혜택이 없던
+ * 공백을 메운다(app-evolve cycle399 develop). 항목이 몇 개든 d.type 하나를 공유하므로 datalist도
+ * 하나만 만들어 모든 분할 입력이 함께 참조한다. */
+test('[실행형] splitFieldHTML: 분할 메모 입력이 하나의 splitMemoList datalist를 공유하고, DB.txns 중 같은 type의 자주 쓴 메모가 빈도 내림차순으로 옵션에 들어간다', () => {
+  const ctx = {
+    MEMO_MAX: sandbox.MEMO_MAX,
+    DB: {
+      txns: [
+        { type: 'expense', date: '2026-01-01', memo: '마트', amount: 10000 },
+        { type: 'expense', date: '2026-01-02', memo: '마트', amount: 12000 },
+        { type: 'expense', date: '2026-01-03', memo: '세제', amount: 3000 },
+        { type: 'income', date: '2026-01-04', memo: '월급', amount: 3000000 }, // type이 달라 섞이면 안 됨
+      ],
+    },
+    esc: (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
+    comma: (n) => String(n),
+    svg: () => '',
+    catAv: () => 'a-food',
+    catGlyph: () => '',
+  };
+  vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
+  vm.runInContext(extractFunction('splitFieldHTML'), ctx, { filename: 'splitFieldHTML-memolist-real' });
+  const d = {
+    type: 'expense', amount: 5000,
+    splits: [{ category: '식비', amount: 3000, memo: '' }, { category: '생활용품', amount: 2000, memo: '' }],
+  };
+  const html = ctx.splitFieldHTML(d);
+  assert.ok(html.includes('id="splitMemo0" list="splitMemoList"'), '첫 번째 항목 메모 입력이 splitMemoList datalist와 연결돼야 함(txMemo/txMemoList와 동일한 배선)');
+  assert.ok(html.includes('id="splitMemo1" list="splitMemoList"'), '두 번째 항목 메모 입력도 같은 datalist를 공유해야 함(항목마다 새로 만들 필요 없음)');
+  assert.ok(html.includes('<datalist id="splitMemoList"><option value="마트"><option value="세제"></datalist>'), '빈도 내림차순(마트 2회 > 세제 1회)으로 옵션이 들어가야 함');
+  assert.ok(!html.includes('월급'), 'type이 다른(income) 거래의 메모는 datalist에 섞이면 안 됨');
 });
 /* ---------- recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo:
  * txToggleSplit/txSplitAdd/txSplitRemove/txSplitOpenCat/txSplitAmt/txSplitMemo와 완전히 동일한
