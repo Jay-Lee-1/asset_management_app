@@ -1,15 +1,8 @@
 {
   "cycle": 398,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 393,
-      "phase": "review",
-      "timestamp": "2026-11-22T10:00:00.000Z",
-      "summary": "develop(cycle393) 커밋 965aa02(qtyCaretAfterFilter 신설, fmtQty() 커서 복원)를 검토. 옛 fmtQty 로직(정규식으로 숫자/소수점 외 제거 후 첫 소수점만 남기고 나머지 소수점 제거)과 새 qtyCaretAfterFilter의 단일 순회(digit이거나 dot&&!dotSeen일 때만 keep)가 동일한 필터 결과를 내는지 직접 트레이스로 확인('12a,3bc'→'123', '12..34'→'12.34' 등), fmtAmt의 caretPosAfterFormat과 달리 콤마 삽입이 없어 'oldCaret 앞에서 살아남은 문자 수'를 caret으로 직접 쓰는 방식이 타당함을 확인. 6개 호출부(asInterestRate/asFx/asGold/asQty×2/연이자율) 전부 oninput=\"fmtQty(this)\" 패턴으로 일관되게 새 구현을 쓰게 됨을 grep으로 재확인. setSelectionRange가 fmtAmt와 동일한 try/catch로 감싸져 selectionStart 없는 평범한 객체에서도 안 터짐을 확인. 실제 버그는 발견하지 못함. node test/run.js 3868/3868 통과(재실행), sw.js/logic.js node --check 통과, index.html HTML 주석 제거 후 추출한 <script> 블록 4개 전부 new Function 파싱 통과. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 393,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-24T19:05:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-397 전체 배제 목록(검색창/필드 Escape, 공용 피커·세그먼트·날짜선택기·카테고리 피커·monthNav·nwCarousel 방향키 전역화, openSheet 탭 전환 포커스 보존, 카테고리 관리 일괄선택, 트래시 허브 통합, fmtAmt/fmtQty/asCode 커서버그, commitTx/saveAsset/commitRec undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt/qtyChangeDate 가드, setRate AMOUNT_MAX 클램프, txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지 등 + 기각된 구조개편/성능캐시/CSV완성도/가상화)를 주고 조사시킴. addOwner/delOwner/doRenameOwner(cycle308), addCat류(cycle309), mergeAssetInto(cycle310), saveGoal/delGoal(cycle307) 등 과거 사이클들이 하나씩 메워온 '튜토리얼 중에는 저장되지 않는다'(twGuard) 불변식 — 하단 네비(#nav)가 twStage 오버레이 밖의 실제 DOM이라 튜토리얼 중에도 늘 클릭 가능해, 메뉴로 벗어나면 twGuard 없는 함수는 실제로 DB를 건드린다는 구조적 공백 — 가 홈 화면의 실제 '이체 확인' 알림 카드에서 열리는 confirmTransferNow/postponeTransfer(일반 이체)·confirmRecNow/postponeRecTransfer(반복 이체 회차)에는 끝까지 적용되지 않았음을 발견(grep으로 twGuard 호출이 전무함을 확인, openConfirmTransfer/confirmRecTransfer는 twScreen() 리플리카가 아니라 진짜 시트임도 확인). index.html 4곳(1882/1886/1892/1896행) 함수 시작부에 addOwner 등과 동일한 `if(twGuard())return;` 한 줄씩 추가. test/run.js에 동일 함수들의 기존 touch() 테스트(confirmTransferNow/postponeTransfer/confirmRecNow/postponeRecTransfer, 33112-33133행) 바로 뒤에 addOwner twGuard 테스트와 같은 관례로 4건 추가(TWi=0으로 설정 후 각각 confirmed/date/confirmedDates/skip·txns.length가 바뀌지 않음을 확인, TWi=-1로 복원) — FUNCTIONS 추출 목록은 이미 포함돼 있어 변경 불필요. node test/run.js 3915->3919/3919 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.529->1.47.530, sw.js CACHE v796->v797.",
+      "commit": null
+    },
+    {
+      "cycle": 398,
+      "phase": "review",
+      "timestamp": "2026-11-24T19:30:00.000Z",
+      "summary": "develop(cycle398) 커밋 b7567cd(confirmTransferNow/postponeTransfer/confirmRecNow/postponeRecTransfer 4곳에 twGuard 추가)를 검토. 기존 twGuard 호출 관례(addOwner/delOwner/doRenameOwner, addCat류, doBulk*, deleteTxnsUndo 등 index.html 전체 50여 곳)와 동일하게 각 함수 시작부에 'if(twGuard())return;' 한 줄씩만 추가되어 패턴이 일관됨을 grep으로 확인. 이 4개 함수의 유일한 호출부(openConfirmTransfer/confirmRecTransfer가 그리는 '이체 확인' 시트의 두 버튼)도 함께 확인 — 시트를 '여는' openConfirmTransfer/confirmRecTransfer 자체는 twGuard가 없고 실제 DB를 바꾸는 confirm/postpone 쪽에만 있는 것도 기존 관례(열기는 read-only, 실행 함수에만 가드)와 일치. 새로 추가된 회귀 테스트 4건(sandbox.TWi=0으로 튜토리얼 모드를 만들고 DB가 안 바뀌는지 확인) 로직도 setupRecTransferDB 헬퍼와 기존 confirmRecNow 테스트들의 패턴을 그대로 따름을 확인. node test/run.js 재실행 3919/3919 통과. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
