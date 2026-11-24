@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.530';
+const APP_VERSION='1.47.531';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -1781,6 +1781,24 @@ function mergeRemoteDataIntoLocal(remoteData){
   * critique/cycle181 advance). budgetHistory는 지출(expense) 카테고리 전용이라 catTombKey의
   * type을 'expense'로 고정한 tombKeyFn을 넘긴다. */
  DB.budgetHistory=mergeBudgetHistory(DB.budgetHistory||{},remoteData.budgetHistory||{},DB.deletedIds,c=>catTombKey('expense',c));
+ /* DB.ownerBudgets(귀속별 예산 오버라이드, app-evolve cycle398 critique/advance)는 budgetHistory를
+  * 귀속 이름으로 한 번 더 감싼 {owner:{cat:[{from,amount}]}}라 카테고리 삭제 톰스톤(catTombKey)은
+  * budgetHistory와 똑같이 걸리는데, 귀속 자체가 삭제됐을 때(ownerTombKey)도 그 귀속의 오버라이드
+  * 전체가 되살아나면 안 된다 — budgetHistory는 톰스톤된 카테고리 하나만 거르면 끝이지만 이쪼은
+  * '귀속 톰스톤'이라는 바깥쪽 레이어가 하나 더 있다. 살아있는 귀속마다 DB.ownerBudgets[owner]를
+  * budgetHistory와 동일한 mergeBudgetHistory로 합치고(같은 {cat:[...]} shape이라 그대로 재사용
+  * 가능), 합친 결과가 빈 맵이면(병합 후 카테고리가 하나도 안 남음) 키 자체를 비워 빈 오브젝트
+  * 유령이 쌓이지 않게 한다. */
+ {
+  const remoteOwnerBudgets=remoteData.ownerBudgets||{};
+  const mergedOwnerBudgets={};
+  new Set([...Object.keys(DB.ownerBudgets||{}),...Object.keys(remoteOwnerBudgets)]).forEach(o=>{
+   if(ownerTombKey(o) in DB.deletedIds)return;
+   const merged=mergeBudgetHistory((DB.ownerBudgets&&DB.ownerBudgets[o])||{},remoteOwnerBudgets[o]||{},DB.deletedIds,c=>catTombKey('expense',c));
+   if(Object.keys(merged).length)mergedOwnerBudgets[o]=merged;
+  });
+  DB.ownerBudgets=mergedOwnerBudgets;
+ }
  /* catIcon/catVar(카테고리 아이콘·변동 카테고리 플래그)도 budgetHistory와 같은 '카테고리 커스터마이징'
   * 데이터인데 cycle122 goals 신설 이전부터 여기서 전혀 병합되지 않고 있었다(app-evolve cycle125) —
   * mergeFlatMap()으로 budgetHistory와 동일한 병합 관례를 적용한다. 이 둘의 키는 catKey(type,name)
@@ -2889,6 +2907,7 @@ function migrate(){
  DB.owners=(DB.owners&&DB.owners.length)?DB.owners:['나','배우자','공용'];
  DB.budgets=DB.budgets||{};
  DB.budgetHistory=DB.budgetHistory||{}; /* 카테고리→[{from:"YYYY-MM",amount}] 시점별 예산 이력(오름차순) — budgetForMonth()가 조회 */
+ DB.ownerBudgets=DB.ownerBudgets||{}; /* 귀속(owner)→카테고리→[{from,amount}] — budgetHistory와 동일한 shape의 "귀속별 선택 오버라이드"로, 없으면(귀속에 아예 항목이 없으면) budgetForMonthOwner()가 household budgetHistory로 폴백한다(app-evolve cycle398 critique/advance) */
  if(!DB._budgetHistV1){ /* 기존 DB.budgets(시간 축 없는 flat 값)를 그 시절 항상 적용되던 대로 아주 이른 시점부터 유효한 단일 이력 항목으로 1회 변환 — 기존 사용자 화면을 그대로 보존 */
   Object.keys(DB.budgets).forEach(c=>{if(!DB.budgetHistory[c])DB.budgetHistory[c]=[{from:BUDGET_EPOCH,amount:DB.budgets[c]}]});
   DB._budgetHistV1=true;
@@ -5793,10 +5812,12 @@ function delOwner(i){if(twGuard())return;const o=DB.owners[i];if(DB.owners.lengt
   const prevSettle=settleTouched?JSON.parse(JSON.stringify(settle)):null; /* participants가 배열을 품으므로 Object.assign 얕은 복사로는 안 되고 깊은 복사가 필요(app-evolve cycle364 advance) */
   const prevSettledThrough=settleTouched?DB.settings.settledThrough:undefined; /* settle을 끌 때 settledThrough(정산 하한)도 함께 초기화 — 안 그러면 나중에 다른 쌍으로 재설정해도 죽은 하한이 조용히 남아있다(app-evolve cycle347) */
   if(settleTouched){DB.settings.settle=null;DB.settings.settledThrough=null;}
+  const hadOwnerBudgets=DB.ownerBudgets&&o in DB.ownerBudgets;const ownerBudgetsVal=hadOwnerBudgets?DB.ownerBudgets[o]:undefined; /* 이 귀속만의 예산 오버라이드도 같이 치운다 — 안 그러면 같은 이름의 귀속을 나중에 다시 만들었을 때 예전 한도가 유령으로 되살아난다(catIcon/catVar가 doDeleteCat에서 하는 것과 동일한 원칙, app-evolve cycle398 critique/advance) */
+  if(hadOwnerBudgets)delete DB.ownerBudgets[o];
   DB.owners=DB.owners.filter(x=>x!==o);
   DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(o)]=Date.now(); /* delGoal 등과 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 아직 안 지운 기기의 사본을 되살림(app-evolve cycle179) */
   save();openOwnerManage();
-  undoToast(`'${o}' 귀속을 삭제했어요`,()=>{DB.owners.splice(i,0,o);delete DB.deletedIds[ownerTombKey(o)];if(settleTouched){DB.settings.settle=prevSettle;DB.settings.settledThrough=prevSettledThrough;}save();openOwnerManage();toast('되돌렸어요')});
+  undoToast(`'${o}' 귀속을 삭제했어요`,()=>{DB.owners.splice(i,0,o);delete DB.deletedIds[ownerTombKey(o)];if(settleTouched){DB.settings.settle=prevSettle;DB.settings.settledThrough=prevSettledThrough;}if(hadOwnerBudgets){DB.ownerBudgets=DB.ownerBudgets||{};DB.ownerBudgets[o]=ownerBudgetsVal}save();openOwnerManage();toast('되돌렸어요')});
  });}
 function renameOwnerSheet(i){const cur=DB.owners[i];
  openSheet(`<h3>귀속 이름 수정</h3><div class="desc">'${esc(cur)}'의 이름을 바꾸면 이 귀속의 자산도 함께 바뀌어요.</div>
@@ -5820,6 +5841,8 @@ function doRenameOwner(i){if(twGuard())return;const v=cleanName($('renameOwner')
  const prevSettle=settleTouched?JSON.parse(JSON.stringify(settle)):null; /* participants가 배열을 품으므로 깊은 복사가 필요(app-evolve cycle364 advance) */
  if(settleTouched)DB.settings.settle=settleReplaceOwner(settle,old,v); /* 정산(settlementSummary) 설정도 같은 이유로 이름변경을 따라가야 함 — 안 그러면 openSettlement()의 owner 존재 검증에 걸려 재설정을 요구받는다(app-evolve cycle314 advance). settleReplaceOwner(logic.js)가 구/신 구조를 모두 다룸(cycle364 advance) */
  const nwChanges=[];(DB.nwHistory||[]).forEach(h=>{if(h.byOwner&&old in h.byOwner){nwChanges.push(h);h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}}); /* 과거 추이 스냅샷의 귀속별 키도 새 이름으로 이동 */
+ const hadOwnerBudgets=DB.ownerBudgets&&old in DB.ownerBudgets;const prevOldOwnerBudgets=hadOwnerBudgets?DB.ownerBudgets[old]:undefined;const prevVOwnerBudgets=DB.ownerBudgets?DB.ownerBudgets[v]:undefined; /* 이 귀속만의 예산 오버라이드도 자산/목표처럼 이름변경을 따라가야 한다 — 안 그러면 예전 이름에 유령으로 남아 budgetForMonthOwner가 조회할 수 없게 된다(app-evolve cycle398 critique/advance) */
+ if(hadOwnerBudgets){DB.ownerBudgets=DB.ownerBudgets||{};DB.ownerBudgets[v]=DB.ownerBudgets[old];delete DB.ownerBudgets[old]}
  const prevVTomb=DB.deletedIds?DB.deletedIds[ownerTombKey(v)]:undefined;
  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(old)]=Date.now();delete DB.deletedIds[ownerTombKey(v)]; /* old 이름도 delOwner처럼 톰스톤해야 함 — 안 그러면 mergeNameListWithTombstones가 old를 '살아있다'고 보고 아직 이 이름변경을 모르는 다른 기기의 사본이 old를 되살림(app-evolve cycle180, doRenameCat과 동일). v가 과거에 삭제됐던 이름이면 그 톰스톤은 지워 되살림을 허용 */
  save();openOwnerManage();
@@ -5837,6 +5860,8 @@ function doRenameOwner(i){if(twGuard())return;const v=cleanName($('renameOwner')
   if(hadHistOwner)ST.hist.owner=old;
   if(settleTouched){DB.settings=DB.settings||{};DB.settings.settle=prevSettle}
   nwChanges.forEach(h=>{h.byOwner[old]=h.byOwner[v];delete h.byOwner[v]});
+  if(hadOwnerBudgets){DB.ownerBudgets=DB.ownerBudgets||{};DB.ownerBudgets[old]=prevOldOwnerBudgets}
+  if(prevVOwnerBudgets!==undefined){DB.ownerBudgets=DB.ownerBudgets||{};DB.ownerBudgets[v]=prevVOwnerBudgets}else if(DB.ownerBudgets)delete DB.ownerBudgets[v];
   delete DB.deletedIds[ownerTombKey(old)];
   if(prevVTomb!==undefined)DB.deletedIds[ownerTombKey(v)]=prevVTomb;else delete DB.deletedIds[ownerTombKey(v)];
   touchSave(...assetItems,...goalItems);openOwnerManage();toast('되돌렸어요')
@@ -5919,6 +5944,18 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
    delete h.byOwner[from];
   }
  });
+ /* DB.ownerBudgets[owner]는 budgetHistory와 동일한 {cat:[{from,amount}]} shape이라 mergeCatInto가
+  * household budgetHistory를 합치는 것과 동일한 mergeBudgetHistory("local=toName 우선")를 그대로
+  * 재사용한다 — nwHistory.byOwner(위)처럼 합산하는 금액이 아니라 budgetHistory처럼 "선택 설정값"이라
+  * ta/td 합산 규칙과는 다르다(app-evolve cycle398 critique/advance). */
+ const hadFromOwnerBudgets=DB.ownerBudgets&&from in DB.ownerBudgets;const fromOwnerBudgetsVal=hadFromOwnerBudgets?DB.ownerBudgets[from]:undefined;
+ const hadToOwnerBudgets=DB.ownerBudgets&&toName in DB.ownerBudgets;const toOwnerBudgetsBefore=hadToOwnerBudgets?DB.ownerBudgets[toName]:undefined;
+ if(hadFromOwnerBudgets||hadToOwnerBudgets){
+  DB.ownerBudgets=DB.ownerBudgets||{};
+  const merged=mergeBudgetHistory(DB.ownerBudgets[toName]||{},DB.ownerBudgets[from]||{});
+  if(Object.keys(merged).length)DB.ownerBudgets[toName]=merged;else delete DB.ownerBudgets[toName];
+ }
+ if(DB.ownerBudgets)delete DB.ownerBudgets[from];
  DB.owners.splice(i,1);
  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(from)]=Date.now(); /* delOwner/doRenameOwner와 동일한 톰스톤 — 없으면 아직 이 합치기를 모르는 다른 기기의 사본이 from을 되살림 */
  touchSave(...assetItems,...goalItems);renderCurrent();openOwnerManage();
@@ -5933,6 +5970,8 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
   if(hadHistOwner)ST.hist.owner=from;
   if(settleTouched){DB.settings=DB.settings||{};DB.settings.settle=prevSettle;if(settleCollapsed)DB.settings.settledThrough=prevSettledThrough}
   nwChanges.forEach(({h,fromVal,hadTo,toBefore})=>{h.byOwner=h.byOwner||{};h.byOwner[from]=fromVal;if(hadTo)h.byOwner[toName]=toBefore;else delete h.byOwner[toName]});
+  if(hadFromOwnerBudgets){DB.ownerBudgets=DB.ownerBudgets||{};DB.ownerBudgets[from]=fromOwnerBudgetsVal}
+  if(hadToOwnerBudgets){DB.ownerBudgets=DB.ownerBudgets||{};DB.ownerBudgets[toName]=toOwnerBudgetsBefore}else if(DB.ownerBudgets)delete DB.ownerBudgets[toName];
   DB.owners.splice(i,0,from);
   delete DB.deletedIds[ownerTombKey(from)];
   touchSave(...assetItems,...goalItems);renderCurrent();openOwnerManage();toast('되돌렸어요')
@@ -8350,6 +8389,7 @@ function spendByCategory(y,m,owner='전체'){ /* 지출 분석은 항상 예정 
    splitLines(t).forEach(s=>{map[s.category]=(map[s.category]||0)+s.amount}); /* 분할 거래(t.splits)는 각 항목을 자기 카테고리로 따로 집계(app-evolve cycle198 advance) */
  });
  if(DB.budgetHistory)Object.keys(DB.budgetHistory).forEach(c=>{if(!(c in map)&&budgetForMonth(c,y,m))map[c]=0}); /* 이번 달에 쓴 게 없어도 이번 달 기준 예산이 있는 카테고리는 계속 조회/수정/삭제할 수 있게 노출 */
+ if(owner!=='전체'&&DB.ownerBudgets&&DB.ownerBudgets[owner])Object.keys(DB.ownerBudgets[owner]).forEach(c=>{if(!(c in map)&&budgetForMonthOwner(owner,c,y,m))map[c]=0}); /* 위와 동일한 이유 — 이 귀속만의 예산 오버라이드(household엔 없는 카테고리)도 이번 달 지출 0이어도 계속 조회/수정/삭제할 수 있게 노출(app-evolve cycle398 critique/advance) */
  return Object.entries(map).map(([c,v])=>({c,v})).sort((a,b)=>b.v-a.v);
 }
 /* spendByCategory/incomeByCategory는 해당 달 전체 거래를 처음부터 스캔하는 무거운 집계라, 화면 1회
@@ -8390,21 +8430,96 @@ function spendTrend(c,y,m,n=3,owner='전체',cache=null){
  * saveBudget()이 그 자리에서 덮어쓰면 과거 달의 초과/이내 판정까지 조용히 소급 변경되던 버그를 막기 위함.
  * budgetForMonth는 대상 달(y,m) 이전(from<=대상)에 적용된 이력 중 가장 최근 값을 찾고, 없으면 0(미설정)을 반환한다. */
 function budgetForMonth(c,y,m){
- const h=DB.budgetHistory&&DB.budgetHistory[c];
- if(!h||!h.length)return 0;
- const key=budgetKey(y,m);
- let v=0;
- for(let i=0;i<h.length;i++){if(h[i].from<=key)v=h[i].amount;else break}
- return v;
+ return budgetHistoryValueAt(DB.budgetHistory&&DB.budgetHistory[c],y,m);
+}
+/* 귀속(owner)별 예산 오버라이드 조회 — DB.ownerBudgets[owner][c]에 이력이 하나라도 있으면 그걸
+ * 쓰고(household budgetHistory와 무관하게 그 귀속만의 한도), 없으면(귀속이 이 카테고리에 한 번도
+ * 예산을 따로 정한 적이 없음) household budgetForMonth(c,y,m)로 폴백한다 — goalOwnerEff류가
+ * "귀속별 오버라이드 없으면 가구 기본값" 하는 것과 동일한 폴백 패턴(app-evolve cycle398
+ * critique/advance). owner==='전체'는 애초에 household 그 자체이므로 오버라이드 조회를 건너뛴다. */
+function budgetForMonthOwner(owner,c,y,m){
+ if(owner==='전체')return budgetForMonth(c,y,m);
+ const h=DB.ownerBudgets&&DB.ownerBudgets[owner]&&DB.ownerBudgets[owner][c];
+ if(h&&h.length)return budgetHistoryValueAt(h,y,m);
+ return budgetForMonth(c,y,m);
 }
 /* 대상 달(y,m)부터 적용되는 예산을 이력에 기록 — 같은 달에 이미 항목이 있으면 덮어쓰고, 없으면 from 오름차순을 유지하며 삽입 */
 function setBudgetFrom(c,y,m,amount){
  DB.budgetHistory=DB.budgetHistory||{};
  const h=DB.budgetHistory[c]=DB.budgetHistory[c]||[];
- const key=budgetKey(y,m);
- const idx=h.findIndex(e=>e.from===key);
- if(idx>=0)h[idx].amount=amount;
- else{h.push({from:key,amount});h.sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0)}
+ setBudgetHistoryAt(h,y,m,amount);
+}
+/* setBudgetFrom과 동일하지만 DB.ownerBudgets[owner][c] 쪽에 기록 — openBudgetPrompt/saveBudget/
+ * delBudget이 ST.spendOwner!=='전체'일 때 이 경로로, '전체'일 때는 기존 setBudgetFrom으로 분기한다
+ * (app-evolve cycle398 critique/advance). */
+function setBudgetFromOwner(owner,c,y,m,amount){
+ DB.ownerBudgets=DB.ownerBudgets||{};
+ const om=DB.ownerBudgets[owner]=DB.ownerBudgets[owner]||{};
+ const h=om[c]=om[c]||[];
+ setBudgetHistoryAt(h,y,m,amount);
+}
+/* doDeleteCat/doDeleteCatsUndo가 카테고리 c를 지울 때 모든 귀속의 DB.ownerBudgets[owner][c]도
+ * 함께 치워야 유령 오버라이드가 남지 않는다(catIcon/catVar/budgetHistory가 이미 하던 것과 동일한
+ * 원칙, app-evolve cycle398 critique/advance). 지워진 항목을 [{owner,val}] 배열로 돌려줘
+ * undoToast·트래시 장기 복원(restoreTrashCat) 양쪽이 그대로 되돌릴 수 있게 한다. */
+function popOwnerBudgetsForCat(c){
+ const out=[];
+ if(DB.ownerBudgets)Object.keys(DB.ownerBudgets).forEach(o=>{
+  const om=DB.ownerBudgets[o];
+  if(om&&c in om){out.push({owner:o,val:om[c]});delete om[c]}
+ });
+ return out;
+}
+function restoreOwnerBudgetsForCat(c,entries){
+ if(!entries||!entries.length)return;
+ DB.ownerBudgets=DB.ownerBudgets||{};
+ entries.forEach(({owner,val})=>{DB.ownerBudgets[owner]=DB.ownerBudgets[owner]||{};DB.ownerBudgets[owner][c]=val});
+}
+/* doRenameCat이 카테고리 이름을 old→v로 바꿀 때 모든 귀속의 오버라이드도 같은 키로 옮긴다 —
+ * doRenameCat 자신의 household budgetHistory 이동(한 자리 덮어쓰기, 병합 아님)과 동일한 규칙이라
+ * v가 이미 가진 오버라이드는 덮어써진다. 되돌리기에 필요한 양쪽 이전 값을 [{owner,prevOld,prevV}]로
+ * 돌려준다(app-evolve cycle398 critique/advance). */
+function moveOwnerBudgetsForCat(old,v){
+ const out=[];
+ if(DB.ownerBudgets)Object.keys(DB.ownerBudgets).forEach(o=>{
+  const om=DB.ownerBudgets[o];if(!om||!(old in om))return;
+  out.push({owner:o,prevOld:om[old],prevV:om[v]});
+  om[v]=om[old];delete om[old];
+ });
+ return out;
+}
+function undoMoveOwnerBudgetsForCat(old,v,entries){
+ entries.forEach(({owner,prevOld,prevV})=>{
+  DB.ownerBudgets=DB.ownerBudgets||{};DB.ownerBudgets[owner]=DB.ownerBudgets[owner]||{};
+  DB.ownerBudgets[owner][old]=prevOld;
+  if(prevV!==undefined)DB.ownerBudgets[owner][v]=prevV;else delete DB.ownerBudgets[owner][v];
+ });
+}
+/* mergeCatInto가 from 카테고리를 toName에 합칠 때 모든 귀속의 오버라이드도 household budgetHistory와
+ * 동일하게 mergeBudgetHistory(logic.js, "local(toName) 우선")로 합친다 — 두 쪽 다 실데이터인 금액
+ * 이력이라 rename처럼 그냥 덮어쓰면 안 된다(mergeCatInto household 분기와 동일한 이유). 되돌리기에
+ * 필요한 이전 상태를 [{owner,hadFrom,fromVal,toBefore}]로 돌려준다(app-evolve cycle398
+ * critique/advance). */
+function mergeOwnerBudgetsForCat(from,toName){
+ const out=[];
+ if(DB.ownerBudgets)Object.keys(DB.ownerBudgets).forEach(o=>{
+  const om=DB.ownerBudgets[o];if(!om)return;
+  const hadFrom=from in om,hadTo=toName in om;
+  if(!hadFrom&&!hadTo)return;
+  const fromVal=hadFrom?om[from]:undefined,toBefore=hadTo?om[toName].slice():undefined;
+  const merged=mergeBudgetHistory({[toName]:om[toName]||[]},{[toName]:fromVal||[]})[toName];
+  if(merged.length)om[toName]=merged;else delete om[toName];
+  delete om[from];
+  out.push({owner:o,hadFrom,fromVal,toBefore});
+ });
+ return out;
+}
+function undoMergeOwnerBudgetsForCat(from,toName,entries){
+ entries.forEach(({owner,hadFrom,fromVal,toBefore})=>{
+  DB.ownerBudgets=DB.ownerBudgets||{};DB.ownerBudgets[owner]=DB.ownerBudgets[owner]||{};
+  if(hadFrom)DB.ownerBudgets[owner][from]=fromVal;
+  if(toBefore!==undefined)DB.ownerBudgets[owner][toName]=toBefore;else delete DB.ownerBudgets[owner][toName];
+ });
 }
 /* 카테고리별 예산 이월(catBudgetRollover) 토글이 켜져 있으면 전달의 "실질" 한도(flat+그 전달의
  * 이월, budgetForMonthWithCarry) 중 안 쓰고 남은 만큼(logic.js budgetCarry, 초과분은 0으로 clamp)을
@@ -8449,8 +8564,17 @@ function budgetCarryFor(c,y,m,depth=0,cache=null){
  * 이번 달 자체에 flat 예산이 없으면(0/미설정) 이월이 있어도 0을 그대로 돌려주므로(logic.js 주석
  * 참고), 기존 budgetForMonth()의 "falsy=미설정" 호출부 관례를 그대로 유지한다. depth는
  * budgetCarryFor의 재귀 체인을 위한 내부용 인자, cache는 budgetCarryFor와 동일한 메모이즈
- * Map으로 그대로 전달한다 — 바깥 호출부는 둘 다 생략하면 된다. */
-function budgetForMonthWithCarry(c,y,m,depth=0,cache=null){
+ * Map으로 그대로 전달한다 — 바깥 호출부는 둘 다 생략하면 된다. owner(기본 '전체')를 주고 그
+ * 귀속이 이 카테고리에 오버라이드(DB.ownerBudgets[owner][c])를 갖고 있으면 그 값을 이월 없이
+ * 그대로 돌려준다 — catBudgetRollover(예산 이월)는 설계상 household 전역 개념으로 남겨뒀으므로
+ * (critique/cycle398 계획의 범위 제외), 귀속별 한도는 이월 계산과 섞지 않는다. 오버라이드가 없으면
+ * (귀속이 이 카테고리를 household 그대로 따르는 중) 기존과 동일하게 household 이월 포함 값으로
+ * 폴백한다(app-evolve cycle398 critique/advance). */
+function budgetForMonthWithCarry(c,y,m,depth=0,cache=null,owner='전체'){
+ if(owner!=='전체'){
+  const h=DB.ownerBudgets&&DB.ownerBudgets[owner]&&DB.ownerBudgets[owner][c];
+  if(h&&h.length)return budgetHistoryValueAt(h,y,m);
+ }
  return budgetForMonthEffective(budgetForMonth(c,y,m),budgetCarryFor(c,y,m,depth,cache));
 }
 /* 예산이 설정된 카테고리만 골라 해당 달(y,m) 기준 전체 예산 대비 지출을 집계 — 예산이 하나도 없으면 budgetedTotal=0으로 '집계할 게 없음'을 나타낸다.
@@ -8458,12 +8582,16 @@ function budgetForMonthWithCarry(c,y,m,depth=0,cache=null){
  * 그중 이월로 얹힌 금액만 따로 합산해 openSpendAnalysis()의 '전달 이월 N원 포함' 캡션에 쓴다. cache는
  * budgetCarryFor와 공유하는 메모이즈 Map(app-evolve cycle299 advance) — openSpendAnalysis()가 이
  * 호출과 아래 카테고리 행 루프의 budgetForMonthWithCarry 호출에 같은 Map을 넘겨 카테고리당 이월
- * 재귀 체인을 한 화면에서 한 번만 계산한다. */
-function totalBudgetSummary(rows,y,m,cache=null){
+ * 재귀 체인을 한 화면에서 한 번만 계산한다. owner(기본 '전체')는 budgetForMonthWithCarry와 동일한
+ * 분기 — 귀속별 오버라이드가 있는 카테고리는 이월 없이 그 값을 쓰고(carryTotal에 포함 안 됨),
+ * 없는 카테고리만 기존 household+이월 경로를 탄다(app-evolve cycle398 critique/advance). */
+function totalBudgetSummary(rows,y,m,cache=null,owner='전체'){
  let budgetedTotal=0,spentOnBudgeted=0,overCount=0,unsetCount=0,carryTotal=0;
  rows.forEach(r=>{
-  const carry=budgetCarryFor(r.c,y,m,0,cache);
-  const b=budgetForMonthEffective(budgetForMonth(r.c,y,m),carry);
+  const ownerH=owner!=='전체'&&DB.ownerBudgets&&DB.ownerBudgets[owner]&&DB.ownerBudgets[owner][r.c];
+  const hasOwnerOverride=!!(ownerH&&ownerH.length);
+  const carry=hasOwnerOverride?0:budgetCarryFor(r.c,y,m,0,cache);
+  const b=hasOwnerOverride?budgetHistoryValueAt(ownerH,y,m):budgetForMonthEffective(budgetForMonth(r.c,y,m),carry);
   if(b){budgetedTotal+=b;spentOnBudgeted+=r.v;if(r.v>b)overCount++;carryTotal+=carry}
   else unsetCount++;
  });
@@ -8665,7 +8793,7 @@ function openSpendAnalysis(){
  if(ST.spendOwner!=='전체'&&!DB.owners.includes(ST.spendOwner))ST.spendOwner='전체'; /* 귀속 사라지면 전체로 (renderAssets/renderPlan과 동일 패턴) */
  const y=ST.ledger.y,m=ST.ledger.m;const catCache=makeMonthCatCache(spendByCategory,ST.spendOwner);const rows=catCache(y,m);const total=rows.reduce((s,r)=>s+r.v,0);
  const _bwc=new Map(); /* budgetCarryFor/budgetForMonthWithCarry 메모이즈 Map — 아래 totalBudgetSummary와 카테고리 행 루프가 같은 (카테고리,달) 이월을 두 번 계산하지 않게 공유한다(app-evolve cycle299 advance) */
- const tb=totalBudgetSummary(rows,y,m,_bwc);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
+ const tb=totalBudgetSummary(rows,y,m,_bwc,ST.spendOwner);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
  /* 카테고리 행과 동일한 선제 경고(위 paceWarn 주석 참고)를 전체 예산 합계에도 적용 — 아직 전체
   * 합계가 초과하지 않았을 때만(!tbp.over) 의미 있다. */
  const tbProj=tb.budgetedTotal&&!tbp.over?projectedMonthSpend(tb.spentOnBudgeted,y,m,TODAY):null;
@@ -8682,7 +8810,7 @@ function openSpendAnalysis(){
   * 이월 캡션에 쓴다 — 이 캡션이 원래 이 자리의 HTML 주석이었다(DOM에 그대로 렌더되던 바이트를
   * 평범한 JS 주석으로 옮겨 정리, cycle194 review 지적). */
  const body=rows.length?rows.map((r,idx)=>{
-   const budget=budgetForMonthWithCarry(r.c,y,m,0,_bwc); /* 카테고리별 이월(catBudgetRollover)이 켜져 있으면 전달 여윳돈이 더해진 실질 한도를 보여준다(app-evolve cycle194 advance) */
+   const budget=budgetForMonthWithCarry(r.c,y,m,0,_bwc,ST.spendOwner); /* 카테고리별 이월(catBudgetRollover)이 켜져 있으면 전달 여윳돈이 더해진 실질 한도를 보여준다(app-evolve cycle194 advance). ST.spendOwner가 '전체'가 아니고 그 귀속에 오버라이드가 있으면 이월 없이 그 한도를 그대로 쓴다(app-evolve cycle398 advance) */
    const bp=budgetProgress(r.v,budget);
    const pct=budget?bp.pct:(total?Math.round(r.v/total*100):0);
    const barPct=budget?bp.barPct:(total?r.v/total*100:0);
@@ -8721,43 +8849,65 @@ function openSpendAnalysisThisMonth(){ST.ledger.y=TM.y;ST.ledger.m=TM.m;openSpen
 /* 지출 분석 시트의 귀속 세그먼트 전환 — openCatManage(kind)와 동일하게 상태만 바꾸고 시트를 통째로 다시 연다 */
 function spendOwnerSel(i){const list=['전체',...DB.owners];ST.spendOwner=list[i]||'전체';openSpendAnalysis();}
 /* idx는 openSpendAnalysis()가 방금 그린 rows(현재 ST.spendOwner로 필터된 목록)의 인덱스이므로,
- * 여기서도 반드시 같은 owner로 필터해야 다른 카테고리를 잘못 가리키지 않는다 — 예산 자체는
- * setBudgetFrom/budgetForMonth가 귀속과 무관하게 카테고리 하나로 전역 적용한다. */
+ * 여기서도 반드시 같은 owner로 필터해야 다른 카테고리를 잘못 가리키지 않는다. ST.spendOwner가
+ * '전체'가 아니면 household budgetHistory 대신 DB.ownerBudgets[owner]를 조회/수정하는 경로로
+ * 분기한다(setBudgetFromOwner/budgetForMonthOwner) — household 쪽은 setBudgetFrom/budgetForMonth가
+ * 그대로 귀속과 무관하게 전역 적용한다(app-evolve cycle398 critique/advance로 귀속별 오버라이드
+ * 추가 전까지의 기존 동작). */
 function openBudgetPrompt(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
- const cur=budgetForMonth(r.c,y,m)||'';
- const carry=cur?budgetCarryFor(r.c,y,m):0; /* 이번 달 자체에 설정한 한도가 없으면(cur falsy) 이월해도 budgetForMonthEffective가 0으로 무시하므로 캡션도 보여주지 않는다 */
- openSheet(`<h3>${esc(r.c)} 예산 설정</h3><div class="desc">${m}월부터 ${esc(r.c)}에 쓸 수 있는 한도예요 · 바꾸기 전까지 이후 달에도 계속 적용돼요</div>
+ const owner=ST.spendOwner||'전체';
+ const ownerMode=owner!=='전체';
+ const ownerH=ownerMode&&DB.ownerBudgets&&DB.ownerBudgets[owner]&&DB.ownerBudgets[owner][r.c];
+ const hasOwnerOverride=!!(ownerH&&ownerH.length);
+ const cur=(ownerMode?budgetForMonthOwner(owner,r.c,y,m):budgetForMonth(r.c,y,m))||'';
+ const carry=(!ownerMode&&cur)?budgetCarryFor(r.c,y,m):0; /* 이번 달 자체에 설정한 한도가 없으면(cur falsy) 이월해도 budgetForMonthEffective가 0으로 무시하므로 캡션도 보여주지 않는다. 귀속 오버라이드는 이월 범위 밖(budgetForMonthWithCarry와 동일한 설계, cycle398) */
+ const canDelete=ownerMode?hasOwnerOverride:!!cur; /* 귀속 모드에서 지금 보이는 한도가 household에서 폴백된 값이면(이 귀속만의 오버라이드가 아직 없음) 지울 게 없으므로 '취소'만 보여준다 */
+ openSheet(`<h3>${esc(r.c)} 예산 설정${ownerMode?` · ${esc(owner)}`:''}</h3><div class="desc">${m}월부터 ${esc(r.c)}에 쓸 수 있는 한도예요 · 바꾸기 전까지 이후 달에도 계속 적용돼요${ownerMode&&!hasOwnerOverride?' · 지금은 가구 전체 한도를 따르고 있어요':''}</div>
   <div class="field"><div class="field-clear"><input id="budgetIn" class="num" inputmode="numeric" placeholder="예산 금액(원)" value="${cur?comma(cur):''}" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter')saveBudget(${idx})"><button type="button" class="fc-x" aria-label="예산 금액 지우기" onclick="clrInput('budgetIn')">✕</button></div></div>
   ${carry?`<div class="desc" style="margin-top:-6px">전달 이월 ${comma(carry)}원이 더해져 이번 달 총 ${comma(cur+carry)}원까지 쓸 수 있어요</div>`:''}
-  <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="delBudget(${idx})">예산 삭제</button>`:`<button class="btn btn-soft cancel" onclick="openSpendAnalysis()">취소</button>`}<button class="btn btn-primary" onclick="saveBudget(${idx})">저장</button></div>`);
+  <div class="two-btn" style="margin-bottom:16px">${canDelete?`<button class="btn btn-soft cancel" onclick="delBudget(${idx})">예산 삭제</button>`:`<button class="btn btn-soft cancel" onclick="openSpendAnalysis()">취소</button>`}<button class="btn btn-primary" onclick="saveBudget(${idx})">저장</button></div>`);
  setTimeout(()=>{const el=$('budgetIn');el&&el.focus()},300);
 }
 function saveBudget(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
+ const owner=ST.spendOwner||'전체';const ownerMode=owner!=='전체';
  const v=Math.round(num($('budgetIn')));
  if(!v||v<0){toast('올바른 금액을 입력해 주세요');return}
  const key=budgetKey(y,m);
- const h=DB.budgetHistory&&DB.budgetHistory[r.c];
+ const h=ownerMode?(DB.ownerBudgets&&DB.ownerBudgets[owner]&&DB.ownerBudgets[owner][r.c]):(DB.budgetHistory&&DB.budgetHistory[r.c]);
  const existing=h?h.find(e=>e.from===key):null; /* delBudget과 동일 패턴 — 덮어쓰기 전 이전 값을 기억해 되돌리기에 쓴다 */
  const prevAmount=existing?existing.amount:undefined;
- setBudgetFrom(r.c,y,m,v);save();openSpendAnalysis();
+ if(ownerMode)setBudgetFromOwner(owner,r.c,y,m,v);else setBudgetFrom(r.c,y,m,v);
+ save();openSpendAnalysis();
  undoToast('예산을 저장했어요',()=>{
-  if(existing)setBudgetFrom(r.c,y,m,prevAmount);
-  else{const hh=DB.budgetHistory&&DB.budgetHistory[r.c];if(hh){const i=hh.findIndex(e=>e.from===key);if(i>=0)hh.splice(i,1)}}
+  if(ownerMode){
+   if(existing)setBudgetFromOwner(owner,r.c,y,m,prevAmount);
+   else{const hh=DB.ownerBudgets&&DB.ownerBudgets[owner]&&DB.ownerBudgets[owner][r.c];if(hh){const i=hh.findIndex(e=>e.from===key);if(i>=0)hh.splice(i,1)}}
+  }else{
+   if(existing)setBudgetFrom(r.c,y,m,prevAmount);
+   else{const hh=DB.budgetHistory&&DB.budgetHistory[r.c];if(hh){const i=hh.findIndex(e=>e.from===key);if(i>=0)hh.splice(i,1)}}
+  }
   save();renderCurrent();openSpendAnalysis();toast('되돌렸어요')
  });
 }
 function delBudget(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
+ const owner=ST.spendOwner||'전체';const ownerMode=owner!=='전체';
  const key=budgetKey(y,m);
- const h=DB.budgetHistory&&DB.budgetHistory[r.c];
+ const h=ownerMode?(DB.ownerBudgets&&DB.ownerBudgets[owner]&&DB.ownerBudgets[owner][r.c]):(DB.budgetHistory&&DB.budgetHistory[r.c]);
  const existing=h?h.find(e=>e.from===key):null; /* 보고 있는 달에 정확히 일치하는 이력 항목이 이미 있었는지(있었다면 되돌릴 때 그 값으로, 없었다면 새로 추가한 0항목을 제거) */
  const prevAmount=existing?existing.amount:undefined;
- setBudgetFrom(r.c,y,m,0);save();openSpendAnalysis(); /* 과거 이력은 그대로 두고 이번 달부터 0(미설정)으로 되돌리는 항목만 추가 — 지난 달들의 초과/이내 표시는 보존됨 */
+ if(ownerMode)setBudgetFromOwner(owner,r.c,y,m,0);else setBudgetFrom(r.c,y,m,0);
+ save();openSpendAnalysis(); /* 과거 이력은 그대로 두고 이번 달부터 0(미설정)으로 되돌리는 항목만 추가 — 지난 달들의 초과/이내 표시는 보존됨 */
  undoToast(`'${esc(r.c)}' 예산을 삭제했어요`,()=>{
-  if(existing)setBudgetFrom(r.c,y,m,prevAmount);
-  else{const hh=DB.budgetHistory&&DB.budgetHistory[r.c];if(hh){const i=hh.findIndex(e=>e.from===key);if(i>=0)hh.splice(i,1)}}
+  if(ownerMode){
+   if(existing)setBudgetFromOwner(owner,r.c,y,m,prevAmount);
+   else{const hh=DB.ownerBudgets&&DB.ownerBudgets[owner]&&DB.ownerBudgets[owner][r.c];if(hh){const i=hh.findIndex(e=>e.from===key);if(i>=0)hh.splice(i,1)}}
+  }else{
+   if(existing)setBudgetFrom(r.c,y,m,prevAmount);
+   else{const hh=DB.budgetHistory&&DB.budgetHistory[r.c];if(hh){const i=hh.findIndex(e=>e.from===key);if(i>=0)hh.splice(i,1)}}
+  }
   save();renderCurrent();openSpendAnalysis();toast('되돌렸어요')
  });
 }
@@ -8986,9 +9136,10 @@ function doDeleteCat(k,i){if(twGuard())return;const c=DB.categories[k][i];
  const icon=DB.catIcon[catKey(k,c)];const wasVar=isVarCat(k,c);
  const hadBudget=k==='expense'&&DB.budgetHistory&&c in DB.budgetHistory;const budgetVal=hadBudget?DB.budgetHistory[c]:undefined;
  const wasRollover=k==='expense'&&isBudgetRolloverCat(c); /* catVar와 동일하게 삭제·되돌리기에서 함께 이동시켜야 유령으로 남거나 끊기지 않음(app-evolve cycle194 advance) */
+ const ownerBudgetEntries=k==='expense'?popOwnerBudgetsForCat(c):[]; /* budgetHistory(household)와 동일하게 모든 귀속의 오버라이드도 함께 치운다(app-evolve cycle398 critique/advance) */
  recs.forEach(r=>{r.active=false;r._autoDeactivatedByCatDelete=true}); /* deleteAssetsUndo의 _autoDeactivatedByAssetDelete(11686행)와 동일한 원인 표시 — restoreTrashCat이 나중에 이 플래그가 남아있는 레코드만 재활성화해, 트래시 기간 중 사용자가 직접 멈춰둔 반복거래를 덮어쓰지 않는다(app-evolve cycle325 critique/advance) */
  const trashId=catTombKey(k,c);
- const trashCat={id:trashId,type:k,name:c,icon:icon||null,catVar:wasVar,hadBudget,budgetVal,wasRollover,deactivatedRecIds:recs.map(r=>r.id),_deletedAt:Date.now()}; /* '최근 삭제함' — undoToast의 6초가 지나도(또는 앱을 닫았다 다시 열어도) gcTrashTxns 보존기간까지는 복구 가능(app-evolve cycle325 critique/advance, DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals/DB.trashQtyLog와 동일 패턴) */
+ const trashCat={id:trashId,type:k,name:c,icon:icon||null,catVar:wasVar,hadBudget,budgetVal,wasRollover,ownerBudgetEntries,deactivatedRecIds:recs.map(r=>r.id),_deletedAt:Date.now()}; /* '최근 삭제함' — undoToast의 6초가 지나도(또는 앱을 닫았다 다시 열어도) gcTrashTxns 보존기간까지는 복구 가능(app-evolve cycle325 critique/advance, DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals/DB.trashQtyLog와 동일 패턴). ownerBudgetEntries는 popOwnerBudgetsForCat이 돌려준 [{owner,val}] — restoreTrashCat이 6초 이후의 장기 복원에서도 귀속별 오버라이드를 되살릴 수 있게 함께 보관한다(cycle398) */
  DB.trashCats=(DB.trashCats||[]).concat([trashCat]);
  DB.categories[k].splice(i,1);
  delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산/이월설정도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
@@ -9003,6 +9154,7 @@ function doDeleteCat(k,i){if(twGuard())return;const c=DB.categories[k][i];
   if(wasVar)DB.catVar[catKey(k,c)]=true;
   if(hadBudget){DB.budgetHistory=DB.budgetHistory||{};DB.budgetHistory[c]=budgetVal}
   if(wasRollover)DB.catBudgetRollover[catKey('expense',c)]=true;
+  restoreOwnerBudgetsForCat(c,ownerBudgetEntries);
   recs.forEach(r=>{r.active=true;delete r._autoDeactivatedByCatDelete});
   delete DB.deletedIds[catTombKey(k,c)];
   DB.trashCats=(DB.trashCats||[]).filter(x=>x.id!==trashId);
@@ -9025,16 +9177,17 @@ function doDeleteCatsUndo(k,names){
   const icon=DB.catIcon[catKey(k,c)];const wasVar=isVarCat(k,c);
   const hadBudget=k==='expense'&&DB.budgetHistory&&c in DB.budgetHistory;const budgetVal=hadBudget?DB.budgetHistory[c]:undefined;
   const wasRollover=k==='expense'&&isBudgetRolloverCat(c);
+  const ownerBudgetEntries=k==='expense'?popOwnerBudgetsForCat(c):[]; /* doDeleteCat과 동일(app-evolve cycle398 critique/advance) */
   recs.forEach(r=>{r.active=false;r._autoDeactivatedByCatDelete=true});
   const trashId=catTombKey(k,c);
-  DB.trashCats=(DB.trashCats||[]).concat([{id:trashId,type:k,name:c,icon:icon||null,catVar:wasVar,hadBudget,budgetVal,wasRollover,deactivatedRecIds:recs.map(r=>r.id),_deletedAt:now}]);
+  DB.trashCats=(DB.trashCats||[]).concat([{id:trashId,type:k,name:c,icon:icon||null,catVar:wasVar,hadBudget,budgetVal,wasRollover,ownerBudgetEntries,deactivatedRecIds:recs.map(r=>r.id),_deletedAt:now}]);
   DB.categories[k]=DB.categories[k].filter(x=>x!==c);
   delete DB.catIcon[catKey(k,c)];
   delete DB.catVar[catKey(k,c)];
   if(hadBudget)delete DB.budgetHistory[c];
   if(k==='expense')delete DB.catBudgetRollover[catKey('expense',c)];
   DB.deletedIds=DB.deletedIds||{};DB.deletedIds[catTombKey(k,c)]=now;
-  removed.push({c,icon,wasVar,hadBudget,budgetVal,wasRollover,recs,trashId});
+  removed.push({c,icon,wasVar,hadBudget,budgetVal,wasRollover,ownerBudgetEntries,recs,trashId});
  });
  if(!removed.length)return;
  const allRecs=removed.flatMap(x=>x.recs);
@@ -9046,6 +9199,7 @@ function doDeleteCatsUndo(k,names){
    if(x.wasVar)DB.catVar[catKey(k,x.c)]=true;
    if(x.hadBudget){DB.budgetHistory=DB.budgetHistory||{};DB.budgetHistory[x.c]=x.budgetVal}
    if(x.wasRollover)DB.catBudgetRollover[catKey('expense',x.c)]=true;
+   restoreOwnerBudgetsForCat(x.c,x.ownerBudgetEntries);
    x.recs.forEach(r=>{r.active=true;delete r._autoDeactivatedByCatDelete});
    delete DB.deletedIds[catTombKey(k,x.c)];
    DB.trashCats=(DB.trashCats||[]).filter(t=>t.id!==x.trashId);
@@ -9085,7 +9239,7 @@ function doRenameCat(k,i){if(twGuard())return;const v=cleanName(catRenameDraft.n
  if(wasVar)DB.catVar[vKey]=true;
  if(k==='expense'){delete DB.catBudgetRollover[catKey('expense',old)];if(wasRollover)DB.catBudgetRollover[catKey('expense',v)]=true}
  const txItems=[],recItems=[];
- let budgetTouched=false,prevOldBudget,prevVBudget,tombTouched=false,prevVTomb,histTouched=false;
+ let budgetTouched=false,prevOldBudget,prevVBudget,tombTouched=false,prevVTomb,histTouched=false,ownerBudgetMoved=[];
  if(v!==old){
   DB.categories[k][i]=v;
   DB.txns.forEach(t=>{ /* 메모가 카테고리명과 같았던(=자동 채움) 내역도 recurrences와 동일하게 이동. touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 이름변경을 조용히 되돌릴 수 있음(doRenameOwner와 동일한 불변식). 복원을 위해 바뀐 레코드만 이전 값과 함께 모아둔다(mergeCatInto와 동일 패턴) */
@@ -9109,6 +9263,7 @@ function doRenameCat(k,i){if(twGuard())return;const v=cleanName(catRenameDraft.n
    if(changed){if(r.memo===old)r.memo=v;touch(r);recItems.push({r,prevCat,prevMemo,prevSplits})}
   });
   if(k==='expense'&&DB.budgetHistory&&old in DB.budgetHistory){budgetTouched=true;prevOldBudget=DB.budgetHistory[old];prevVBudget=DB.budgetHistory[v];DB.budgetHistory[v]=DB.budgetHistory[old];delete DB.budgetHistory[old]} /* 이름 변경 시 예산 이력도 함께 이동 */
+  if(k==='expense')ownerBudgetMoved=moveOwnerBudgetsForCat(old,v); /* 모든 귀속의 오버라이드도 household budgetHistory와 동일하게 이동(app-evolve cycle398 critique/advance) */
   DB.deletedIds=DB.deletedIds||{};tombTouched=true;prevVTomb=DB.deletedIds[catTombKey(k,v)];DB.deletedIds[catTombKey(k,old)]=Date.now();delete DB.deletedIds[catTombKey(k,v)]; /* old 이름도 doDeleteCat처럼 톰스톤해야 함 — 안 그러면 mergeNameListWithTombstones가 old를 '살아있다'고 보고 아직 이 이름변경을 모르는 다른 기기의 사본이 old를 되살림(app-evolve cycle180). v가 과거에 삭제됐던 이름이면 그 톰스톤은 지워 되살림을 허용 */
   if(ST.hist&&ST.hist.catExact===old&&(ST.hist.catExactType||'expense')===k){histTouched=true;ST.hist.catExact=v} /* 전체내역 탭의 분석화면 카테고리 드릴다운 필터(ST.hist.catExact, openCatHistory/openIncomeCatHistory가 세팅하고 ST.hist.catExactType으로 유형을 구분·필터 자체는 filteredHist의 (H.catExactType||'expense') 규칙과 동일)가 doRenameOwner의 ST.hist.owner와 똑같은 사연으로 낡은 이름에 남아있었다 — DB.txns는 위에서 이미 새 이름으로 옮겼으므로, 그 상태로 전체내역 탭에 돌아가면 칩은 새 이름이 아니라 옛 이름을 보여주면서 필터(t.category===old 그대로)는 어떤 거래와도 안 맞아 내역이 영원히 빈 화면으로 보인다(app-evolve cycle182). catExactType이 없던(과거 expense 전용) 데이터도 ||'expense' 기본값으로 그대로 맞으므로 수입 카테고리 이름변경이 지출 전용 필터를 잘못 건드리지 않는다 */
  }
@@ -9118,6 +9273,7 @@ function doRenameCat(k,i){if(twGuard())return;const v=cleanName(catRenameDraft.n
   txItems.forEach(({t,prevCat,prevMemo,prevSplits})=>{t.category=prevCat;t.memo=prevMemo;if(prevSplits)t.splits.forEach((s,idx)=>{s.category=prevSplits[idx]})});
   recItems.forEach(({r,prevCat,prevMemo,prevSplits})=>{r.category=prevCat;r.memo=prevMemo;if(prevSplits)r.splits.forEach((s,idx)=>{s.category=prevSplits[idx]})});
   if(budgetTouched){DB.budgetHistory[old]=prevOldBudget;if(prevVBudget!==undefined)DB.budgetHistory[v]=prevVBudget;else delete DB.budgetHistory[v]}
+  undoMoveOwnerBudgetsForCat(old,v,ownerBudgetMoved);
   if(tombTouched){delete DB.deletedIds[catTombKey(k,old)];if(prevVTomb!==undefined)DB.deletedIds[catTombKey(k,v)]=prevVTomb;else delete DB.deletedIds[catTombKey(k,v)]}
   if(histTouched)ST.hist.catExact=old;
   if(prevIconOld!==undefined)DB.catIcon[oldKey]=prevIconOld;else delete DB.catIcon[oldKey];
@@ -9202,6 +9358,7 @@ function mergeCatInto(k,i,toName){if(twGuard())return;
   }else if(r.category===from){r.category=toName;changed=true}
   if(changed){if(r.memo===from)r.memo=toName;recItems.push({r,prevCat,prevMemo,prevSplits})}
  });
+ let ownerBudgetMerged=[];
  if(k==='expense'){
   if(hadBudget||toName in DB.budgetHistory){
    const merged=mergeBudgetHistory({[toName]:DB.budgetHistory[toName]||[]},{[toName]:fromBudget||[]})[toName];
@@ -9209,6 +9366,7 @@ function mergeCatInto(k,i,toName){if(twGuard())return;
   }
   delete DB.budgetHistory[from];
   delete DB.catBudgetRollover[catKey('expense',from)];
+  ownerBudgetMerged=mergeOwnerBudgetsForCat(from,toName); /* 모든 귀속의 오버라이드도 household budgetHistory와 동일한 "local(toName) 우선" 규칙으로 합친다(app-evolve cycle398 critique/advance) */
  }
  delete DB.catIcon[catKey(k,from)];
  delete DB.catVar[catKey(k,from)];
@@ -9228,6 +9386,7 @@ function mergeCatInto(k,i,toName){if(twGuard())return;
   if(k==='expense'){
    if(hadBudget){DB.budgetHistory=DB.budgetHistory||{};DB.budgetHistory[from]=fromBudget}
    if(toBudgetBefore!==undefined)DB.budgetHistory[toName]=toBudgetBefore;else delete DB.budgetHistory[toName];
+   undoMergeOwnerBudgetsForCat(from,toName,ownerBudgetMerged);
   }
   if(wasRollover)DB.catBudgetRollover[catKey('expense',from)]=true;
   delete DB.deletedIds[catTombKey(k,from)];
@@ -10863,6 +11022,38 @@ function sanitizeBackup(obj){
   cleaned.sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0);
   budgetHistory[cat]=cleaned;
  });
+ /* DB.ownerBudgets(귀속별 예산 오버라이드, app-evolve cycle398 critique/advance)는 budgetHistory를
+  * 귀속 이름으로 한 번 더 감싼 {owner:{cat:[{from,amount}]}}이라 바로 위와 동일한 검증(from
+  * "YYYY-MM" 형식, amount 음수·NaN 클램프)을 귀속마다 적용한다. validOwners(위 assets 블록에서
+  * 이미 계산)에 없는 귀속 이름(사라진 귀속에 매달린 유령 오버라이드)은 통째로 버린다 — doDeleteCat/
+  * delOwner가 삭제 시 지웠어야 할 데이터가 검증 없는 백업 복원 경로로 다시 들어오는 걸 catIcon/
+  * catVar와 동일한 이유로 막는다. */
+ const srcOwnerBudgetsRaw=obj&&obj.ownerBudgets;
+ const srcOwnerBudgets=(srcOwnerBudgetsRaw&&typeof srcOwnerBudgetsRaw==='object'&&!Array.isArray(srcOwnerBudgetsRaw))?srcOwnerBudgetsRaw:{};
+ if(srcOwnerBudgetsRaw!=null&&srcOwnerBudgets!==srcOwnerBudgetsRaw)fixedCount++;
+ const ownerBudgets={};
+ Object.keys(srcOwnerBudgets).forEach(owner=>{
+  if(validOwners.length&&!validOwners.includes(owner)){fixedCount++;return}
+  const srcCatMapRaw=srcOwnerBudgets[owner];
+  const srcCatMap=(srcCatMapRaw&&typeof srcCatMapRaw==='object'&&!Array.isArray(srcCatMapRaw))?srcCatMapRaw:{};
+  if(srcCatMapRaw!=null&&srcCatMap!==srcCatMapRaw)fixedCount++;
+  const catMap={};
+  Object.keys(srcCatMap).forEach(cat=>{
+   const rawArr=srcCatMap[cat];
+   const arr=Array.isArray(rawArr)?rawArr:[];
+   if(!Array.isArray(rawArr))fixedCount++;
+   const cleaned=[];
+   arr.forEach(e=>{
+    if(!e||typeof e.from!=='string'||!/^\d{4}-(0[1-9]|1[0-2])$/.test(e.from)){fixedCount++;return}
+    const amt=sanitizeAmount(e.amount,0);
+    if(amt!==e.amount)fixedCount++;
+    cleaned.push({from:e.from,amount:amt});
+   });
+   cleaned.sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0);
+   if(cleaned.length)catMap[cat]=cleaned;
+  });
+  if(Object.keys(catMap).length)ownerBudgets[owner]=catMap;
+ });
  /* DB.budgets(budgetHistory 신설 전 시간축 없는 레거시 flat 맵, 카테고리→금액)는 budgetHistory
   * 바로 위 블록까지 모든 형제 컬렉션이 검증되는 와중에도 유일하게 그대로 통과되고 있었다 —
   * migrate()의 1회 변환(DB._budgetHistV1 가드, 2110줄)이 obj.budgets[c]를 그대로
@@ -11056,7 +11247,7 @@ function sanitizeBackup(obj){
  });
  txns=dedupeIds(txns);assets=dedupeIds(assets);recurrences=dedupeIds(recurrences);
  goals=dedupeIds(goals);inquiries=dedupeIds(inquiries);assetQtyLog=dedupeIds(assetQtyLog);trashTxns=dedupeIds(trashTxns);trashAssets=dedupeIds(trashAssets);trashRecs=dedupeIds(trashRecs);trashGoals=dedupeIds(trashGoals);trashQtyLog=dedupeIds(trashQtyLog);trashCats=dedupeIds(trashCats);trashInquiries=dedupeIds(trashInquiries);
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,trashTxns,trashAssets,trashRecs,trashGoals,trashQtyLog,trashCats,trashInquiries,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,trashTxns,trashAssets,trashRecs,trashGoals,trashQtyLog,trashCats,trashInquiries,categories,owners,budgetHistory,ownerBudgets,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
@@ -13715,6 +13906,7 @@ function restoreTrashCat(id){
  if(g.catVar)DB.catVar[catKey(k,c)]=true;
  if(g.hadBudget)DB.budgetHistory[c]=g.budgetVal;
  if(g.wasRollover)DB.catBudgetRollover[catKey('expense',c)]=true;
+ restoreOwnerBudgetsForCat(c,g.ownerBudgetEntries); /* doDeleteCat이 트래시 레코드에 함께 보관해 둔 귀속별 오버라이드 — 6초 undoToast가 지난 뒤의 장기 복원에서도 되살린다(app-evolve cycle398 critique/advance). 구버전 트래시 레코드엔 이 필드가 없을 수 있음(undefined → restoreOwnerBudgetsForCat의 길이 가드로 안전하게 no-op) */
  const recIds=new Set(g.deactivatedRecIds||[]);
  const recs=DB.recurrences.filter(r=>r._autoDeactivatedByCatDelete&&recIds.has(r.id));
  const live=aid=>DB.assets.some(x=>x.id===aid);

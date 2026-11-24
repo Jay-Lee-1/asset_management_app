@@ -195,6 +195,7 @@ const FUNCTIONS = [
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat', 'catSelectableIdx',
   'num', 'doRenameCat', 'doDeleteCat', 'doDeleteCatsUndo', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
+  'budgetForMonthOwner', 'setBudgetFromOwner', 'popOwnerBudgetsForCat', 'restoreOwnerBudgetsForCat', 'moveOwnerBudgetsForCat', 'undoMoveOwnerBudgetsForCat', 'mergeOwnerBudgetsForCat', 'undoMergeOwnerBudgetsForCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'allocSeriesChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV', 'recurrencesToCSV', 'goalsToCSV', 'budgetHistoryToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   // openCsvColumnMap/buildGenericImportPreview 등은 app-evolve cycle251 advance(은행/카드사 CSV
@@ -3134,6 +3135,46 @@ test('setBudgetFrom: 과거 달을 보면서 저장해도(예: 6월을 보다가
   assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000, '이후 달 값은 영향받지 않아야 함');
 });
 
+/* ---------- budgetForMonthOwner/setBudgetFromOwner: 귀속별 예산 오버라이드(app-evolve cycle398
+ * critique/advance) — DB.ownerBudgets[owner][cat]가 household budgetHistory와 동일한
+ * {from,amount} 이력 shape을 쓰면서, 귀속이 이 카테고리에 한 번도 오버라이드를 설정한 적이
+ * 없으면 household budgetForMonth로 폴백한다. ---------- */
+test('budgetForMonthOwner: 귀속에 오버라이드 이력이 없으면 household budgetForMonth로 폴백한다', () => {
+  sandbox.DB = { budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] }, ownerBudgets: {} };
+  assert.strictEqual(sandbox.budgetForMonthOwner('나', '식비', 2026, 6), 300000);
+});
+test('budgetForMonthOwner: owner===\'전체\'는 household 그 자체라 오버라이드를 조회하지 않는다', () => {
+  sandbox.DB = { budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] }, ownerBudgets: { 전체: { 식비: [{ from: '2026-01', amount: 999999 }] } } };
+  assert.strictEqual(sandbox.budgetForMonthOwner('전체', '식비', 2026, 6), 300000, "owner='전체'일 때 ownerBudgets['전체']가 있어도 무시하고 household를 써야 함");
+});
+test('budgetForMonthOwner: 귀속이 이 카테고리에 오버라이드를 갖고 있으면 household과 무관하게 그 값을 쓴다', () => {
+  sandbox.DB = { budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] }, ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: 100000 }] } } };
+  assert.strictEqual(sandbox.budgetForMonthOwner('나', '식비', 2026, 6), 100000);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000, 'household 값 자체는 영향받지 않아야 함');
+});
+test('budgetForMonthOwner: 다른 귀속의 오버라이드는 서로 영향을 주지 않는다', () => {
+  sandbox.DB = { budgetHistory: {}, ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: 100000 }] } } };
+  assert.strictEqual(sandbox.budgetForMonthOwner('배우자', '식비', 2026, 6), 0, '다른 귀속은 오버라이드가 없고 household도 미설정이라 0');
+});
+test('budgetForMonthOwner: DB.ownerBudgets 자체가 없어도(undefined) 터지지 않고 household로 폴백한다', () => {
+  sandbox.DB = { budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] } };
+  assert.doesNotThrow(() => sandbox.budgetForMonthOwner('나', '식비', 2026, 6));
+  assert.strictEqual(sandbox.budgetForMonthOwner('나', '식비', 2026, 6), 300000);
+});
+test('setBudgetFromOwner: DB.budgetHistory(household)는 건드리지 않고 DB.ownerBudgets[owner][c]에만 기록한다', () => {
+  sandbox.DB = { budgetHistory: {}, ownerBudgets: {} };
+  sandbox.setBudgetFromOwner('나', '식비', 2026, 6, 150000);
+  assert.strictEqual(sandbox.budgetForMonthOwner('나', '식비', 2026, 6), 150000);
+  assert.strictEqual('식비' in sandbox.DB.budgetHistory, false, 'household budgetHistory에는 아무것도 쓰지 않아야 함');
+});
+test('setBudgetFromOwner: 같은 달에 다시 저장하면 그 달 항목만 덮어쓴다(setBudgetFrom과 동일한 setBudgetHistoryAt 재사용 확인)', () => {
+  sandbox.DB = {};
+  sandbox.setBudgetFromOwner('나', '식비', 2026, 6, 100000);
+  sandbox.setBudgetFromOwner('나', '식비', 2026, 6, 120000);
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.식비.length, 1);
+  assert.strictEqual(sandbox.budgetForMonthOwner('나', '식비', 2026, 6), 120000);
+});
+
 /* ---------- budgetCarry/budgetForMonthEffective(logic.js): 예산 이월(rollover, 순수) ---------- */
 test('budgetCarry: 전달 예산을 다 못 쓰고 남았으면 그 여윳돈을 그대로 돌려준다', () => {
   assert.strictEqual(sandbox.budgetCarry(300000, 200000), 100000);
@@ -3302,6 +3343,41 @@ test('budgetForMonthWithCarry: 토글이 켜져 있으면 이월분이 더해진
   };
   assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 6), 400000, '300000 + 전달 여윳돈 100000');
 });
+/* 귀속별 오버라이드(app-evolve cycle398 critique/advance)가 있으면 이월(catBudgetRollover)은
+ * household 전역 개념으로 범위 밖에 남겨둔 설계라, 이월이 켜져 있어도 오버라이드 값을 그대로
+ * 돌려준다(이월분을 더하지 않음). 오버라이드가 없는 귀속(또는 owner='전체')은 기존과 동일하게
+ * household+이월 경로를 탄다. */
+test("budgetForMonthWithCarry: 귀속에 오버라이드가 있으면 이월(catBudgetRollover)이 켜져 있어도 이월 없이 오버라이드 값을 그대로 쓴다", () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
+    ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: 100000 }] } },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 6, 0, null, '나'), 100000, '이월분 100000을 더하지 않고 오버라이드 100000을 그대로 써야 함');
+  assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 6), 400000, 'owner 생략(household)은 기존처럼 이월이 더해져야 함');
+});
+test("budgetForMonthWithCarry: 귀속에 오버라이드가 없으면(owner!=='전체'여도) household+이월 경로로 폴백한다", () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
+    ownerBudgets: {},
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 6, 0, null, '나'), 400000);
+});
+test("budgetForMonthWithCarry: owner='전체'는 오버라이드 조회 자체를 건너뛴다", () => {
+  sandbox.DB = {
+    catBudgetRollover: {},
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
+    ownerBudgets: { 전체: { 식비: [{ from: '2026-01', amount: 999999 }] } },
+    txns: [],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 6, 0, null, '전체'), 300000);
+});
 /* budgetCarryFor/budgetForMonthWithCarry에 선택적 cache(Map) 인자를 추가해 homeAlerts()/
  * openSpendAnalysis()가 `${c}:${y}-${m}` 키로 재귀 체인을 공유하게 했다(app-evolve cycle299
  * advance) — spendTrend/incomeTrend의 cache 인자(cycle294)와 동일한 하위호환 패턴으로,
@@ -3397,6 +3473,41 @@ test('totalBudgetSummary: 예산을 인상하기 전 과거 달을 조회하면 
   assert.strictEqual(now.budgetedTotal, 200000);
   assert.strictEqual(now.overCount, 0, '나중에 예산을 올렸다고 과거 조회가 아니라 인상 이후 조회만 이내로 바뀌어야 함');
 });
+/* 귀속별 오버라이드(app-evolve cycle398 critique/advance)가 있는 카테고리는 이월 없이 그 값을
+ * budgetedTotal에 합산하고 carryTotal에는 포함하지 않는다 — budgetForMonthWithCarry의 owner
+ * 분기와 동일한 "오버라이드면 이월 범위 밖" 규칙을 요약 집계에도 그대로 적용한다. */
+test('totalBudgetSummary: owner를 주면 그 귀속의 오버라이드가 있는 카테고리는 household 예산이 아니라 오버라이드로 집계된다', () => {
+  sandbox.DB = { budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] }, ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: 80000 }] } } };
+  const rows = [{ c: '식비', v: 100000 }];
+  const r = sandbox.totalBudgetSummary(rows, 2026, 6, null, '나');
+  assert.strictEqual(r.budgetedTotal, 80000, 'household의 300000이 아니라 오버라이드 80000이 쓰여야 함');
+  assert.strictEqual(r.overCount, 1, '80000 한도에 100000을 썼으니 초과');
+  const household = sandbox.totalBudgetSummary(rows, 2026, 6);
+  assert.strictEqual(household.budgetedTotal, 300000, 'owner 생략(household)은 영향받지 않아야 함');
+});
+test('totalBudgetSummary: 오버라이드가 있는 카테고리는 이월(catBudgetRollover)이 켜져 있어도 carryTotal에 포함되지 않는다', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
+    ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: 80000 }] } },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+  };
+  const rows = [{ c: '식비', v: 50000 }];
+  const r = sandbox.totalBudgetSummary(rows, 2026, 6, null, '나');
+  assert.strictEqual(r.budgetedTotal, 80000);
+  assert.strictEqual(r.carryTotal, 0, '오버라이드 카테고리는 이월 계산 자체를 타지 않아야 함');
+});
+test('totalBudgetSummary: 오버라이드가 없는 귀속은 해당 카테고리에 대해 household+이월 경로로 집계된다(혼재 케이스)', () => {
+  sandbox.DB = {
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }], 교통: [{ from: '2026-01', amount: 50000 }] },
+    ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: 80000 }] } }, // 식비만 오버라이드, 교통은 household 폴백
+  };
+  const rows = [{ c: '식비', v: 100000 }, { c: '교통', v: 10000 }];
+  const r = sandbox.totalBudgetSummary(rows, 2026, 6, null, '나');
+  assert.strictEqual(r.budgetedTotal, 80000 + 50000, '식비는 오버라이드, 교통은 household 그대로 합산돼야 함');
+  assert.strictEqual(r.overCount, 1, '식비만 초과(80000<100000), 교통은 이내(50000>=10000)');
+});
 
 /* ---------- doRenameCat: 카테고리 이름변경 시 예산 이력도 함께 이동 ---------- */
 test('doRenameCat: 지출 카테고리 이름변경 시 DB.budgetHistory의 이력이 새 이름으로 이동한다', () => {
@@ -3411,6 +3522,32 @@ test('doRenameCat: 예산이 설정되지 않은 카테고리를 이름변경해
   sandbox.catRenameDraft = { name: '대중교통', icon: '' };
   sandbox.doRenameCat('expense', 0);
   assert.strictEqual(Object.keys(sandbox.DB.budgetHistory).length, 0);
+});
+/* household budgetHistory와 동일하게 모든 귀속의 ownerBudgets 오버라이드도 이름변경을 따라
+ * 이동해야 한다(app-evolve cycle398 critique/advance) — v가 이미 가진 오버라이드는 doRenameCat의
+ * 1:1 재배선 규칙대로 덮어써지고, undoToast로 양쪽 모두 복원된다. */
+test('doRenameCat: 모든 귀속의 ownerBudgets 오버라이드도 새 이름으로 함께 이동하고, undo하면 복원된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, budgetHistory: {},
+    ownerBudgets: {
+      나: { 식비: [{ from: '2026-01', amount: 80000 }] }, // 옛 이름만 가짐 -> 새 이름으로 이동
+      배우자: { 식비: [{ from: '2026-01', amount: 50000 }], 외식비: [{ from: '2026-01', amount: 999 }] }, // 옛/새 이름 둘 다 가짐 -> 1:1 재배선(덮어쓰기)
+      부모: { 외식비: [{ from: '2026-01', amount: 7 }] }, // 새 이름만 가짐, 옛 이름(식비)은 없음 -> 전혀 영향받지 않아야 함
+    },
+    txns: [], recurrences: [],
+  };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual('식비' in sandbox.DB.ownerBudgets.나, false, '옛 이름(식비)의 오버라이드는 제거돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.외식비[0].amount, 80000, '나의 오버라이드가 새 이름으로 이동해야 함');
+  assert.strictEqual('식비' in sandbox.DB.ownerBudgets.배우자, false);
+  assert.strictEqual(sandbox.DB.ownerBudgets.배우자.외식비[0].amount, 50000, '배우자가 이미 외식비에 갖고 있던 값(999)은 doRenameCat의 1:1 재배선 규칙대로 식비 값(50000)에 덮어써져야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.부모.외식비[0].amount, 7, '옛 이름(식비)이 없던 귀속은 전혀 영향받으면 안 됨');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.식비[0].amount, 80000, '되돌리면 나의 오버라이드가 옛 이름으로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.배우자.식비[0].amount, 50000, '되돌리면 배우자의 식비 오버라이드도 복원돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.배우자.외식비[0].amount, 999, '되돌리면 배우자가 원래 갖고 있던 외식비 값도 복원돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.부모.외식비[0].amount, 7, '관련 없던 귀속은 undo 후에도 그대로여야 함');
 });
 /* catVar/budgetHistory와 동일하게 예산 이월(catBudgetRollover) 토글도 이름변경을 따라 이동해야
  * 한다 — 안 하면 이름을 바꾸자마자 토글이 유령으로 끊기거나 새 이름에 옛 설정이 남는다
@@ -3443,6 +3580,34 @@ test('doDeleteCat: 삭제 시 catIcon/catVar/budgetHistory 항목이 함께 제�
   assert.strictEqual('expense:커피' in sandbox.DB.catIcon, false);
   assert.strictEqual('expense:커피' in sandbox.DB.catVar, false);
   assert.strictEqual('커피' in sandbox.DB.budgetHistory, false);
+});
+/* 모든 귀속의 DB.ownerBudgets[owner][c]도 household budgetHistory와 동일하게 함께 치워야 한다
+ * (app-evolve cycle398 critique/advance) — 안 그러면 같은 이름으로 재생성했을 때 유령 오버라이드가
+ * 되살아난다. */
+test('doDeleteCat: 삭제 시 모든 귀속의 ownerBudgets 오버라이드도 함께 제거되고, undo하면 복원된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: {}, catVar: {}, budgetHistory: {},
+    ownerBudgets: { 나: { 커피: [{ from: '2026-01', amount: 20000 }] }, 배우자: { 커피: [{ from: '2026-01', amount: 15000 }], 식비: [{ from: '2026-01', amount: 1 }] } },
+    txns: [], recurrences: [],
+  };
+  sandbox.doDeleteCat('expense', 0);
+  assert.strictEqual('커피' in sandbox.DB.ownerBudgets.나, false, '나의 커피 오버라이드가 제거돼야 함');
+  assert.strictEqual('커피' in sandbox.DB.ownerBudgets.배우자, false, '배우자의 커피 오버라이드도 제거돼야 함');
+  assert.strictEqual('식비' in sandbox.DB.ownerBudgets.배우자, true, '다른 카테고리(식비) 오버라이드는 영향받으면 안 됨');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.커피[0].amount, 20000, '되돌리면 나의 오버라이드가 복원돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.배우자.커피[0].amount, 15000, '되돌리면 배우자의 오버라이드도 복원돼야 함');
+});
+test('doDeleteCat: 수입/저축 카테고리는 ownerBudgets도 건드리지 않는다(household budgetHistory와 동일한 expense-only 범위)', () => {
+  sandbox.DB = {
+    categories: { income: ['용돈', '급여'] },
+    catIcon: {}, catVar: {}, budgetHistory: {},
+    ownerBudgets: { 나: { 용돈: [{ from: '2026-01', amount: 100000 }] } },
+    txns: [], recurrences: [],
+  };
+  sandbox.doDeleteCat('income', 0);
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.용돈[0].amount, 100000, 'income 타입은 ownerBudgets도 건드리면 안 됨');
 });
 test('doDeleteCat: 이월(rollover) 토글이 켜진 카테고리를 삭제하면 토글도 함께 제거되고, 되돌리면 토글도 함께 복원된다', () => {
   sandbox.DB = {
@@ -3784,6 +3949,21 @@ test('doDeleteCatsUndo: undo 콜백을 부르면 카테고리/아이콘/변동/�
   assert.strictEqual(r1._autoDeactivatedByCatDelete, undefined);
   assert.strictEqual(sandbox.DB.trashCats.length, 0, '되돌리면 트래시에서도 제거되어야 함');
 });
+/* doDeleteCat과 동일하게 doDeleteCatsUndo(일괄 삭제)도 모든 귀속의 ownerBudgets 오버라이드를 함께
+ * 치우고, undo로 복원한다(app-evolve cycle398 critique/advance). */
+test('doDeleteCatsUndo: 모든 귀속의 ownerBudgets 오버라이드도 함께 제거되고, undo하면 복원된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {},
+    ownerBudgets: { 나: { 커피: [{ from: '2026-01', amount: 20000 }] } },
+    txns: [], recurrences: [],
+  };
+  sandbox.lastUndo = null;
+  sandbox.doDeleteCatsUndo('expense', ['커피']);
+  assert.strictEqual('커피' in sandbox.DB.ownerBudgets.나, false);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.커피[0].amount, 20000, '되돌리면 오버라이드도 복원돼야 함');
+});
 test('doDeleteCatsUndo: 수입의 잔액 조정(ADJUST_CAT)이 섞여 있어도 그것만 건너뛰고 나머지는 지운다', () => {
   sandbox.DB = {
     categories: { income: ['급여', sandbox.ADJUST_CAT] },
@@ -4039,6 +4219,32 @@ test('mergeCatInto: budgetHistory는 from(월) 키로 유니온되고, 같은 �
     { from: '2026-03', amount: 50000 },
   ], '같은 달(2026-01)은 대상이 이기고, 서로 다른 달은 모두 살아남아야 함');
   assert.strictEqual('커피' in sandbox.DB.budgetHistory, false, 'from의 예산 이력은 더 이상 남아있으면 안 됨');
+});
+/* 모든 귀속의 ownerBudgets 오버라이드도 household budgetHistory와 동일한 "local(toName) 우선"
+ * mergeBudgetHistory 규칙으로 합쳐지고, undoToast로 되돌리면 양쪽 모두 복원된다(app-evolve
+ * cycle398 critique/advance). */
+test('mergeCatInto: 모든 귀속의 ownerBudgets 오버라이드도 동일한 규칙으로 합쳐지고, undo하면 복원된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] }, catIcon: {}, catVar: {}, catBudgetRollover: {}, budgetHistory: {},
+    ownerBudgets: {
+      나: { 커피: [{ from: '2026-01', amount: 20000 }, { from: '2026-03', amount: 25000 }], 식비: [{ from: '2026-01', amount: 100000 }] },
+      배우자: { 커피: [{ from: '2026-01', amount: 15000 }] }, // 배우자는 식비(toName)엔 오버라이드가 없지만 커피(from)엔 있음 -> household와 동일하게 toName 쪽으로 옮겨가야 함
+    },
+    txns: [], recurrences: [],
+  };
+  sandbox.mergeCatInto('expense', 0, '식비');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.ownerBudgets.나.식비)), [
+    { from: '2026-01', amount: 100000 },
+    { from: '2026-03', amount: 25000 },
+  ], '나: 같은 달(01)은 대상(식비)이 이기고, 03은 from(커피)에서 살아남아야 함');
+  assert.strictEqual('커피' in sandbox.DB.ownerBudgets.나, false);
+  assert.strictEqual('커피' in sandbox.DB.ownerBudgets.배우자, false, 'from 오버라이드는 제거돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.배우자.식비[0].amount, 15000, '배우자는 식비(toName)에 오버라이드가 없었어도, 커피(from)에 갖고 있던 값은 household mergeCatInto와 동일하게 toName 쪽으로 그대로 옮겨가야 함(두 쪽 다 버리지 않음)');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.커피[0].amount, 20000, '되돌리면 나의 커피 오버라이드가 복원돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.식비[0].amount, 100000, '되돌리면 나의 식비 오버라이드도 합치기 전 값으로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.배우자.커피[0].amount, 15000, '되돌리면 배우자의 커피 오버라이드도 복원돼야 함');
+  assert.strictEqual('식비' in sandbox.DB.ownerBudgets.배우자, false, '되돌린 뒤에는 배우자에게 합치기 전처럼 식비 오버라이드가 없어야 함');
 });
 test('mergeCatInto: catIcon/catVar/catBudgetRollover는 대상(toName)이 가진 설정을 그대로 두고, from 쪽만 지운다', () => {
   sandbox.DB = {
@@ -4298,6 +4504,20 @@ test('delOwner: 삭제하면 DB.deletedIds에 ownerTombKey가 남고, undo하면
   sandbox.lastUndo.undoFn();
   assert.strictEqual(sandbox.ownerTombKey('아내') in sandbox.DB.deletedIds, false, '되돌리면 톰스톤도 지워져야 함');
 });
+/* catIcon/catVar가 doDeleteCat에서 함께 치워지는 것과 동일한 원칙으로, 이 귀속만의 예산
+ * 오버라이드(DB.ownerBudgets[owner])도 삭제 시 함께 지우고 undo로 복원해야 한다(app-evolve
+ * cycle398 critique/advance) — 안 그러면 같은 이름으로 귀속을 다시 만들었을 때 유령 한도가
+ * 되살아난다. */
+test('delOwner: 삭제하면 DB.ownerBudgets[owner]도 함께 제거되고, undo하면 복원된다', () => {
+  sandbox.DB = { owners: ['나', '아내'], assets: [], ownerBudgets: { 아내: { 식비: [{ from: '2026-01', amount: 80000 }] } } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.delOwner(1);
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual('아내' in sandbox.DB.ownerBudgets, false, '삭제 시 그 귀속의 오버라이드 전체가 제거돼야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.ownerBudgets.아내.식비[0].amount, 80000, '되돌리면 오버라이드가 복원돼야 함');
+});
 /* ---------- delOwner: doRenameOwner/mergeOwnerInto와 동일하게 정산(DB.settings.settle) 당사자가
  * 삭제되면 settle을 꺼야 한다(app-evolve cycle343 critique → advance) — 안 그러면
  * settleConfigured()가 사라진 owner를 DB.owners에서 못 찾아 정산이 조용히 영구 무효화된다. ---------- */
@@ -4518,6 +4738,20 @@ test('doRenameOwner: 이름변경 시 옛 이름에 ownerTombKey 톰스톤이 �
   }
   assert.strictEqual(sandbox.DB.deletedIds[sandbox.ownerTombKey('아빠')] > 0, true, '이름변경으로 사라진 옛 이름도 톰스톤이 남아야 함');
 });
+/* 자산/목표의 owner가 이름변경을 따라가는 것과 동일하게, 이 귀속만의 예산 오버라이드(DB.ownerBudgets)도
+ * 새 이름으로 옮겨가야 한다(app-evolve cycle398 critique/advance) — 안 그러면 옛 이름에 유령으로
+ * 남아 budgetForMonthOwner가 다시는 조회할 수 없게 된다. */
+test('doRenameOwner: DB.ownerBudgets[owner]도 새 이름으로 함께 이동하고, undo하면 복원된다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [], ownerBudgets: { 아빠: { 식비: [{ from: '2026-01', amount: 80000 }] } } };
+  sandbox.ST = { plan: {} };
+  sandbox.renameOwnerValue = '아버지';
+  sandbox.doRenameOwner(1);
+  assert.strictEqual('아빠' in sandbox.DB.ownerBudgets, false, '옛 이름의 오버라이드는 제거돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.아버지.식비[0].amount, 80000, '새 이름으로 오버라이드가 이동해야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.ownerBudgets.아빠.식비[0].amount, 80000, '되돌리면 옛 이름으로 복원돼야 함');
+  assert.strictEqual('아버지' in sandbox.DB.ownerBudgets, false);
+});
 test('doRenameOwner: NAME_MAX를 넘는 긴 이름은 잘려서 저장된다(거부 아님)', () => {
   sandbox.DB = { owners: ['나', '아빠'], assets: [], goals: [] };
   sandbox.ST = { plan: {} };
@@ -4693,6 +4927,60 @@ test('saveBudget: 그 달에 처음 설정하는 예산이면 undo 시 항목 �
   assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 8), 50000, '되돌린 뒤에는 8월도 다시 1월부터 이어지는 5만원이어야 함');
 });
 
+/* ---------- openBudgetPrompt/saveBudget/delBudget: ST.spendOwner!=='전체'일 때 DB.ownerBudgets
+ * 경로로 분기(app-evolve cycle398 critique/advance) ---------- */
+test("openBudgetPrompt: ST.spendOwner가 '전체'가 아니면 household 대신 그 귀속의 오버라이드(폴백 포함)를 보여준다", () => {
+  sandbox.DB = { txns: [], recurrences: [], assets: [{ id: 'a1', owner: '나' }], budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] }, ownerBudgets: {} };
+  sandbox.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '나', catSel: { mode: false, ids: new Set() } };
+  sandbox.lastSheetHtml = null;
+  sandbox.openBudgetPrompt(0); // rows[0] === {c:'식비',v:0} (household budgetHistory가 노출한 행)
+  assert.ok(sandbox.lastSheetHtml.includes('value="300,000"'), '오버라이드가 없으면 household 값으로 폴백해 보여줘야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('가구 전체 한도를 따르고 있어요'), '폴백 중임을 안내해야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="openSpendAnalysis()">취소'), '오버라이드가 없으면 삭제 대신 취소 버튼이어야 함');
+});
+test("openBudgetPrompt: 귀속이 자기만의 오버라이드를 갖고 있으면 그 값을 보여주고 삭제 버튼을 노출한다", () => {
+  sandbox.DB = { txns: [], recurrences: [], assets: [{ id: 'a1', owner: '나' }], budgetHistory: {}, ownerBudgets: { 나: { 여행: [{ from: '2026-01', amount: 80000 }] } } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '나', catSel: { mode: false, ids: new Set() } };
+  sandbox.lastSheetHtml = null;
+  sandbox.openBudgetPrompt(0); // rows[0] === {c:'여행',v:0} (ownerBudgets 유니온 스텝이 노출한 행)
+  assert.ok(sandbox.lastSheetHtml.includes('value="80,000"'));
+  assert.ok(!sandbox.lastSheetHtml.includes('가구 전체 한도를 따르고 있어요'));
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="delBudget(0)">예산 삭제'), '오버라이드가 있으면 삭제 버튼이 보여야 함');
+});
+test("saveBudget: ST.spendOwner가 '전체'가 아니면 DB.ownerBudgets에만 저장하고 household budgetHistory는 건드리지 않는다", () => {
+  sandbox.DB = { txns: [], recurrences: [], assets: [{ id: 'a1', owner: '나' }], budgetHistory: {}, ownerBudgets: {} };
+  sandbox.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '나', catSel: { mode: false, ids: new Set() } };
+  sandbox.budgetInValue = '80,000';
+  sandbox.lastUndo = null;
+  sandbox.saveBudget(0); // ownerBudgets가 비어 있으면 rows는 household budgetHistory 기준(빈 배열)이라 idx 0은 없음 — 먼저 오버라이드를 심어 행을 만든다
+  // 위 호출은 r이 undefined라 바로 return하므로, 오버라이드를 먼저 만든 뒤 재호출해 실제 저장 경로를 검증한다
+  sandbox.setBudgetFromOwner('나', '여행', 2026, 1, 1); // 임시로 행을 노출시키기 위한 최소 오버라이드
+  sandbox.saveBudget(0);
+  assert.strictEqual(sandbox.budgetForMonthOwner('나', '여행', 2026, 6), 80000);
+  assert.strictEqual('여행' in sandbox.DB.budgetHistory, false, 'household budgetHistory는 전혀 건드리면 안 됨');
+  assert.ok(sandbox.lastUndo && typeof sandbox.lastUndo.undoFn === 'function');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.budgetForMonthOwner('나', '여행', 2026, 6), 1, '되돌리면 저장 직전 값(1원)으로 복원돼야 함');
+});
+test("saveBudget: ST.spendOwner가 '전체'면 기존처럼 household budgetHistory에 저장한다(회귀 가드)", () => {
+  sandbox.DB = { txns: [{ type: 'expense', category: '식비', amount: 10000, date: '2026-06-10' }], recurrences: [], budgetHistory: {}, ownerBudgets: {} };
+  sandbox.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  sandbox.budgetInValue = '300000';
+  sandbox.saveBudget(0);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000);
+  assert.deepStrictEqual(sandbox.DB.ownerBudgets, {}, "owner='전체'는 ownerBudgets를 건드리면 안 됨");
+});
+test("delBudget: ST.spendOwner가 '전체'가 아니고 오버라이드가 있으면 그 귀속의 오버라이드만 지우고 household는 그대로 둔다", () => {
+  sandbox.DB = { txns: [], recurrences: [], assets: [{ id: 'a1', owner: '나' }], budgetHistory: { 여행: [{ from: '2026-01', amount: 500000 }] }, ownerBudgets: { 나: { 여행: [{ from: '2026-01', amount: 80000 }] } } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '나', catSel: { mode: false, ids: new Set() } };
+  sandbox.lastUndo = null;
+  sandbox.delBudget(0); // rows[0] === {c:'여행',v:0}
+  assert.strictEqual(sandbox.budgetForMonthOwner('나', '여행', 2026, 6), 0, '이 귀속의 오버라이드부터는 미설정이어야 함');
+  assert.strictEqual(sandbox.budgetForMonth('여행', 2026, 6), 500000, 'household 값은 전혀 영향받지 않아야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.budgetForMonthOwner('나', '여행', 2026, 6), 80000, '되돌리면 오버라이드가 복원돼야 함');
+});
+
 /* ---------- addCat: 중복 이름 추가 시 무반응 대신 안내 토스트 ---------- */
 test('addCat: 이미 있는 카테고리명을 추가하면 토스트를 띄우고 배열/아이콘을 건드리지 않는다', () => {
   sandbox.DB = { categories: { expense: ['식비'] }, catIcon: { 'expense:식비': 'food' }, catVar: {}, txns: [], recurrences: [] };
@@ -4864,6 +5152,19 @@ test('migrate: seed()/emptyDB()가 만드는 형태(catIcon/catVar/budgets 필�
   assert.strictEqual(Object.keys(sandbox.DB.catVar).length, 0);
   assert.strictEqual(Object.keys(sandbox.DB.budgets).length, 0);
   assert.strictEqual(Object.keys(sandbox.DB.budgetHistory).length, 0);
+  assert.strictEqual(Object.keys(sandbox.DB.ownerBudgets).length, 0, 'DB.ownerBudgets(귀속별 오버라이드, app-evolve cycle398 critique/advance)도 budgetHistory와 동일하게 빈 객체로 채워져야 함');
+});
+test('migrate: 이미 DB.ownerBudgets가 있으면 그대로 보존한다(재실행 시 덮어쓰지 않음)', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: 80000 }] } },
+  };
+  sandbox.migrate();
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.식비[0].amount, 80000);
 });
 /* 기존 사용자의 DB.budgets(시간 축 없는 flat 값)를 budgetHistory 이력으로 1회 변환 — 변환 직후에는
  * 어느 달을 조회해도(과거/현재/미래) 옛 값을 그대로 보여줘야 마이그레이션 전후 화면이 달라지지 않는다. */
@@ -12433,6 +12734,38 @@ test('restoreTrashCat: 카테고리를 DB.categories에 되돌리고 아이콘·
   assert.strictEqual(rec._autoDeactivatedByCatDelete, undefined);
   assert.strictEqual(rec.updatedAt, 'test-updatedAt', '재활성화된 반복거래는 touch()되어야 함(mergeCollection 병합 불변식)');
 });
+/* doDeleteCat이 트래시 레코드에 함께 보관해 둔 ownerBudgetEntries(app-evolve cycle398
+ * critique/advance)도 6초 undoToast가 아니라 장기 트래시 복원(restoreTrashCat) 경로에서 되살아나야
+ * 한다 — 구버전 트래시 레코드엔 이 필드가 없을 수 있어(ownerBudgetEntries undefined) 하위호환도
+ * 함께 확인한다. */
+test('restoreTrashCat: 트래시 레코드에 보관된 ownerBudgetEntries도 모든 귀속에 복원된다', () => {
+  const g = {
+    id: 'cat:expense:커피', type: 'expense', name: '커피', icon: null, catVar: false,
+    hadBudget: false, budgetVal: undefined, wasRollover: false,
+    ownerBudgetEntries: [{ owner: '나', val: [{ from: '2026-01', amount: 20000 }] }, { owner: '배우자', val: [{ from: '2026-01', amount: 15000 }] }],
+    deactivatedRecIds: [], _deletedAt: 123,
+  };
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {}, ownerBudgets: {},
+    recurrences: [], trashCats: [g], deletedIds: { 'cat:expense:커피': 123 },
+  };
+  sandbox.restoreTrashCat('cat:expense:커피');
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.커피[0].amount, 20000);
+  assert.strictEqual(sandbox.DB.ownerBudgets.배우자.커피[0].amount, 15000);
+});
+test('restoreTrashCat: 구버전 트래시 레코드(ownerBudgetEntries 필드 자체가 없음)도 예외 없이 복원된다(하위호환)', () => {
+  const g = {
+    id: 'cat:expense:커피', type: 'expense', name: '커피', icon: null, catVar: false,
+    hadBudget: false, budgetVal: undefined, wasRollover: false,
+    deactivatedRecIds: [], _deletedAt: 123,
+  };
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {}, ownerBudgets: {},
+    recurrences: [], trashCats: [g], deletedIds: { 'cat:expense:커피': 123 },
+  };
+  assert.doesNotThrow(() => sandbox.restoreTrashCat('cat:expense:커피'));
+  assert.deepStrictEqual(sandbox.DB.ownerBudgets, {});
+});
 test('restoreTrashCat: 트래시 기간 중 사용자가 직접 다시 켜둔(플래그 없는) 반복거래는 건드리지 않는다', () => {
   const rec = { id: 'r1', type: 'expense', category: '커피', active: true }; // 플래그 없음 = 사용자가 직접 켬
   const g = { id: 'cat:expense:커피', type: 'expense', name: '커피', deactivatedRecIds: ['r1'], _deletedAt: 1 };
@@ -19311,6 +19644,53 @@ test('sanitizeBackup: 정상적인 budgetHistory는 from 오름차순으로 정�
   assert.strictEqual(fixedCount, 0);
 });
 
+/* ---------- sanitizeBackup: DB.ownerBudgets(귀속별 예산 오버라이드, app-evolve cycle398
+ * critique/advance) — budgetHistory를 귀속 이름으로 한 번 더 감싼 {owner:{cat:[{from,amount}]}}라
+ * 같은 from/amount 검증을 귀속마다 적용하고, validOwners에 없는 귀속(사라진 귀속에 매달린 유령
+ * 오버라이드)은 통째로 버린다. ---------- */
+test('sanitizeBackup: ownerBudgets도 budgetHistory와 동일하게 from 형식/amount를 검증한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [], owners: ['나'],
+    ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: -5000 }, { from: 'bad', amount: 100 }] } },
+  });
+  assert.strictEqual(data.ownerBudgets.나.식비.length, 1);
+  assert.strictEqual(data.ownerBudgets.나.식비[0].from, '2026-01');
+  assert.strictEqual(data.ownerBudgets.나.식비[0].amount, 0);
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: validOwners에 없는 귀속의 ownerBudgets는 통째로 버리고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [], owners: ['나'],
+    ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: 80000 }] }, 사라진귀속: { 식비: [{ from: '2026-01', amount: 1 }] } },
+  });
+  assert.strictEqual('사라진귀속' in data.ownerBudgets, false, '존재하지 않는 귀속의 오버라이드는 버려져야 함');
+  assert.strictEqual(data.ownerBudgets.나.식비[0].amount, 80000, '유효한 귀속은 영향받으면 안 됨');
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: ownerBudgets의 카테고리 값이 배열이 아니거나, ownerBudgets 자체가 없거나 객체가 아니어도 터지지 않는다', () => {
+  const notArrayPerCat = sandbox.sanitizeBackup({ txns: [], assets: [], owners: ['나'], ownerBudgets: { 나: { 식비: 'oops' } } });
+  assert.strictEqual('나' in notArrayPerCat.data.ownerBudgets, false, '빈 배열로 정리돼 카테고리가 하나도 안 남은 귀속은 결과 맵에서 빠져야 함(household budgetHistory와 달리 빈 항목은 보관하지 않음)');
+  assert.strictEqual(notArrayPerCat.fixedCount, 1);
+  const notObjectOwner = sandbox.sanitizeBackup({ txns: [], assets: [], owners: ['나'], ownerBudgets: { 나: ['oops'] } });
+  assert.strictEqual('나' in notObjectOwner.data.ownerBudgets, false);
+  assert.strictEqual(notObjectOwner.fixedCount, 1);
+  const notObject = sandbox.sanitizeBackup({ txns: [], assets: [], ownerBudgets: ['oops'] });
+  assert.strictEqual(Object.keys(notObject.data.ownerBudgets).length, 0);
+  assert.strictEqual(notObject.fixedCount, 1);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(Object.keys(missing.data.ownerBudgets).length, 0);
+  assert.strictEqual(missing.fixedCount, 0);
+});
+test('sanitizeBackup: 정상적인 ownerBudgets는 from 오름차순으로 정렬해 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [], owners: ['나'],
+    ownerBudgets: { 나: { 식비: [{ from: '2026-03', amount: 100 }, { from: '2026-01', amount: 200 }] } },
+  });
+  assert.strictEqual(data.ownerBudgets.나.식비[0].from, '2026-01');
+  assert.strictEqual(data.ownerBudgets.나.식비[1].from, '2026-03');
+  assert.strictEqual(fixedCount, 0);
+});
+
 /* ---------- sanitizeBackup: DB.budgets(budgetHistory 신설 전 시간축 없는 레거시 flat 맵,
  * 카테고리→금액)는 migrate()의 1회 변환(DB._budgetHistV1 가드)이 이 값을 그대로
  * budgetHistory[cat]=[{from:BUDGET_EPOCH,amount}]에 복사해 넣으므로, budgetHistory의 amount와
@@ -19729,6 +20109,38 @@ test('spendByCategory: 예산이 없는 카테고리는 지출이 없으면 여�
   const rows = Array.from(sandbox.spendByCategory(2026, 6));
   assert.strictEqual(rows.length, 1);
   assert.strictEqual(rows[0].c, '식비');
+});
+/* 귀속별 예산 오버라이드(DB.ownerBudgets, app-evolve cycle398 critique/advance)도 household
+ * budgetHistory와 동일한 이유로 "이번 달 지출 0이어도 그 귀속만의 오버라이드가 있으면 행을
+ * 계속 보여준다" 유니온 스텝이 필요하다 — household엔 없는 카테고리라도 귀속이 따로 예산을
+ * 정했다면 지출분석/예산관리 화면에서 사라지면 안 된다. */
+test('spendByCategory: owner를 주면 household엔 없고 그 귀속만 오버라이드를 가진 카테고리도 v:0으로 계속 나타난다', () => {
+  sandbox.DB = {
+    txns: [],
+    recurrences: [],
+    assets: [{ id: 'a1', owner: '나' }],
+    budgetHistory: {},
+    ownerBudgets: { 나: { 여행: [{ from: '2026-01', amount: 500000 }] } },
+  };
+  const rows = Array.from(sandbox.spendByCategory(2026, 6, '나'));
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].c, '여행');
+  assert.strictEqual(rows[0].v, 0);
+});
+test('spendByCategory: owner가 없는(household) 조회는 다른 귀속의 오버라이드를 보지 않는다', () => {
+  sandbox.DB = {
+    txns: [],
+    recurrences: [],
+    assets: [{ id: 'a1', owner: '나' }],
+    budgetHistory: {},
+    ownerBudgets: { 나: { 여행: [{ from: '2026-01', amount: 500000 }] } },
+  };
+  const rows = Array.from(sandbox.spendByCategory(2026, 6));
+  assert.strictEqual(rows.length, 0, "household(owner='전체')는 ownerBudgets를 조회하면 안 됨");
+});
+test('spendByCategory: DB.ownerBudgets가 없어도(undefined) owner를 줘도 터지지 않는다', () => {
+  sandbox.DB = { txns: [], recurrences: [], assets: [] };
+  assert.doesNotThrow(() => sandbox.spendByCategory(2026, 6, '나'));
 });
 test('spendByCategory: 조회 중인 달 이전에만 예산이 있고 아직 그 달부터는 시작되지 않은 카테고리는 나타나지 않는다', () => {
   sandbox.DB = {
@@ -23637,6 +24049,55 @@ test('mergeRemoteDataIntoLocal: 한 기기가 지운 카테고리의 budgetHisto
   assert.strictEqual('coffee' in sandbox.DB.budgetHistory, false, '지워진 카테고리의 예산 한도가 되살아나면 안 됨');
   assert.strictEqual('expense:coffee' in sandbox.DB.catIcon, false, '지워진 카테고리의 아이콘이 되살아나면 안 됨');
   assert.strictEqual('expense:coffee' in sandbox.DB.catVar, false, '지워진 카테고리의 변동 플래그가 되살아나면 안 됨');
+});
+/* DB.ownerBudgets(귀속별 예산 오버라이드, app-evolve cycle398 critique/advance)는 budgetHistory를
+ * 귀속 이름으로 한 번 더 감싼 맵이라 카테고리 톰스톤은 그대로 걸리고, 귀속 자체가 삭제됐을 때
+ * (ownerTombKey)도 그 귀속의 오버라이드 전체가 되살아나면 안 된다. */
+test('mergeRemoteDataIntoLocal: DB.ownerBudgets도 budgetHistory와 동일한 mergeBudgetHistory("local 우선")로 귀속마다 병합된다', () => {
+  sandbox.DB = minimalMergeDB({
+    owners: ['나'],
+    ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: 100000 }] } },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    owners: ['나'],
+    ownerBudgets: { 나: { 식비: [{ from: '2026-01', amount: 999999 }, { from: '2026-03', amount: 50000 }] } },
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(j(sandbox.DB.ownerBudgets.나.식비), [
+    { from: '2026-01', amount: 100000 },
+    { from: '2026-03', amount: 50000 },
+  ], '같은 달(01)은 local이 이기고, 03은 remote에서 유니온돼야 함');
+});
+test('mergeRemoteDataIntoLocal: 카테고리가 톰스톤되면 모든 귀속의 ownerBudgets 오버라이드도 되살아나지 않는다', () => {
+  sandbox.DB = minimalMergeDB({
+    owners: ['나'],
+    ownerBudgets: {},
+    deletedIds: { [sandbox.catTombKey('expense', 'coffee')]: 2000 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    owners: ['나'],
+    ownerBudgets: { 나: { coffee: [{ from: '2026-08', amount: 90000 }] } },
+    deletedIds: {},
+  });
+  assert.strictEqual('coffee' in (sandbox.DB.ownerBudgets.나 || {}), false, '지워진 카테고리의 귀속별 오버라이드가 되살아나면 안 됨');
+});
+test('mergeRemoteDataIntoLocal: 귀속 자체가 톰스톤되면 그 귀속의 ownerBudgets 오버라이드 전체가 되살아나지 않는다', () => {
+  sandbox.DB = minimalMergeDB({
+    owners: ['나'],
+    ownerBudgets: {},
+    deletedIds: { [sandbox.ownerTombKey('아빠')]: 2000 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    owners: ['나'],
+    ownerBudgets: { 아빠: { 식비: [{ from: '2026-01', amount: 80000 }] } },
+    deletedIds: {},
+  });
+  assert.strictEqual('아빠' in sandbox.DB.ownerBudgets, false, '삭제된 귀속의 오버라이드 전체가 되살아나면 안 됨');
+});
+test('mergeRemoteDataIntoLocal: DB.ownerBudgets가 비어도(양쪽 모두 없음) 예외 없이 빈 객체로 남는다', () => {
+  sandbox.DB = minimalMergeDB({ owners: [] });
+  assert.doesNotThrow(() => sandbox.mergeRemoteDataIntoLocal({ owners: [], deletedIds: {} }));
+  assert.strictEqual(Object.keys(sandbox.DB.ownerBudgets).length, 0); // vm 샌드박스가 돌려준 객체는 host realm {}과 cross-realm이라 deepStrictEqual 대신 길이로 비교(recDates의 Array.from 교훈과 동일)
 });
 test('mergeRemoteDataIntoLocal: 이름변경(커피→카페) 후 미동기화 기기와 병합해도 옛 이름의 budgetHistory가 고아로 남지 않는다', () => {
   sandbox.DB = minimalMergeDB({
@@ -30958,6 +31419,29 @@ test('mergeOwnerInto: 자산/목표의 owner가 대상 이름으로 옮겨가고
   assert.strictEqual(sandbox.DB.assets[0].owner, '나');
   assert.strictEqual(sandbox.DB.assets[1].owner, '나', '원래 대상 귀속의 자산은 그대로여야 함');
   assert.strictEqual(sandbox.DB.goals[0].owner, '나');
+});
+/* DB.ownerBudgets[owner]도 budgetHistory와 동일한 {cat:[{from,amount}]} shape이라, mergeCatInto가
+ * household budgetHistory를 합치는 것과 동일한 mergeBudgetHistory("local=toName 우선")로 합쳐지고,
+ * undoToast로 되돌리면 양쪽 모두 복원된다(app-evolve cycle398 critique/advance). */
+test('mergeOwnerInto: DB.ownerBudgets[owner]도 동일한 규칙(local=toName 우선)으로 합쳐지고, undo하면 복원된다', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'], assets: [], goals: [],
+    ownerBudgets: {
+      아빠: { 식비: [{ from: '2026-01', amount: 30000 }, { from: '2026-03', amount: 50000 }] },
+      나: { 식비: [{ from: '2026-01', amount: 200000 }], 교통: [{ from: '2026-01', amount: 10000 }] },
+    },
+  };
+  sandbox.mergeOwnerInto(1, '나');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.ownerBudgets.나.식비)), [
+    { from: '2026-01', amount: 200000 },
+    { from: '2026-03', amount: 50000 },
+  ], '같은 달(01)은 대상(나)이 이기고, 03은 from(아빠)에서 살아남아야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.교통[0].amount, 10000, '대상이 다른 카테고리에 갖고 있던 오버라이드는 영향받으면 안 됨');
+  assert.strictEqual('아빠' in sandbox.DB.ownerBudgets, false, '합쳐진 귀속의 오버라이드 키 전체는 제거돼야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.ownerBudgets.아빠.식비[0].amount, 30000, '되돌리면 아빠의 오버라이드가 복원돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.식비[0].amount, 200000, '되돌리면 나의 오버라이드도 합치기 전 값으로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.ownerBudgets.나.교통[0].amount, 10000);
 });
 test('mergeOwnerInto: 활성 귀속 필터(ST.assetOwner/plan.owner/spendOwner/hist.owner)가 from을 보고 있었다면 toName으로 함께 옮겨간다(doRenameOwner와 동일한 규칙)', () => {
   sandbox.DB = { owners: ['나', '아빠'], assets: [], goals: [] };

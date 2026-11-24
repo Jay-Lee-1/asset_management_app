@@ -1057,6 +1057,29 @@ function matchesAssetId(t,assetId){
  return t.fromAssetId===assetId||t.toAssetId===assetId;
 }
 function budgetKey(y,m){return `${y}-${String(m).padStart(2,'0')}`}
+/* budgetForMonth()가 하던 "대상 달(y,m) 이전(from<=대상)에 적용된 이력 중 가장 최근 값" 탐색을
+ * 순수 함수로 뽑아냈다 — 귀속별 예산 오버라이드(DB.ownerBudgets[owner][cat], app-evolve cycle398
+ * critique/advance)가 household budgetHistory와 똑같은 {from,amount} 이력 shape을 쓰면서도
+ * DB.budgetHistory라는 서로 다른 맵을 조회해야 해, index.html의 budgetForMonth가 이 로직을 그대로
+ * 재사용할 수 있게 h(이력 배열) 자체를 인자로 받는다. */
+function budgetHistoryValueAt(h,y,m){
+ if(!h||!h.length)return 0;
+ const key=budgetKey(y,m);
+ let v=0;
+ for(let i=0;i<h.length;i++){if(h[i].from<=key)v=h[i].amount;else break}
+ return v;
+}
+/* setBudgetFrom()이 하던 "대상 달(y,m)부터 적용되는 한도를 이력에 기록(같은 달에 이미 항목이
+ * 있으면 덮어쓰고, 없으면 from 오름차순을 유지하며 삽입)"을 h(이력 배열)를 직접 받는 순수 변경
+ * 함수로 뽑아냈다 — budgetHistoryValueAt과 동일한 이유(app-evolve cycle398 critique/advance)로
+ * DB.ownerBudgets[owner][cat] 쪽 setBudgetFromOwner도 이 로직을 그대로 재사용한다. 배열 자체를
+ * in-place로 바꾸고 반환값은 없다(기존 setBudgetFrom과 동일한 부수효과 계약). */
+function setBudgetHistoryAt(h,y,m,amount){
+ const key=budgetKey(y,m);
+ const idx=h.findIndex(e=>e.from===key);
+ if(idx>=0)h[idx].amount=amount;
+ else{h.push({from:key,amount});h.sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0)}
+}
 /* budget=0(미설정)이면 진행률은 의미가 없으므로 항상 0으로 clamp — 호출부는 이 경우 전체 대비 비중을 대신 쓴다 */
 function budgetProgress(spent,budget){
  if(!budget)return{pct:0,barPct:0,over:false};
