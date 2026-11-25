@@ -1,15 +1,8 @@
 {
   "cycle": 404,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 399,
-      "phase": "develop",
-      "timestamp": "2026-11-24T23:10:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-398 전체 배제 목록(키보드 접근성 전체, 데이터 클램프(setRate/sanitizeAmount/interestRate/acquiredAt/qtyChangeDate/amortizationPayoffMonths), txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, owner별 예산 오버라이드, 모놀리식 구조개편/렌더성능/CSV완성도/가상화/통화·CSV·SRI·음력표/esc() XSS/OS알림 설계상 기각 등)를 주고 조사시킴. txMemo/rMemo(cycle394/396)가 받은 자주 쓴 메모 자동완성이 splitFieldHTML()의 분할 입력(여러 카테고리로 나누기) 항목별 메모(splitMemo{i}, cycle255에서 신설)에는 적용되지 않은 비대칭을 발견 — 습관적으로 같은 방식으로 나누는 지출(예: '마트'를 식비+생활용품으로 분할)의 각 줄 메모를 매번 새로 입력해야 하는 실사용 공백. splitFieldHTML(d,pfx,noToggle)에 frequentMemosForType(d.type,DB.txns,10)로 만든 공유 <datalist id=\"splitMemoList\"> 하나를 모든 분할 줄(splitMemo0, splitMemo1, ...)에 list=\"splitMemoList\"로 공통 연결(한 트랜잭션의 모든 줄이 같은 type이라 datalist 하나로 충분, tx/rec 폼이 이 함수를 공유해 한 번의 수정으로 둘 다 처리됨). test/run.js의 기존 splitFieldHTML 테스트 3건이 logic.js(frequentMemosForType/splitLines)와 DB.txns를 로드하도록 갱신하고, 공유 datalist 배선·빈도순 옵션·다른 type 메모 배제를 확인하는 실행형 테스트 1건을 추가. node test/run.js 3959->3960/3960 통과, node --check(logic.js/sw.js) 통과, index.html inline <script> 블록 전체 파싱(vm.Script) 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.531->1.47.532, sw.js CACHE v798->v799. 커밋 f512b91.",
-      "commit": "f512b91"
-    },
     {
       "cycle": 399,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-25T18:40:00.000Z",
       "summary": "critique(cycle403)의 계획대로 목표(goal) 목록에 실제 수동 순서 변경(moveGoal)을 추가해, 자산 목록과 똑같이 생겼으면서도 '등록한 순서 그대로예요'로 실제로는 바꿀 수 없던 '사용자 정의순' 죽은 옵션을 수리했다. saveGoal(editing)이 order=d.order!=null?d.order:(DB.goals||[]).reduce((m,g)=>Math.max(m,g.order||0),0)+1을 계산해 touch({...}) 객체에 명시적으로 포함(achievedAckAt과 동일한 보존 패턴) — 신규 목표는 맨 끝, 기존 목표 수정은 order 보존. duplicateGoal(id)은 d.id=uid() 바로 뒤에 delete d.order 추가(duplicateAsset과 동일)로 복제본이 saveGoal의 지연부여를 통해 끝에 붙게 함. goalOrderedIds()(order로 정렬한 id 배열)와 moveGoal(id,dir)을 duplicateGoal 근처에 신설 — 기존 movedAssetOrder(ids,id,dir) 헬퍼를 그대로 재사용(헬퍼 자체는 id-generic이라 수정 없음), 반환된 map을 각 goal에 touch(g)로 반영 후 save();openGoalsList(). movedAssetOrder가 호출마다 전체 순서를 정규화하므로 order가 없는 레거시 목표도 첫 이동 시 자동 복구(moveAsset과 동일한 부트스트랩). goalsManageBody(qRaw)에 정렬 체인 else 분기로 gs.sort((a,b)=>(a.order||0)-(b.order||0)) 추가, canReorder=(!goalSort||goalSort==='custom')&&!q&&!ST.goalSel.mode&&gs.length>1 가드로 검색 중·다른 정렬·선택모드·목표 1개일 때는 버튼을 숨김. gs.map((g,gi,garr)=>...)로 인덱스를 확보해 moveCat 행과 동일한 모양의 위/아래 버튼(svg('arrowUp')/svg('arrowDn'), 경계 disabled, aria-label, 이 행엔 바깥 onclick(ackGoalAchieved)이 있어 event.stopPropagation() 필요)을 row-acts 바로 앞에 삽입. openGoalSortSheet()의 '등록한 순서 그대로예요' 부제와 관련 주석들도 실제 동작에 맞게 갱신. 범위 제외(계획대로): 반복거래 순서변경, 목표 다중선택 일괄 순서변경, order migrate/백필 단계. general-purpose 서브에이전트에게 구현+테스트를 위임(이 환경에서 서브에이전트의 git commit 자체가 막혀 있어 서브에이전트는 변경을 커밋하지 않고 핸드백, 오케스트레이터가 diff를 직접 리뷰·재검증 후 커밋). test/run.js에 FUNCTIONS 화이트리스트(goalOrderedIds/moveGoal) 등록 + 13건 추가: goalOrderedIds 정렬(레거시 포함), moveGoal 인접교환/touch/경계no-op/레거시 자동정규화/존재하지않는id no-op, goalsManageBody 버튼 존재+경계disabled(custom/미설정)/targetDate·progress·name 정렬시 숨김/검색시 숨김/선택모드 숨김(체크박스 유지)/목표1개 숨김, saveGoal 신규 max+1(빈 목록 포함)/수정시 order보존, duplicateGoal order없음→끝에붙음. node test/run.js 4003->4016/4016 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/959904/1770자) 전부 new Function() 파싱 통과(오케스트레이터가 재확인). index.html/sw.js를 수정했으므로 APP_VERSION 1.47.540->1.47.541, sw.js CACHE v807->v808. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 404,
+      "phase": "develop",
+      "timestamp": "2026-11-25T13:30:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 부채 상환 계획(multiDebtPlan/debtPlanBodyHTML, cycle355) 화면이 단일 부채 상세(debtWhatIfUpdate/assetBalCard)와 달리 이자율 반영 상환 개월수 보조 문구(debtAmortSuffix)를 전혀 보여주지 않던 비대칭을 발견 — 다건 계획은 아바란체/스노우볼 순서(plan.order)대로 추가 납입액 전액을 '아직 안 끝난 맨 앞 부채' 한 곳에만 몰아주는데, achieved가 extra 유무와 무관한 동일 판정이라 order.findIndex(r=>!r.achieved)가 그 전액을 받는 행과 정확히 일치함을 이용해 그 한 행에만 debtAmortSuffix({interestRate:r.interestRate},extra,r.balance)를 이어붙였다(다른 부채는 이자율이 있어도 전액을 못 받으므로 보조 문구 없음). debtAmortSuffix 자체는 interestRate<=0/extra<=0/bal<=0이면 빈 문자열을 돌려줘 안전. logic.js 변경 없음. test/run.js에 추가 납입액 있을 때 문구 일치/추가 납입액 0일 때 추측 안 함/부채 2개일 때 1순위에만 붙고 2순위엔 안 붙음 3건 추가. node test/run.js 4016->4019/4019 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과(오케스트레이터가 서브에이전트 결과와 별개로 재검증). index.html/sw.js를 수정했으므로 APP_VERSION 1.47.541->1.47.542, sw.js CACHE v808->v809.",
       "commit": null
     }
   ]

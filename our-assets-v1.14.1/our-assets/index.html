@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.541';
+const APP_VERSION='1.47.542';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -6305,9 +6305,19 @@ function debtPlanBodyHTML(strategy,extra){
  const headline=plan.allDebtFreeDate?`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">전체 부채 상환 완료</div><div class="num" style="font-size:20px;font-weight:700;margin-top:2px">${shortDate2(plan.allDebtFreeDate)}쯤</div></div>`
   :allDone?`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><div style="font-size:14px;font-weight:700;color:var(--text-2)">이미 모든 부채를 다 갚았어요 🎉</div></div>`
   :`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><div style="font-size:13px;color:var(--text-3)">최근 추세로는 전체 완납일을 가늠하기 어려워요</div></div>`;
+ /* debtWhatIfUpdate(단일 부채 상세, assetBalCard)는 debtWhatIfText 뒤에 debtAmortSuffix(이자율
+  * 반영 상환 개월수)를 이어붙이는데, 이 다건 계획 화면(cycle355)만 그 보조 문구가 빠져 있었다 —
+  * multiDebtPlan은 아바란체/스노우볼로 정한 순서(plan.order)대로 추가 납입액 전액을 "아직 안 끝난
+  * 맨 앞 부채" 한 곳에만 몰아준다(logic.js giveExtra 주석 참고)는 사실은 이미 그 결과(achieved)에
+  * 드러나 있다 — baseline과 giveExtra 둘 다 achieved는 같은 "현재 잔액<=0" 판정이라 extra 유무와
+  * 무관하므로, order에서 achieved가 아닌 첫 항목이 바로 그 전액을 받는 부채와 정확히 일치한다.
+  * 그 한 행에만 debtAmortSuffix를 단일 부채 화면과 동일한 문구로 이어붙인다(app-evolve cycle405
+  * develop). */
+ const extraIdx=plan.order.findIndex(r=>!r.achieved);
  const rows=plan.order.map((r,i)=>{
   const sub=r.achieved?'이미 다 갚았어요':r.projectedDate?`${shortDate2(r.projectedDate)}쯤 다 갚아요`:'최근 추세로는 가늠하기 어려워요';
-  return `<div class="manage-row"><div class="avatar a-etc" style="width:32px;height:32px;border-radius:10px;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i+1}</div><div style="flex:1;min-width:0"><div class="mn">${esc(r.name)}${r.interestRate>0?` · 연 ${r.interestRate}%`:''}</div><div class="msub">${comma(r.balance)}원 · ${sub}</div></div></div>`;
+  const amortSub=i===extraIdx?debtAmortSuffix({interestRate:r.interestRate},extra,r.balance):'';
+  return `<div class="manage-row"><div class="avatar a-etc" style="width:32px;height:32px;border-radius:10px;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i+1}</div><div style="flex:1;min-width:0"><div class="mn">${esc(r.name)}${r.interestRate>0?` · 연 ${r.interestRate}%`:''}</div><div class="msub">${comma(r.balance)}원 · ${sub}${amortSub}</div></div></div>`;
  }).join('');
  return headline+`<div class="card">${rows}</div>`;
 }

@@ -12614,6 +12614,46 @@ test('[실행형] debtPlanDebts: debt 자산이 하나도 없으면(0개) 빈 �
       assert.ok(!html.includes('이미 모든 부채를 다 갚았어요'));
     } finally { restore(); }
   });
+  /* debtPlanBodyHTML이 debtWhatIfUpdate(단일 부채 상세, assetBalCard)와 동일하게 이자율 반영
+   * 상환 개월수(debtAmortSuffix)를 "추가 납입 전액을 받는" 그 한 행에만 이어붙이는지 검증한다
+   * (app-evolve cycle405 develop — 다건 계획 화면만 이 보조 문구가 빠져 있던 공백을 메운 변경). */
+  test('[실행형] debtPlanBodyHTML: 이자율이 있는 부채에 추가 납입액이 있으면 그 행 부제에 debtAmortSuffix와 똑같은 이자 반영 보조 문구가 이어붙는다', () => {
+    sandbox.TODAY = '2026-01-11';
+    const pts = [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }];
+    sandbox.debtPlanDebts = () => [{ id: 'a', name: '마이너스통장', balance: 200000, interestRate: 5, pts }];
+    try {
+      const html = sandbox.debtPlanBodyHTML('avalanche', 50000);
+      const expectedSuffix = sandbox.debtAmortSuffix({ interestRate: 5 }, 50000, 200000);
+      assert.ok(expectedSuffix.includes('이자 반영'), '전제 확인: 이 시나리오는 보조 문구가 실제로 나와야 함');
+      assert.ok(html.includes('마이너스통장' + expectedSuffix) || html.includes(expectedSuffix), 'debtAmortSuffix가 돌려준 문구가 그 행에 그대로 보여야 함');
+    } finally { restore(); }
+  });
+  test('[실행형] debtPlanBodyHTML: 추가 납입액이 0(얼마씩 더 갚을지 모름)이면 이자율이 있는 부채여도 이자 반영 보조 문구를 보여주지 않는다(추측 금지)', () => {
+    sandbox.TODAY = '2026-01-11';
+    const pts = [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }];
+    sandbox.debtPlanDebts = () => [{ id: 'a', name: '마이너스통장', balance: 200000, interestRate: 5, pts }];
+    try {
+      const html = sandbox.debtPlanBodyHTML('avalanche', 0);
+      assert.ok(!html.includes('이자 반영'), '추가 납입액을 모르면 이자 반영 개월수도 계산하면 안 됨');
+    } finally { restore(); }
+  });
+  test('[실행형] debtPlanBodyHTML: 부채가 여러 개면 추가 납입액 전액을 받는 우선순위 1위 행에만 이자 반영 보조 문구가 붙고, 아직 안 끝난 다른 부채(이자율이 있어도)엔 붙지 않는다', () => {
+    sandbox.TODAY = '2026-01-11';
+    const ptsA = [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }];
+    const ptsB = [{ date: '2026-01-01', bal: 150000 }, { date: '2026-01-11', bal: 100000 }];
+    sandbox.debtPlanDebts = () => [
+      { id: 'a', name: '빚A', balance: 200000, interestRate: 10, pts: ptsA }, // 아바란체 1순위(이자율이 더 높음) → 추가 납입 전액을 받음
+      { id: 'b', name: '빚B', balance: 100000, interestRate: 8, pts: ptsB },
+    ];
+    try {
+      const html = sandbox.debtPlanBodyHTML('avalanche', 60000);
+      const suffixA = sandbox.debtAmortSuffix({ interestRate: 10 }, 60000, 200000);
+      const suffixB = sandbox.debtAmortSuffix({ interestRate: 8 }, 60000, 100000); // 빚A와 다른 숫자가 나와야 아래 비포함 검증이 의미가 있음
+      assert.notStrictEqual(suffixA, suffixB, '전제 확인: 두 부채의 보조 문구가 서로 달라야 "B엔 안 붙음"을 의미있게 검증할 수 있음');
+      assert.ok(html.includes(suffixA), '1순위(빚A)는 전액을 받으므로 이자 반영 문구가 있어야 함');
+      assert.ok(!html.includes(suffixB), '2순위(빚B)는 추가 납입을 못 받아 baseline뿐이므로 이자율이 있어도 이자 반영 문구가 없어야 함');
+    } finally { restore(); }
+  });
   test('[실행형] openDebtPlan: 부채가 있으면 전략 세그먼트와 추가 납입액 입력란을 포함해서 시트를 열고, 이전에 입력해둔 값/전략을 그대로 반영한다', () => {
     sandbox.debtPlanDebts = () => [{ id: 'a', name: '빚', balance: 100000, interestRate: 5, pts: [] }];
     sandbox.ST = { hist: { debtPlanStrategy: 'snowball', debtPlanExtra: 123000 } };
