@@ -8111,6 +8111,18 @@ test('sendInquiry: MEMO_MAX 이하 내용은 그대로 저장된다(정상 케�
   sandbox.sendInquiry();
   assert.strictEqual(sandbox.DB.inquiries[0].text, '다크모드에 OLED 블랙 옵션도 있으면 좋겠어요');
 });
+/* addOwner/delOwner/doRenameOwner(cycle308)·addCat 계열(cycle309)·saveGoal/delGoal(cycle307)과
+ * 동일한 twGuard 감사의 연장 — restoreTrashInquiry/purgeTrashInquiry(cycle331)는 이미 twGuard가
+ * 있는데 정작 메모를 만드는 sendInquiry만 빠져 있어, 튜토리얼 중에 문의하기로 적은 메모가 다른
+ * 모든 '추가' 경로와 달리 DB.inquiries에 그대로 영구 저장됐다(app-evolve cycle400 develop). */
+test('sendInquiry: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 저장되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { inquiries: [] };
+  sandbox.inqTextValue = '다크모드에 OLED 블랙 옵션도 있으면 좋겠어요';
+  sandbox.sendInquiry();
+  assert.strictEqual(sandbox.DB.inquiries.length, 0, '튜토리얼 중에는 저장이 막혀야 함');
+  sandbox.TWi = -1;
+});
 test('inqTextInput: MEMO_MAX를 넘는 입력은 keystroke마다 즉시 잘린다(txMemoInput과 동일한 패턴)', () => {
   const el = { value: '메'.repeat(sandbox.MEMO_MAX + 50) };
   sandbox.inqTextInput(el);
@@ -8141,6 +8153,15 @@ test('delInquiry: 바로 지우지 않고 확인 시트를 띄우며, 확인해�
   sandbox.confirmSheetCalls[0].cb();
   assert.strictEqual(sandbox.DB.inquiries.length, 0);
   assert.ok(typeof sandbox.DB.deletedIds.q1 === 'number', 'deletedIds에 숫자 타임스탬프가 남아야 함');
+});
+test('delInquiry: 튜토리얼 모드 중에는 twGuard가 막아서 확인 시트조차 띄우지 않는다(delGoal/doDeleteCat과 동일 패턴, app-evolve cycle400 develop)', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delInquiry('q1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '튜토리얼 중에는 확인 시트도 안 띄워야 함');
+  assert.strictEqual(sandbox.DB.inquiries.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
+  sandbox.TWi = -1;
 });
 test('delInquiry: 존재하지 않는 id를 넘기면 확인 시트조차 띄우지 않는다', () => {
   sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }], deletedIds: {} };
@@ -8279,6 +8300,14 @@ test('editInquiry: 기존 메모 내용을 그대로 채운 수정 시트를 띄
   assert.ok(html.includes('메모 수정'));
   assert.ok(html.includes('다크모드 OLED 옵션'), '기존 내용이 textarea에 채워져 있어야 함');
   assert.ok(html.includes("saveInquiryEdit('q1')"), '저장 버튼이 saveInquiryEdit을 이 id로 불러야 함');
+});
+test('saveInquiryEdit: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 수정되지 않는다(doRenameOwner/doRenameCat과 동일 패턴, app-evolve cycle400 develop)', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '원래 내용', updatedAt: 1 }] };
+  sandbox.inqEditTextValue = '고친 내용';
+  sandbox.saveInquiryEdit('q1');
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '원래 내용', '튜토리얼 중에는 수정이 막혀야 함');
+  sandbox.TWi = -1;
 });
 test('saveInquiryEdit: 내용을 비우면 저장하지 않고 안내 토스트만 띄운다(기존 내용도 그대로)', () => {
   sandbox.DB = { inquiries: [{ id: 'q1', text: '원래 내용', updatedAt: 1 }] };

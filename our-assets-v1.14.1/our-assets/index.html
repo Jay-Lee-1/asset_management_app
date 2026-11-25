@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.533';
+const APP_VERSION='1.47.534';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -9566,6 +9566,7 @@ function openInquiry(){
  * 한 번 더 clamp한다(브라우저별 maxlength 처리 차이에 대한 방어선, app-evolve cycle388 develop). */
 function inqTextInput(el){if(el.value.length>MEMO_MAX)el.value=el.value.slice(0,MEMO_MAX)}
 function sendInquiry(){
+ if(twGuard())return; /* addOwner/addCat 등 다른 모든 '추가' 경로와 동일 — restoreTrashInquiry/purgeTrashInquiry는 이미 twGuard가 있는데 정작 메모를 만드는 이 함수엔 빠져 있어, 튜토리얼 중에 문의하기로 적은 메모가 "실제로 저장되지 않아요" 약속과 달리 DB.inquiries에 그대로 영구 저장됐다(app-evolve cycle400 develop) */
  const t=$('inqText');let v=(t&&t.value||'').trim();
  if(!v){toast('메모 내용을 입력해 주세요');return}
  if(v.length>MEMO_MAX)v=v.slice(0,MEMO_MAX);
@@ -9595,6 +9596,7 @@ function editInquiry(id){
  setTimeout(()=>{const t=$('inqEditText');t&&t.focus()},300);
 }
 function saveInquiryEdit(id){
+ if(twGuard())return; /* doRenameOwner/doRenameCat과 동일한 '수정' 경로 twGuard — sendInquiry와 같은 공백(app-evolve cycle400 develop) */
  const q=(DB.inquiries||[]).find(x=>x.id===id);if(!q)return;
  const t=$('inqEditText');let v=(t&&t.value||'').trim();
  if(!v){toast('메모 내용을 입력해 주세요');return}
@@ -9602,6 +9604,7 @@ function saveInquiryEdit(id){
  q.text=v;touchSave(q);closeSheet();openInquiryList();toast('메모를 수정했어요');
 }
 function delInquiry(id){
+ if(twGuard())return; /* delGoal/doDeleteCat과 동일한 '삭제' 경로 twGuard — sendInquiry와 같은 공백(app-evolve cycle400 develop) */
  const q=(DB.inquiries||[]).find(x=>x.id===id);if(!q)return;
  const preview=q.text.length>40?q.text.slice(0,40)+'…':q.text;
  confirmSheet('메모를 삭제할까요?',`'${esc(preview)}' 메모를 지워요.`,'삭제',()=>{

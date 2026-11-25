@@ -1,15 +1,8 @@
 {
   "cycle": 400,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 395,
-      "phase": "develop",
-      "timestamp": "2026-11-24T06:40:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-394 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape·방향키, 카테고리 아이콘 피커·메인 색 그리드·날짜 선택기 방향키, .seg/.mseg 전역 방향키(segKeydown), monthNav/nwCarousel 방향키, openSheet() 탭 전환 포커스 보존(prevSegGroup/prevSegLabel), 카테고리 관리 일괄선택 3종, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt 가드, transfer 통화 불일치, CSV 비대칭, SRI, 음력 공휴일표 상한, duplicateTx 등 포커스, sanitizeAmount/interestRate 상한, owner undo, amortizationPayoffMonths 가드, 거래내역 가상화, 거래 메모 자동완성 datalist 등)을 주고 조사시킴. index.html 2038행 주석이 AMOUNT_MAX(999,999,999,999,999) 상한을 거는 경로 목록으로 fmtAmt/sanitizeAmount/syncAssetInputs/csvRowToImportTxn/taPctInput을 명시하는데, 실제로는 시세 연동 관리 시트의 수동 입력 함수 setRate(kind,key,val)(금/환율/주식/코인 현재가 수동 입력, 9274행)가 이 목록에서 빠져 있었음을 발견. 이 필드들은 fmtAmt처럼 oninput 실시간 포맷을 쓰지 않고 onchange=\"setRate(...,this.value)\"로 포맷 없는 원시 문자열을 받아 Number(...)||0만 거친 뒤 그대로 DB.rates에 저장돼, 클립보드 오입력 등으로 비정상적으로 큰 값이 들어오면 정밀도가 깨진 채 해당 자산 평가액(수량×시세)과 전체 자산 총액 계산으로 조용히 전파될 수 있는 실제 데이터 정합성 공백이었다. 백업 복원 경로(sanitizeBackup, 10845/10849행)는 이미 sanitizeAmount(srcRates[f],0)로 DB.rates를 클램프하는데 앱 내 수동 입력 경로만 이 보호가 빠진 비대칭이었고, 배제 목록의 'interestRate 상한'(자산 이자율 필드)과는 전혀 다른 필드(시세/현재가)라 중복이 아님을 코드로 직접 확인했다. setRate() 안에서 파싱한 숫자를 기존 0-이하 분기로 넘기기 전에 AMOUNT_MAX로 clamp(거부가 아니라 자르는 기존 철학 유지)하도록 수정하고, 2038행 AMOUNT_MAX 경로 목록 주석에도 setRate를 추가했다. test/run.js에 setRate 테스트 2건 추가: (1) fx/stock/crypto/gold 전부 AMOUNT_MAX+1 입력 시 AMOUNT_MAX로 클램프, (2) AMOUNT_MAX 경계값과 그 이하 정상 입력(소수점 포함 '1,500.25')은 클램프에 영향받지 않음. node test/run.js 3884->3886/3886 통과, node --check(logic.js/sw.js) 통과, index.html inline <script> 블록 4개(HTML 주석 제거 후 추출) new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.523->1.47.524, sw.js CACHE v790->v791. 커밋 795b289.",
-      "commit": "795b289"
-    },
     {
       "cycle": 395,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-25T01:15:00.000Z",
       "summary": "critique(cycle399)의 계획대로 yearArchiveOverlap() 순수 헬퍼를 신설하고 yearSummary()/openYearReview()에 배선해, archiveTxnsBefore('오래된 데이터 정리')가 지운 기간이 섞인 해의 연간 결산이 틀린 전년대비 배지를 보여주던 데이터 정합성 공백을 메웠다. logic.js monthStartStr(719행) 바로 뒤에 yearArchiveOverlap(y,archivedThroughDate,endDate=null) 신설 — archivedThroughDate가 없으면 'none', 그 해(또는 endDate로 좁힌 YTD 상한)의 1/1~종료일 전체가 archivedThroughDate 이하면 'full', 일부만 겹치면(종료일 이전·1/1 이후) 'partial'. yearSummary()(index.html)에서 DB.settings.archivedThroughDate로 curOverlap(올해)/pyOverlap(전년, pyEndDate 상한 포함)을 계산해 hasArchiveGap으로 묶고, 기존 null 가드(income/expense/rate/investDelta)에 전부 '||hasArchiveGap' 조건을 추가해 raw 수치가 0이 아니라서 기존 null 가드로는 못 잡혔던 왜곡된 YoY 배지를 막았다. curOverlap만으로(pyOverlap은 보지 않음) archiveNotice('full'/'partial'/null)를 반환에 추가 — 올해 자체 raw 총수입/총지출/TOP3/투자손익은 curOverlap이 none이면 항상 정확하므로, 안내는 '지금 보고 있는 해'가 지워진 범위와 겹칠 때만 띄운다. openYearReview()에 archiveNoticeHtml(YTD 안내와 동일한 시각 패턴, full/partial 문구 분기)을 요약 카드 안에 추가하고, archiveNotice==='full'일 때만 투자 실현손익 카드와 지출/수입 TOP3 카드를 raw 숫자 대신 짧은 안내 카드(archivedGoneCard)로 대체(partial은 TOP3/투자손익이 아직 신뢰 가능해 그대로 유지, 계획대로 openSpendAnalysis/openIncomeAnalysis·전체내역 날짜범위·연도별 실현손익 재구성·archiveMonthPicked 문구 변경은 범위 제외). test/run.js에 yearArchiveOverlap 순수 테스트 5건(없음/이전/경계/일부겹침/endDate 상한), yearSummary archiveNotice·null가드 테스트 6건(full/partial/안겹침 회귀/pyOverlap만 겹침/settings 없음 회귀), openYearReview 렌더 테스트 3건(full일 때 안내+TOP3·투자손익 숨김, partial일 때 안내만+카드 유지, archivedThroughDate 없을 때 안내 없음 회귀) 총 14건 추가. node test/run.js 3960->3973/3973 통과, node --check(logic.js/sw.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.532->1.47.533, sw.js CACHE v799->v800. pending_advance_plan null로 비움. 참고: 이번 사이클 시작 시에도 로컬 HEAD가 detached였고(main 로컬 ref가 51c4fcd(cycle394 review)로 정체, origin/main은 이미 HEAD(33244e3)까지 최신) git branch -f main HEAD && git checkout main으로 복구(원인 계속 불명, 데이터 손실 없음 — cycle396부터 매 사이클 반복되는 증상이라 다음 develop 사이클이 조사해볼 만함).",
+      "commit": null
+    },
+    {
+      "cycle": 400,
+      "phase": "develop",
+      "timestamp": "2026-11-25T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 twGuard(튜토리얼/데모 모드 가드) 감사를 '문의하기'(피드백 메모) 기능까지 확장. restoreTrashInquiry/purgeTrashInquiry(cycle331)는 이미 twGuard가 있었지만, 정작 메모를 만들고/고치고/지우는 sendInquiry/saveInquiryEdit/delInquiry(index.html)에는 빠져 있어 튜토리얼 중 메뉴→문의하기로 작성한 메모가 다른 모든 추가/수정/삭제 경로(addOwner/doRenameOwner/delGoal 등)와 달리 실제로 DB.inquiries/trashInquiries에 영구 저장되던 공백을 발견 — addOwner/doRenameOwner/delGoal과 동일한 자리에 `if(twGuard())return;` 3곳 추가, editInquiry(시트 열기)는 기존 관례대로(renameCatSheet 등) 가드 없이 유지. test/run.js에 각 함수별 twGuard 회귀 테스트 3건 추가(TWi=0으로 막힘 확인 후 TWi=-1 복원), 기존 1곳(sendInquiry 정상 저장 테스트) 등과 동일 스타일. node test/run.js 3973->3976/3976 통과, node --check(sw.js/test/run.js) 및 index.html에서 추출한 inline <script> 블록 2개 전부 node --check 통과 확인(오케스트레이터가 서브에이전트 결과와 별개로 재검증). index.html/sw.js를 수정했으므로 APP_VERSION 1.47.533->1.47.534, sw.js CACHE v800->v801.",
       "commit": null
     }
   ]
