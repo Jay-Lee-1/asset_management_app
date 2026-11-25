@@ -395,7 +395,7 @@ const FUNCTIONS = [
   // DOM 의존이 없거나($('recBody')만 참조) 얕아서 FUNCTIONS로 실제 로드해 검증할 수 있다.
   'recManageBody', 'recQInput',
   'planSplitTransfer', 'planTransfer',
-  'sbErrMsg', 'isRlsPolicyError', 'isMissingTableError', 'deleteCloudAccountData', 'doDeleteAccount',
+  'sbErrMsg', 'isRlsPolicyError', 'isMissingTableError', 'isAuthExpiredError', 'deleteCloudAccountData', 'doDeleteAccount',
   // openHelp는 app-evolve cycle244 develop(helpBackupNote 와이어링 검증용)에서 끌어왔다 — openSheet
   // 스텁만으로 실행형 검증이 가능해(DOM 전역을 직접 건드리지 않음) cycle152가 가져온 다른 함수들과
   // 같은 기준으로 바로 추가한다.
@@ -35730,6 +35730,18 @@ test('homeAlertCard: cloudSyncError는 테이블 누락 오류(CLOUD_SYNC_ERR_KI
   assert.ok(!html.includes('자동으로 다시 시도'), '테이블 누락 오류는 재시도로 안 풀리므로 재시도 중이라고 오도하면 안 됨');
   sandbox.CLOUD_SYNC_ERR_KIND = 'network'; // 이후 테스트에 영향 주지 않도록 기본값으로 되돌림
 });
+/* 인증 만료(CLOUD_SYNC_ERR_KIND==='auth_expired')도 재시도로 해결되지 않지만, 안내 SQL이 있는
+ * openHelpCloud()가 아니라 로그아웃 버튼이 있는 openAccountSheet()로 보낸다 — 재로그인 경로가
+ * 이미 거기 있어 새 시트를 안 만들고 재사용한다(app-evolve cycle402 advance). */
+test('homeAlertCard: cloudSyncError는 인증 만료 오류(CLOUD_SYNC_ERR_KIND==="auth_expired")면 openAccountSheet()로 열리고 재로그인이 필요함을 구체적으로 알린다', () => {
+  sandbox.CLOUD_SYNC_ERR_KIND = 'auth_expired';
+  const html = sandbox.homeAlertCard({ kind: 'cloudSyncError' });
+  assert.ok(html.includes('클라우드 동기화에 실패했어요'), '실패 문구가 보여야 함');
+  assert.ok(html.includes('onclick="openAccountSheet()"'), '재로그인 경로(로그아웃 버튼)가 있는 openAccountSheet()로 가야 함');
+  assert.ok(html.includes('로그인이 만료됐어요'), '인증 만료 문제임을 구체적으로 알려야 함');
+  assert.ok(!html.includes('자동으로 다시 시도'), '인증 만료 오류는 재시도로 안 풀리므로 재시도 중이라고 오도하면 안 됨');
+  sandbox.CLOUD_SYNC_ERR_KIND = 'network'; // 이후 테스트에 영향 주지 않도록 기본값으로 되돌림
+});
 test('homeAlertCard: confirmMulti는 openConfirmTransferList()로 열리고 건수가 보인다(app-evolve cycle156)', () => {
   const html = sandbox.homeAlertCard({ kind: 'confirmMulti', count: 3 });
   assert.ok(html.includes('onclick="openConfirmTransferList()"'), 'confirmMulti 카드가 openConfirmTransferList()를 호출해야 함');
@@ -42601,6 +42613,20 @@ test('isMissingTableError: Postgres 42P01 코드와 "relation ... does not exist
   assert.strictEqual(sandbox.isMissingTableError(undefined), false, 'undefined 입력에 안전하지 않음');
 });
 
+test('isAuthExpiredError: PGRST301/401/invalid_grant/refresh_token_not_found 류를 네트워크·RLS·테이블누락 에러와 구분한다', () => {
+  assert.strictEqual(sandbox.isAuthExpiredError({ code: 'PGRST301', message: 'JWT expired' }), true, 'PGRST301/JWT expired를 인증 만료로 인식하지 못함');
+  assert.strictEqual(sandbox.isAuthExpiredError({ status: 401 }), true, 'status 401을 인증 만료로 인식하지 못함');
+  assert.strictEqual(sandbox.isAuthExpiredError({ message: 'invalid refresh token' }), true, 'invalid refresh token 메시지를 인식하지 못함');
+  assert.strictEqual(sandbox.isAuthExpiredError({ code: 'refresh_token_not_found' }), true, 'refresh_token_not_found 코드를 인식하지 못함');
+  assert.strictEqual(sandbox.isAuthExpiredError({ message: 'session expired' }), true, 'session expired 메시지를 인식하지 못함');
+  assert.strictEqual(sandbox.isAuthExpiredError({ message: 'not authenticated' }), true, 'not authenticated 메시지를 인식하지 못함');
+  assert.strictEqual(sandbox.isAuthExpiredError({ message: 'Failed to fetch' }), false, '일반 네트워크 에러까지 인증 만료로 오판함');
+  assert.strictEqual(sandbox.isAuthExpiredError({ code: '42501', message: 'permission denied for table user_data' }), false, 'RLS 에러를 인증 만료로 오판함');
+  assert.strictEqual(sandbox.isAuthExpiredError({ code: '42P01', message: 'relation "public.user_data" does not exist' }), false, '테이블 누락 에러를 인증 만료로 오판함');
+  assert.strictEqual(sandbox.isAuthExpiredError(null), false, 'null 입력에 안전하지 않음');
+  assert.strictEqual(sandbox.isAuthExpiredError(undefined), false, 'undefined 입력에 안전하지 않음');
+});
+
 /* cloudSyncFailed/cloudSyncLabel은 메인 sandbox에서 cloudSyncFailed가 부작용 방지용 no-op
  * 스텁(위 505행)으로 영구히 덮여 있어 실제 분류 로직을 못 본다 — isRlsPolicyError와 마찬가지로
  * 별도 vm 컨텍스트에서 진짜 함수를 추출해 실행형으로 검증한다(themeColorMetaCtx와 같은 패턴).
@@ -42613,7 +42639,7 @@ function cloudSyncErrCtx() {
   const ctx = { toastCalls: [], toast: (msg) => { ctx.toastCalls.push(msg); }, CLOUD_UID: 'u1' };
   vm.createContext(ctx);
   vm.runInContext(
-    [extractFunction('isRlsPolicyError'), extractFunction('isMissingTableError'), extractLet('CLOUD_SYNC_STATE'), extractLet('CLOUD_LAST_OK'),
+    [extractFunction('isRlsPolicyError'), extractFunction('isMissingTableError'), extractFunction('isAuthExpiredError'), extractLet('CLOUD_SYNC_STATE'), extractLet('CLOUD_LAST_OK'),
       extractLet('CLOUD_ERR_TOASTED'), extractLet('CLOUD_CONFLICT_TOASTED'), extractLet('CLOUD_SYNC_ERR_KIND'),
       extractFunction('cloudSyncOk'), extractFunction('cloudSyncFailed'), extractFunction('cloudSyncLabel')].join('\n'),
     ctx,
@@ -42622,6 +42648,22 @@ function cloudSyncErrCtx() {
   _cloudSyncErrCtx = ctx;
   return ctx;
 }
+test('[실행형] cloudSyncFailed: 인증 만료 에러(PGRST301/JWT expired)를 넘기면 CLOUD_SYNC_ERR_KIND="auth_expired"로 분류하고 재로그인을 구체적으로 안내한다(인터넷 연결 문구는 쓰지 않음)', () => {
+  const ctx = cloudSyncErrCtx();
+  ctx.CLOUD_SYNC_STATE = 'idle'; ctx.CLOUD_ERR_TOASTED = false; ctx.toastCalls = [];
+  ctx.cloudSyncFailed({ code: 'PGRST301', message: 'JWT expired' });
+  assert.strictEqual(ctx.CLOUD_SYNC_STATE, 'error');
+  assert.strictEqual(ctx.CLOUD_SYNC_ERR_KIND, 'auth_expired', '인증 만료 에러를 network로 오분류함');
+  assert.ok(ctx.toastCalls.some((m) => m.includes('다시 로그인')), '토스트가 재로그인이 필요함을 구체적으로 알려야 함');
+  assert.ok(!ctx.toastCalls.some((m) => m.includes('인터넷 연결')), '인증 만료 에러인데 인터넷 연결 확인 문구가 뜨면 재시도로는 절대 해결 안 되는 문제를 재시도로 오해하게 됨');
+  assert.strictEqual(ctx.cloudSyncLabel(), '⚠ 동기화 실패 · 다시 로그인 필요', 'cloudSyncLabel()도 인증 만료 전용 문구를 돌려줘야 함');
+});
+test('[실행형] cloudSyncFailed: 죽은 세션이 RLS처럼 보이는 메시지를 내도(예: 401이면서 policy 문구가 섞여도) auth_expired를 더 구체적인 분류로 우선한다', () => {
+  const ctx = cloudSyncErrCtx();
+  ctx.CLOUD_SYNC_STATE = 'idle'; ctx.CLOUD_ERR_TOASTED = false; ctx.toastCalls = [];
+  ctx.cloudSyncFailed({ status: 401, message: 'new row violates row-level security policy for table "user_data"' });
+  assert.strictEqual(ctx.CLOUD_SYNC_ERR_KIND, 'auth_expired', 'auth_expired가 rls보다 먼저 분류돼야 하는데 rls로 분류됨');
+});
 test('[실행형] cloudSyncFailed: RLS 정책 에러(42501/policy 메시지)를 넘기면 CLOUD_SYNC_ERR_KIND="rls"로 분류하고 권한 설정을 구체적으로 안내한다', () => {
   const ctx = cloudSyncErrCtx();
   ctx.CLOUD_SYNC_STATE = 'idle'; ctx.CLOUD_ERR_TOASTED = false; ctx.toastCalls = [];
