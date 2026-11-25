@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.532';
+const APP_VERSION='1.47.533';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -8720,19 +8720,30 @@ function yearSummary(y,owner='전체'){
  const pyExpense=pyExpRows.reduce((s,r)=>s+r.v,0),pyIncome=pyIncRows.reduce((s,r)=>s+r.v,0);
  const pyRate=savingsRate(pyIncome,pyExpense);
  const investGain=yearRealizedGain(y,owner),pyInvestGain=yearRealizedGain(y-1,owner,pyEndDate);
+ /* archiveTxnsBefore(오래된 데이터 정리)가 지운 기간이 올해/전년(YTD 포함) 구간과 겹치면 그 해의
+  * raw 수치는 실제보다 적게 집계된 것이라, 겹치는 쪽이 하나라도 있으면 YoY 비교 자체를 신뢰할 수
+  * 없다고 보고 null로 막는다(app-evolve cycle399 critique/advance) — curOverlap/pyOverlap 둘 다
+  * 'none'이어야 기존처럼 비교한다. */
+ const archivedThrough=DB.settings&&DB.settings.archivedThroughDate;
+ const curOverlap=yearArchiveOverlap(y,archivedThrough),pyOverlap=yearArchiveOverlap(y-1,archivedThrough,pyEndDate);
+ const hasArchiveGap=curOverlap!=='none'||pyOverlap!=='none';
  const yoy={
-  income:pyIncome?Math.round((income-pyIncome)/pyIncome*100):null,
-  expense:pyExpense?Math.round((expense-pyExpense)/pyExpense*100):null,
-  rate:(rate===null||pyRate===null)?null:rate-pyRate,
+  income:(!hasArchiveGap&&pyIncome)?Math.round((income-pyIncome)/pyIncome*100):null,
+  expense:(!hasArchiveGap&&pyExpense)?Math.round((expense-pyExpense)/pyExpense*100):null,
+  rate:(hasArchiveGap||rate===null||pyRate===null)?null:rate-pyRate,
   /* investGain은 income/expense와 달리 손실(음수)일 수 있고 전년 실현손익(기준값)도 0 근처거나
    * 음수일 수 있어 퍼센트 기반 YoY(위 income/expense처럼 기준으로 나누기)를 쓰면 기준이 0·음수일
    * 때 왜곡되거나 Infinity/NaN이 난다 — 그래서 퍼센트가 아니라 원 단위 증감 그대로 둔다. 올해·전년
    * 중 하나라도 매도 기록이 없으면(null) 비교 기준이 없다고 보고 null(income/expense와 동일 관례,
    * app-evolve cycle267 advance). */
-  investDelta:(investGain==null||pyInvestGain==null)?null:investGain-pyInvestGain,
+  investDelta:(hasArchiveGap||investGain==null||pyInvestGain==null)?null:investGain-pyInvestGain,
   isYTD:y===TM.y, /* openYearReview가 "전년 동기간과 비교" 안내를 보여줄지 판단하는 플래그 */
  };
- return{y,income,expense,net,savingsRate:rate,topExpenseCats:expRows.slice(0,3),topIncomeCats:incRows.slice(0,3),monthly:yearMonthlyNet(y,owner),yoy,investGain};
+ /* curOverlap만 본다 — pyOverlap(전년)이 걸려도 올해 자체 총수입/총지출/TOP3/투자손익(raw 수치)은
+  * 정확하므로 YoY 배지만 null로 숨기면 충분하고, 올해 화면에 "이 해 데이터가 지워졌다"는 안내는
+  * curOverlap 기준으로만 띄운다(app-evolve cycle399 critique/advance). */
+ const archiveNotice=curOverlap==='full'?'full':curOverlap==='partial'?'partial':null;
+ return{y,income,expense,net,savingsRate:rate,topExpenseCats:expRows.slice(0,3),topIncomeCats:incRows.slice(0,3),monthly:yearMonthlyNet(y,owner),yoy,investGain,archiveNotice};
 }
 /* 연간 결산 시트 — 연도 전환(◀/▶), 총수입/총지출/순저축액/저축률 4칸 요약(전년대비 배지),
  * 지출·수입 카테고리 TOP3 스택바(buildExpenseBarHtml 재사용). 해당 연도에 거래가 전혀 없으면
@@ -8780,10 +8791,18 @@ function openYearReview(y){
   * 형태로 따로 보여주지 않는 화면에서는 호출부가 노출해야 한다"는 조건을 못 지켜 스크린 리더
   * 사용자에게 TOP3 카테고리가 통째로 안 들렸다. 그래서 여기만 aria-hidden 없이 그대로 노출한다
   * (expenseBreakdownCard/incomeBreakdownCard, 홈 카드도 이미 aria-hidden 없이 쓰는 것과 동일). */
+ /* archiveNotice가 있으면(오래된 데이터 정리로 이 해 데이터가 일부/전부 지워짐) YTD 안내와 같은
+  * 시각 패턴으로 눈에 보이는 안내 카드를 보여준다 — yoy.* 는 이미 yearSummary에서 null로 막혀 왔지만
+  * 라벨 없이 그냥 배지가 사라지기만 하면 사용자가 "올해 안 썼나보다"로 오해할 수 있어 원인을 직접
+  * 적어준다. 'full'이면 TOP3/투자손익 raw 숫자 자체도 지워진 범위에 가려 못 믿을 수 있어, 확신에
+  * 찬 숫자 카드 대신 짧은 안내문으로 대체한다(app-evolve cycle399 critique/advance). */
+ const archiveNoticeHtml=s.archiveNotice?`<div style="text-align:center;color:var(--text-3);font-size:11.5px;font-weight:600;margin-bottom:8px">이 기간 ${s.archiveNotice==='full'?'전체':'일부'}가 "오래된 데이터 정리"로 지워져 있어요 · 실제보다 적게 보일 수 있어요</div>`:'';
+ const archivedGoneCard=`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px;color:var(--text-3);font-size:12.5px;font-weight:600">이 기간 데이터가 "오래된 데이터 정리"로 지워져 있어 정확한 집계를 보여줄 수 없어요</div>`;
  openSheet(`<h3>연간 결산</h3><div class="desc">${y}년 한 해를 돌아봐요</div>
   ${switcher}${ownerSeg}
   <div class="card" style="padding:16px 14px;margin-bottom:12px">
    ${s.yoy.isYTD?`<div style="text-align:center;color:var(--text-3);font-size:11.5px;font-weight:600;margin-bottom:8px">올해는 아직 진행 중이에요 · 전년 동기간과 비교</div>`:''}
+   ${archiveNoticeHtml}
    <div class="hrt-grid">
     <div class="hrt-c"><span class="k">총수입</span><span class="v plus num">${comma(s.income)}원</span>${incBadge}</div>
     <div class="hrt-c"><span class="k">총지출</span><span class="v minus num">${comma(s.expense)}원</span>${expBadge}</div>
@@ -8791,10 +8810,10 @@ function openYearReview(y){
     <div class="hrt-c"><span class="k">저축률</span><span class="v num">${s.savingsRate===null?'—':s.savingsRate+'%'}</span>${rateBadge}</div>
    </div>
   </div>
-  ${s.investGain!=null?`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><span style="font-size:12.5px;color:var(--text-3);font-weight:700">올해 투자 실현손익</span><div class="num" style="font-size:18px;font-weight:700;margin-top:4px;color:${s.investGain>=0?'var(--income)':'var(--expense)'}">${s.investGain>0?'+':''}${comma(s.investGain)}원</div>${investDeltaBadge}</div>`:''}
+  ${s.archiveNotice==='full'?archivedGoneCard:(s.investGain!=null?`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><span style="font-size:12.5px;color:var(--text-3);font-weight:700">올해 투자 실현손익</span><div class="num" style="font-size:18px;font-weight:700;margin-top:4px;color:${s.investGain>=0?'var(--income)':'var(--expense)'}">${s.investGain>0?'+':''}${comma(s.investGain)}원</div>${investDeltaBadge}</div>`:'')}
   <div class="card" style="padding:2px 14px;margin-bottom:12px"><div class="section-title" style="margin-top:0">월별 흐름</div>${moRows}</div>
-  ${s.expense?`<div class="card" style="margin-bottom:12px"><div class="section-title" style="margin-top:0">지출 TOP3</div>${buildExpenseBarHtml(s.topExpenseCats.map(r=>({cat:r.c,v:r.v})))}</div>`:''}
-  ${s.income?`<div class="card" style="margin-bottom:12px"><div class="section-title" style="margin-top:0">수입 TOP3</div>${buildExpenseBarHtml(s.topIncomeCats.map(r=>({cat:r.c,v:r.v})))}</div>`:''}
+  ${s.archiveNotice==='full'?'':(s.expense?`<div class="card" style="margin-bottom:12px"><div class="section-title" style="margin-top:0">지출 TOP3</div>${buildExpenseBarHtml(s.topExpenseCats.map(r=>({cat:r.c,v:r.v})))}</div>`:'')}
+  ${s.archiveNotice==='full'?'':(s.income?`<div class="card" style="margin-bottom:12px"><div class="section-title" style="margin-top:0">수입 TOP3</div>${buildExpenseBarHtml(s.topIncomeCats.map(r=>({cat:r.c,v:r.v})))}</div>`:'')}
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
 }
 function openSpendAnalysis(){

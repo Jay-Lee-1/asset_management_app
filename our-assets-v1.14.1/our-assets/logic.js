@@ -717,6 +717,21 @@ function isReservedOwnerName(v){
 function lastDay(y,m){return new Date(y,m,0).getDate()}
 function monthEndStr(y,m){return `${y}-${String(m).padStart(2,'0')}-${String(lastDay(y,m)).padStart(2,'0')}`}
 function monthStartStr(y,m){return `${y}-${String(m).padStart(2,'0')}-01`}
+/* archiveTxnsBefore(오래된 데이터 정리)가 DB.settings.archivedThroughDate 이전 거래를 영구히
+ * 지우고 그 합계를 자산 baseline(assetBase/archivedRealizedGain)에 흡수한다 — budgetCarryFor(cycle295)만
+ * 이 마커를 참조해 "정리된 달은 이월 0"으로 막아왔지만, 연간 결산(yearSummary/openYearReview)은
+ * 전혀 확인하지 않아 아카이브로 지워진 기간이 섞인 해를 "실제보다 적게 쓴 해"로 집계해 전년대비
+ * 배지를 오해하게 만든다(app-evolve cycle399 critique). 해당 연도(y, endDate가 있으면 1/1~endDate로
+ * 상한을 좁힌 YTD 구간)가 archivedThroughDate와 전혀 안 겹치면 'none', 구간 전체가 지워진 범위
+ * 안에 들어가면(그 해 1/1~종료일 모두가 archivedThroughDate 이전) 'full', 일부만 겹치면 'partial'을
+ * 돌려준다. archivedThroughDate가 없으면(아카이브를 한 번도 안 쓴 사용자) 항상 'none'. */
+function yearArchiveOverlap(y,archivedThroughDate,endDate=null){
+ if(!archivedThroughDate)return 'none';
+ const yStart=`${y}-01-01`,yEnd=endDate||`${y}-12-31`;
+ if(archivedThroughDate>=yEnd)return 'full';
+ if(archivedThroughDate>=yStart)return 'partial';
+ return 'none';
+}
 /* 거래 1건이 카테고리 하나에 묶이지 않고 여러 카테고리로 나뉠 수 있게 하는 선택적 필드
  * t.splits:[{category,amount,memo?}] 를 읽는 공용 헬퍼(app-evolve cycle198 critique/advance) —
  * 마트 한 건에 식비+생활용품이 섞이는 실제 상황에서 "제일 비슷한 카테고리 하나"를 억지로

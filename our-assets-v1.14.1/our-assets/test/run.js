@@ -13446,6 +13446,62 @@ test('openYearReview: 과거(완결된) 연도를 보고 있으면 YTD 안내가
   assert.ok(!ctx.lastSheetHtml.includes('올해는 아직 진행 중이에요'), '과거 연도는 YTD 안내가 없어야 함');
 });
 
+/* ---------- openYearReview: archiveNotice(yearSummary, app-evolve cycle399 critique/advance) —
+ * "오래된 데이터 정리"로 지워진 기간이 섞인 해를 보고 있으면 YoY 배지 없이 조용히 사라지는 대신
+ * 원인을 알리는 안내 카드를 보여주고, 완전히 겹치면(full) TOP3/투자손익 raw 카드를 안내문으로
+ * 대체한다 ---------- */
+test('openYearReview: archiveNotice가 full이면 안내문을 보여주고 투자 실현손익/TOP3 카드는 숨긴다', () => {
+  const ctx = yearReviewCtx();
+  ctx.TM = { y: 2099, m: 1, d: 1 };
+  ctx.DB = { owners: [], assets: [], recurrences: [],
+    txns: [
+      { id: '1', type: 'income', category: '급여', amount: 10000, date: '2026-01-10', confirmed: true },
+      { id: '2', type: 'expense', category: '식비', amount: 5000, date: '2026-01-15', confirmed: true },
+    ],
+    assetQtyLog: [{ date: '2026-06-01', assetId: 'a1', realizedGain: 70000 }],
+    settings: { archivedThroughDate: '2026-12-31' },
+  };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('전체가 "오래된 데이터 정리"로 지워져'), 'full 안내문이 보여야 함');
+  assert.ok(!html.includes('올해 투자 실현손익'), 'full이면 투자 실현손익 raw 카드는 숨겨야 함');
+  assert.ok(!html.includes('지출 TOP3'), 'full이면 지출 TOP3 카드도 숨겨야 함');
+  assert.ok(!html.includes('수입 TOP3'), 'full이면 수입 TOP3 카드도 숨겨야 함');
+  assert.ok(html.includes('정확한 집계를 보여줄 수 없어요'), 'TOP3/투자손익 대신 안내 카드가 있어야 함');
+});
+test('openYearReview: archiveNotice가 partial이면 안내문만 보여주고 TOP3/투자손익 카드는 그대로 유지한다', () => {
+  const ctx = yearReviewCtx();
+  ctx.TM = { y: 2099, m: 1, d: 1 };
+  ctx.DB = { owners: [], assets: [], recurrences: [],
+    txns: [
+      { id: '1', type: 'income', category: '급여', amount: 1000000, date: '2026-01-10', confirmed: true },
+      { id: '2', type: 'expense', category: '식비', amount: 400000, date: '2026-07-15', confirmed: true },
+    ],
+    assetQtyLog: [{ date: '2026-06-01', assetId: 'a1', realizedGain: 70000 }],
+    settings: { archivedThroughDate: '2026-02-28' },
+  };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('일부가 "오래된 데이터 정리"로 지워져'), 'partial 안내문이 보여야 함');
+  assert.ok(html.includes('올해 투자 실현손익'), 'partial이면 raw 투자손익 카드는 그대로 보여야 함(TOP3처럼 신뢰 가능)');
+  assert.ok(html.includes('지출 TOP3'), 'partial이면 지출 TOP3 카드도 그대로 보여야 함');
+});
+test('openYearReview: archivedThroughDate가 없거나 그 해와 안 겹치면 안내문이 전혀 나오지 않는다(회귀 가드)', () => {
+  const ctx = yearReviewCtx();
+  ctx.TM = { y: 2099, m: 1, d: 1 };
+  ctx.DB = { owners: [], assets: [], recurrences: [],
+    txns: [{ id: '1', type: 'income', category: '급여', amount: 1000000, date: '2026-01-10', confirmed: true }],
+  };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  assert.ok(!ctx.lastSheetHtml.includes('오래된 데이터 정리'), 'archivedThroughDate가 없으면 안내문이 없어야 함');
+});
+
 /* ---------- deleteTxnsUndo: 단일/대량 삭제 공용 되돌리기 인프라 (delAdjust도 여기 합류) ---------- */
 test('deleteTxnsUndo: 지정한 id의 내역을 삭제하고, undo 콜백을 부르면 정확히 복원한다', () => {
   sandbox.TWi = -1;
@@ -20787,6 +20843,110 @@ test('yearSummary: 올해·전년 모두 투자 실현손익 기록이 없으면
   sandbox.DB = { txns: [], recurrences: [] };
   const s = sandbox.yearSummary(2026);
   assert.strictEqual(s.yoy.investDelta, null);
+});
+
+/* ---------- yearArchiveOverlap(logic.js, 순수): archiveTxnsBefore('오래된 데이터 정리')가 지운
+ * DB.settings.archivedThroughDate 범위가 그 해(y, endDate가 있으면 YTD 상한)와 얼마나 겹치는지
+ * 'none'/'partial'/'full' 중 하나로 판정 — yearSummary가 YoY 배지를 숨기고 openYearReview가
+ * 안내 카드를 보여줄지 결정하는 데 쓴다(app-evolve cycle399 critique/advance) ---------- */
+test('yearArchiveOverlap: archivedThroughDate가 없으면(아카이브를 한 번도 안 씀) 항상 none이다', () => {
+  assert.strictEqual(sandbox.yearArchiveOverlap(2026, null), 'none');
+  assert.strictEqual(sandbox.yearArchiveOverlap(2026, undefined), 'none');
+  assert.strictEqual(sandbox.yearArchiveOverlap(2026, ''), 'none');
+});
+test('yearArchiveOverlap: archivedThroughDate가 그 해 1/1보다 이전이면(안 겹침) none이다', () => {
+  assert.strictEqual(sandbox.yearArchiveOverlap(2026, '2025-12-31'), 'none');
+});
+test('yearArchiveOverlap: archivedThroughDate가 그 해 12/31 이상이면(해 전체가 지워진 범위 안) full이다', () => {
+  assert.strictEqual(sandbox.yearArchiveOverlap(2026, '2026-12-31'), 'full');
+  assert.strictEqual(sandbox.yearArchiveOverlap(2026, '2027-03-01'), 'full', '그 해보다 한참 뒤까지 정리됐어도 full');
+});
+test('yearArchiveOverlap: archivedThroughDate가 그 해 1/1~12/31 사이에 있으면(일부만 겹침) partial이다', () => {
+  assert.strictEqual(sandbox.yearArchiveOverlap(2026, '2026-06-15'), 'partial');
+  assert.strictEqual(sandbox.yearArchiveOverlap(2026, '2026-01-01'), 'partial', '경계값(1/1 당일)도 겹친 것으로 봄');
+});
+test('yearArchiveOverlap: endDate를 주면(YTD 상한) 12/31 대신 그 날짜 기준으로 none/partial/full을 판정한다', () => {
+  assert.strictEqual(sandbox.yearArchiveOverlap(2025, '2025-02-28', '2025-02-28'), 'full', 'archivedThroughDate가 YTD 상한과 같으면 그 구간 전체가 지워진 것');
+  assert.strictEqual(sandbox.yearArchiveOverlap(2025, '2025-02-27', '2025-02-28'), 'partial');
+  assert.strictEqual(sandbox.yearArchiveOverlap(2025, '2024-12-31', '2025-02-28'), 'none');
+});
+
+/* ---------- yearSummary: archiveTxnsBefore가 지운 기간이 올해/전년(YTD 포함) 구간과 겹치면 raw
+ * 수치가 실제보다 적게 집계된 것이므로 YoY 비교를 null로 막고 archiveNotice로 원인을 알린다
+ * (app-evolve cycle399 critique/advance) ---------- */
+test('yearSummary: archivedThroughDate가 그 해 전체를 덮으면(full) 수입/지출이 0이 아니어도 yoy 전부 null이고 archiveNotice가 full이다', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
+  sandbox.DB = {
+    txns: [
+      { date: '2025-01-10', type: 'income', category: '급여', amount: 1000000 },
+      { date: '2025-01-15', type: 'expense', category: '식비', amount: 300000 },
+      { date: '2026-01-10', type: 'income', category: '급여', amount: 10000 }, // 아카이브로 대부분 지워진 뒤 남은 소액 — raw 값은 0이 아님
+      { date: '2026-01-15', type: 'expense', category: '식비', amount: 5000 },
+    ],
+    recurrences: [],
+    settings: { archivedThroughDate: '2026-12-31' }, // 2026년 전체가 정리됨
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.income, 10000, 'raw 수치 자체는(남은 거래 기준) 그대로 돌려줌');
+  assert.strictEqual(s.yoy.income, null, 'income YoY는 null로 막혀야 함 — 0이 아니라서 기존 null 가드로는 못 잡혔을 수치');
+  assert.strictEqual(s.yoy.expense, null);
+  assert.strictEqual(s.yoy.rate, null);
+  assert.strictEqual(s.archiveNotice, 'full');
+});
+test('yearSummary: archivedThroughDate가 그 해 일부만 덮으면(partial) yoy는 null이고 archiveNotice가 partial이다', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
+  sandbox.DB = {
+    txns: [
+      { date: '2025-04-10', type: 'income', category: '급여', amount: 1000000 },
+      { date: '2026-04-10', type: 'income', category: '급여', amount: 1200000 },
+    ],
+    recurrences: [],
+    settings: { archivedThroughDate: '2026-02-28' }, // 2월까지만 정리 — 4월 거래는 안 지워졌지만 같은 해 안이라 해 전체 집계를 믿을 수 없음
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.yoy.income, null, '2월까지는 지워진 범위라 1~12월 합계를 신뢰할 수 없어 YoY를 보여주면 안 됨');
+  assert.strictEqual(s.archiveNotice, 'partial');
+});
+test('yearSummary: archivedThroughDate가 그 해보다 완전히 이전이면(안 겹침) 기존처럼 YoY를 정상 계산하고 archiveNotice는 null이다(회귀 가드)', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
+  sandbox.DB = {
+    txns: [
+      { date: '2025-04-10', type: 'income', category: '급여', amount: 1000000 },
+      { date: '2026-04-10', type: 'income', category: '급여', amount: 1200000 },
+    ],
+    recurrences: [],
+    settings: { archivedThroughDate: '2024-12-31' }, // 2024년까지만 정리 — 2025/2026 어느 쪽과도 안 겹침
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.yoy.income, 20, '기존처럼 1,000,000 -> 1,200,000은 +20%여야 함');
+  assert.strictEqual(s.archiveNotice, null);
+});
+test('yearSummary: 전년(y-1) 쪽만 아카이브와 겹쳐도(올해는 안 겹침) yoy는 null이지만 archiveNotice는 올해 기준이라 null이다', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
+  sandbox.DB = {
+    txns: [
+      { date: '2025-04-10', type: 'income', category: '급여', amount: 500000 }, // 전년 — 정리된 범위라 raw 값은 남은 일부일 뿐
+      { date: '2026-04-10', type: 'income', category: '급여', amount: 1200000 }, // 올해 — 안 지워짐
+    ],
+    recurrences: [],
+    settings: { archivedThroughDate: '2025-06-30' }, // 2025년(전년)만 일부 겹침, 2026년(올해)은 안 겹침
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.yoy.income, null, '전년 쪽 raw 값이 아카이브로 깎여 있어 비교 자체가 왜곡되므로 null이어야 함');
+  assert.strictEqual(s.archiveNotice, null, '올해(curOverlap) 자체는 안 겹쳤으니 "이 화면이 보여주는 해" 기준 안내는 필요 없음 — raw 총수입/지출/TOP3는 올해 그대로 정확함');
+});
+test('yearSummary: DB.settings가 없으면(archivedThroughDate 자체가 undefined) 기존처럼 동작한다(회귀 가드)', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
+  sandbox.DB = {
+    txns: [
+      { date: '2025-04-10', type: 'income', category: '급여', amount: 1000000 },
+      { date: '2026-04-10', type: 'income', category: '급여', amount: 1200000 },
+    ],
+    recurrences: [],
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.yoy.income, 20);
+  assert.strictEqual(s.archiveNotice, null);
 });
 
 
