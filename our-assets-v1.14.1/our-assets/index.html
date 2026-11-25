@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.536';
+const APP_VERSION='1.47.537';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -7584,7 +7584,7 @@ function openAssetQtyLog(assetId){
   return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
     <div class="mn num">${sign}${commaQty(delta)} ${esc(unit)}</div>
     <div class="msub">${q.date||''} · ${commaQty(q.prevQty)} → ${commaQty(q.newQty)} ${esc(unit)}${q.addedAmount>0?` · 투입 ${comma(q.addedAmount)}원`:''}${q.saleProceeds>0?` · 매도 ${comma(q.saleProceeds)}원${gainTxt}`:''}</div></div>
-   <div class="row-acts"><button class="act-btn danger" aria-label="수량 변경 기록 삭제" onclick="delAssetQtyLog('${q.id}')">${svg('trash')}</button></div></div>`};
+   <div class="row-acts"><button class="act-btn" aria-label="수량 변경 기록 수정" onclick="editAssetQtyLog('${q.id}')">${svg('edit')}</button><button class="act-btn danger" aria-label="수량 변경 기록 삭제" onclick="delAssetQtyLog('${q.id}')">${svg('trash')}</button></div></div>`};
  openSheet(`<h3>${esc(a.name)} 수량 변경 기록</h3><div class="desc">보유 수량을 직접 수정할 때마다 남는 기록이에요. 거래 내역과는 별도예요</div>
   ${totalGain!=null?`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><span style="font-size:12.5px;color:var(--text-3);font-weight:700">누적 실현손익</span><div class="num" style="font-size:18px;font-weight:700;margin-top:4px;color:${totalGain>=0?'var(--income)':'var(--expense)'}">${totalGain>0?'+':''}${comma(totalGain)}원</div></div>`:''}
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('receipt')}</div><div class="et">아직 수량 변경 기록이 없어요</div></div>`}
@@ -7599,6 +7599,60 @@ function delAssetQtyLog(id){
   save();openAssetQtyLog(q.assetId);
   undoToast('기록을 삭제했어요',()=>{DB.assetQtyLog.push(q);delete DB.deletedIds[id];DB.trashQtyLog=(DB.trashQtyLog||[]).filter(x=>x.id!==id);touchSave(q);openAssetQtyLog(q.assetId);toast('되돌렸어요')});
  });
+}
+/* delAssetQtyLog(삭제)만 있고 고칠 방법이 없어, 날짜를 잘못 고르거나(매수·매도 당시
+ * _qtyChangeDate를 안 넣었거나 오타) 매도 금액을 잘못 입력해 생긴 실현손익 오류를 지우고 다시
+ * 만드는 것 말고는 바로잡을 길이 없었다(app-evolve cycle401 critique → advance). editInquiry/
+ * saveInquiryEdit과 동일하게 '열기(읽기 전용)'와 '저장(twGuard)'을 분리한다. prevQty/newQty/field는
+ * 여기서 손대지 않음 — 바꾸려면 그 뒤 모든 기록의 델타를 다시 계산해야 해서 이번 범위 밖(계획 그대로).
+ * _qtyLogEditDraft는 이 시트가 열려 있는 동안만 쓰는 임시 작업본 — asDraft처럼 날짜 피커 콜백과
+ * 금액 입력 oninput이 직접 갱신하고, renderQtyLogEditSheet가 매번 이걸 기준으로 다시 그린다. */
+let _qtyLogEditDraft=null;
+function editAssetQtyLog(id){
+ const q=(DB.assetQtyLog||[]).find(x=>x.id===id);if(!q)return;
+ _qtyLogEditDraft={date:q.date||TODAY,addedAmount:q.addedAmount||0,saleProceeds:q.saleProceeds||0};
+ renderQtyLogEditSheet(id);
+}
+function renderQtyLogEditSheet(id){
+ const q=(DB.assetQtyLog||[]).find(x=>x.id===id);if(!q)return;
+ const a=(DB.assets||[]).find(x=>x.id===q.assetId);
+ const unit=a?(a.type==='fx'?a.currency:(a.type==='gold'?'돈':(a.type==='crypto'?'개':'주'))):'';
+ const d=_qtyLogEditDraft||{date:q.date,addedAmount:q.addedAmount||0,saleProceeds:q.saleProceeds||0};
+ const pickOnClick=`openFieldDatePicker(_qtyLogEditDraft.date||TODAY,ds=>{if(ds>TODAY){toastFail('날짜는 오늘보다 미래일 수 없어요');return}_qtyLogEditDraft.date=ds;renderQtyLogEditSheet('${id}')})`;
+ openSheet(`<h3>수량 변경 기록 수정</h3><div class="desc">날짜와 투입·매도 금액만 고칠 수 있어요. 수량 변화(보유 수량 자체)는 수정할 수 없어요.</div>
+  <div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><div class="num" style="font-size:16px;font-weight:700">${commaQty(q.prevQty)} → ${commaQty(q.newQty)} ${esc(unit)}</div></div>
+  <div class="field"><label>날짜</label><div class="pick ${d.date?'':'placeholder'}" style="cursor:pointer" onclick="${pickOnClick}">
+    <div class="row-tap" tabindex="0" role="button" aria-label="날짜 ${d.date?fmtDateFull(d.date):'선택'}" onkeydown="rowKeydown(event,()=>{${pickOnClick}})"><div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.date?fmtDateFull(d.date):'선택'}</div></div></div><div class="pc">${svg('chev')}</div></div></div>
+  ${q.addedAmount>0?`<div class="field"><label for="qtyLogEditAddedAmt">추가 투입 금액 (원)</label><div class="field-clear"><input id="qtyLogEditAddedAmt" class="num" inputmode="numeric" value="${comma(d.addedAmount)}" placeholder="0" oninput="fmtAmt(this);_qtyLogEditDraft.addedAmount=parseFloat((this.value||'0').replace(/,/g,''))||0"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput('qtyLogEditAddedAmt');_qtyLogEditDraft.addedAmount=0">✕</button></div></div>`:''}
+  ${q.saleProceeds>0?`<div class="field"><label for="qtyLogEditSaleProceeds">매도 금액 (원)</label><div class="field-clear"><input id="qtyLogEditSaleProceeds" class="num" inputmode="numeric" value="${comma(d.saleProceeds)}" placeholder="0" oninput="fmtAmt(this);_qtyLogEditDraft.saleProceeds=parseFloat((this.value||'0').replace(/,/g,''))||0"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput('qtyLogEditSaleProceeds');_qtyLogEditDraft.saleProceeds=0">✕</button></div></div>`:''}
+  <div class="two-btn"><button class="btn btn-soft cancel" onclick="openAssetQtyLog('${q.assetId}')">취소</button><button class="btn btn-primary" onclick="saveAssetQtyLogEdit('${id}')">저장</button></div>`);
+}
+/* saveInquiryEdit과 동일한 수정 저장 경로(twGuard 포함) — costBasisField의 saveAsset() 쪽(실현손익
+ * 최초 계산)과 달리, 여기선 saleProceeds를 고쳐도 그 시점 자산의 현재 매입원가로 realizedGain을
+ * 다시 구하지 않는다. 자산의 매입원가는 그 뒤로 계속 움직였을 수 있어, 대신 기존 realizedGain에
+ * 암묵적으로 들어있던 costBasisRemoved(=기존 saleProceeds-기존 realizedGain, realizedGainForSale의
+ * 역산)를 그대로 보존한 채 새 saleProceeds로만 다시 뺀다(app-evolve cycle401 critique → advance). */
+function saveAssetQtyLogEdit(id){
+ if(twGuard())return;
+ const q=(DB.assetQtyLog||[]).find(x=>x.id===id);if(!q)return;
+ const d=_qtyLogEditDraft||{};
+ const newDate=d.date||q.date;
+ if(newDate>TODAY){toastFail('날짜는 오늘보다 미래일 수 없어요');return}
+ const newAddedAmount=q.addedAmount>0?sanitizeAmount(d.addedAmount,0):q.addedAmount;
+ const newSaleProceeds=q.saleProceeds>0?sanitizeAmount(d.saleProceeds,0):q.saleProceeds;
+ const prevDate=q.date,prevAddedAmount=q.addedAmount,prevSaleProceeds=q.saleProceeds,prevRealizedGain=q.realizedGain;
+ q.date=newDate;
+ if(q.addedAmount>0)q.addedAmount=newAddedAmount;
+ if(q.saleProceeds>0&&newSaleProceeds!==q.saleProceeds){
+  if(q.realizedGain!=null){
+   const costBasisRemoved=q.saleProceeds-q.realizedGain; /* realizedGainForSale(logic.js)이 애초에 계산해 둔 원가차감분 — 자산의 지금 매입원가로 다시 구하지 않고 그대로 보존 */
+   q.realizedGain=newSaleProceeds-costBasisRemoved;
+  } /* realizedGain이 처음부터 null(당시 매입원가를 몰라 계산 못 했던 매도)이면 그대로 null로 둠 — 추측하지 않는다는 기존 원칙 유지 */
+  q.saleProceeds=newSaleProceeds;
+ }
+ touchSave(q);
+ closeSheet();openAssetQtyLog(q.assetId);
+ undoToast('기록을 수정했어요',()=>{q.date=prevDate;q.addedAmount=prevAddedAmount;q.saleProceeds=prevSaleProceeds;q.realizedGain=prevRealizedGain;touchSave(q);openAssetQtyLog(q.assetId);toast('되돌렸어요')});
 }
 /* 메뉴 › '삭제한 수량기록' — delAssetQtyLog가 DB.trashQtyLog에 담아둔 삭제된 수량 변경/매도 기록을
  * 모든 자산에 걸쳐 보여주고 복구할 수 있는 화면. openGoalTrashList/restoreTrashGoal과 동일한

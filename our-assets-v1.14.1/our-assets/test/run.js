@@ -280,7 +280,7 @@ const FUNCTIONS = [
   // 전혀 없던 공백이었다(app-evolve cycle373 critique/advance). debtPayoffPtsFor를 그대로
   // 재사용하므로 바로 위 줄과 같은 sandbox에 올려야 한다.
   'debtPlanDebts', 'debtPlanBodyHTML', 'openDebtPlan', 'debtPlanStrategySel', 'debtPlanUpdate',
-  'rateUnknown', 'rateStale', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'qtyLogTrashBody', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'catsTrashBody', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  'rateUnknown', 'rateStale', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'editAssetQtyLog', 'renderQtyLogEditSheet', 'saveAssetQtyLogEdit', 'qtyLogTrashBody', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'catsTrashBody', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   // histEnsureRange/goLedgerTo는 가계부(ledger)의 날짜 행을 탭해 전체내역으로 드릴다운하는
   // 경로 — openCatHistory/openAssetHistory와 같은 "필터 리셋 후 화면 전환" 계열인데 여태
   // FUNCTIONS 밖이라 실행형 테스트가 전혀 없었다(app-evolve cycle377 develop).
@@ -535,7 +535,10 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _catMgmtKind는 카테고리 관리 선택모드(ST.catSel)가 추가되면서 openCatManage/catSelAll/catDelSel/
 // catVarSel/exitSelMode/activeSel이 "지금 어느 구분(지출/수입/저축)을 보고 있는지" 공유하려고 쓰는
 // 전역이라 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다(app-evolve cycle388 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', '_catQT', '_catMgmtKind', 'CLOUD_SYNC_ERR_KIND'];
+// _qtyLogEditDraft는 editAssetQtyLog()가 세팅하고 renderQtyLogEditSheet()/saveAssetQtyLogEdit()가
+// 읽는 "수량 변경 기록 수정 시트"의 작업본(날짜 피커 콜백과 금액 입력 oninput이 직접 갱신)이라
+// 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다(app-evolve cycle401 advance).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', '_catQT', '_catMgmtKind', 'CLOUD_SYNC_ERR_KIND', '_qtyLogEditDraft'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -903,6 +906,13 @@ const sandbox = {
   navigator: {},
   toast: (msg) => { sandbox.lastToast = msg; sandbox.toastCalls.push(msg); },
   toastCalls: [],
+  // toastFail()은 toast()와 별도 전역 함수인데(실패 안내용 빨간 토스트) 이 공유 sandbox에는
+  // 지금까지 string 패턴으로만 검증되는 호출부(costBasisField의 매입일/거래일 가드 등)만 있어
+  // 스텁이 없었다 — saveAssetQtyLogEdit(수량 변경 기록 수정 저장, app-evolve cycle401 advance)의
+  // 미래 날짜 가드를 실행형으로 직접 호출해 검증하려면 toast와 동일한 패턴의 스텁이 필요하다.
+  toastFail: (msg) => { sandbox.lastToastFail = msg; sandbox.toastFailCalls.push(msg); },
+  toastFailCalls: [],
+  lastToastFail: null,
   // announceLive는 toast()와 독립적으로 debtWhatIfUpdate()(app-evolve cycle267 develop)가 직접
   // 불러 textContent 경량 업데이트와 같은 문구를 aria-live 리전에도 공지한다 — toast처럼 실제
   // DOM 리전 대신 호출 여부/문구만 기록하는 스파이로 흉내낸다.
@@ -12621,6 +12631,173 @@ test('delAssetQtyLog: undo 콜백을 부르면 DB.trashQtyLog에서도 해당 �
   assert.strictEqual(sandbox.DB.trashQtyLog.length, 1);
   sandbox.lastUndo.undoFn();
   assert.strictEqual(sandbox.DB.trashQtyLog.length, 0, '되돌리면 트래시에서도 제거되어야 함(복구된 기록이 트래시에 중복으로 남으면 안 됨)');
+});
+
+/* ---------- editAssetQtyLog/renderQtyLogEditSheet/saveAssetQtyLogEdit: delAssetQtyLog(삭제)만 있고
+ * 고칠 방법이 없어 생긴 실현손익 정합성 공백을 메운다(app-evolve cycle401 critique → advance).
+ * editInquiry/saveInquiryEdit과 동일하게 '열기(읽기 전용)'와 '저장(twGuard)'을 분리했다.
+ * prevQty/newQty/field는 이 기능 범위 밖(바꾸려면 그 뒤 모든 기록의 델타를 다시 계산해야 함)이라
+ * 건드리지 않는지, 날짜만 바꿔도 DB.assets가 전혀 손대지 않는지도 함께 확인한다. ---------- */
+test('openAssetQtyLog: 각 행에 삭제 버튼과 별도로 editAssetQtyLog를 부르는 수정 버튼이 있다(회귀)', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 20, newQty: 10, field: 'stockQty', updatedAt: 1 }],
+  };
+  sandbox.openAssetQtyLog('a1');
+  assert.ok(sandbox.lastSheetHtml.includes(`onclick="editAssetQtyLog('q1')"`), '수정 버튼이 delAssetQtyLog와 별도로 있어야 함');
+  assert.ok(sandbox.lastSheetHtml.includes(`onclick="delAssetQtyLog('q1')"`), '기존 삭제 버튼은 그대로 남아있어야 함');
+});
+test('editAssetQtyLog: 존재하지 않는 id면 조용히 아무 것도 하지 않는다', () => {
+  sandbox.DB = { assets: [], assetQtyLog: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.editAssetQtyLog('nope');
+  assert.strictEqual(sandbox.lastSheetHtml, null);
+});
+test('editAssetQtyLog: prevQty→newQty 요약은 읽기 전용으로 보여주고, 추가매수 기록은 투입 금액 입력만, 매도 기록은 매도 금액 입력만 보여준다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 30 }],
+    assetQtyLog: [
+      { id: 'qBuy', assetId: 'a1', date: '2026-01-01', prevQty: 10, newQty: 20, field: 'stockQty', updatedAt: 1, addedAmount: 500000 },
+      { id: 'qSale', assetId: 'a1', date: '2026-02-01', prevQty: 20, newQty: 10, field: 'stockQty', updatedAt: 2, saleProceeds: 200000, realizedGain: 50000 },
+    ],
+  };
+  sandbox.editAssetQtyLog('qBuy');
+  let html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('10 → 20 주'), '수량 변화 요약이 읽기 전용으로 보여야 함');
+  assert.ok(html.includes('id="qtyLogEditAddedAmt"'), '추가매수 기록은 투입 금액 입력이 있어야 함');
+  assert.ok(!html.includes('id="qtyLogEditSaleProceeds"'), '추가매수 기록엔 매도 금액 입력이 없어야 함');
+  sandbox.editAssetQtyLog('qSale');
+  html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('20 → 10 주'));
+  assert.ok(!html.includes('id="qtyLogEditAddedAmt"'), '매도 기록엔 투입 금액 입력이 없어야 함');
+  assert.ok(html.includes('id="qtyLogEditSaleProceeds"'), '매도 기록은 매도 금액 입력이 있어야 함');
+});
+test('editAssetQtyLog: addedAmount/saleProceeds가 둘 다 0(또는 없음)인 단순 조정 기록은 금액 입력이 전혀 없고 날짜만 수정할 수 있다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 15, newQty: 10, field: 'stockQty', updatedAt: 1 }],
+  };
+  sandbox.editAssetQtyLog('q1');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(!html.includes('id="qtyLogEditAddedAmt"'));
+  assert.ok(!html.includes('id="qtyLogEditSaleProceeds"'));
+  assert.ok(/openFieldDatePicker\(_qtyLogEditDraft\.date\|\|TODAY,ds=>/.test(html), '날짜 피커를 여는 코드는 금액 입력이 없어도 그대로 있어야 함');
+});
+test('saveAssetQtyLogEdit: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TODAY = '2099-12-31'; // 앞선 테스트들이 남겨둔 TODAY가 이 테스트의 날짜보다 과거면 날짜 가드가 엉뚱하게 막아버리므로, 날짜 가드 자체를 테스트하지 않는 케이스는 매번 충분히 먼 미래로 고정한다
+  sandbox.TWi = 0;
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 15, newQty: 10, field: 'stockQty', updatedAt: 1 };
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }], assetQtyLog: [q] };
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.date = '2026-03-01';
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(q.date, '2026-01-01', '튜토리얼 중에는 날짜 수정이 실제로 적용되면 안 됨');
+  sandbox.TWi = -1;
+});
+test('saveAssetQtyLogEdit: 날짜만 고치면 prevQty/newQty와 DB.assets는 전혀 건드리지 않고 touchSave로 updatedAt만 갱신한다', () => {
+  sandbox.TODAY = '2099-12-31';
+  const asset = { id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 };
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 15, newQty: 10, field: 'stockQty', updatedAt: 1 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [q] };
+  const assetSnapshot = JSON.stringify(asset);
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.date = '2026-03-15';
+  sandbox.closeSheetCalls = 0;
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(q.date, '2026-03-15');
+  assert.strictEqual(q.prevQty, 15, 'prevQty는 수정 범위 밖');
+  assert.strictEqual(q.newQty, 10, 'newQty도 수정 범위 밖');
+  assert.strictEqual(JSON.stringify(asset), assetSnapshot, 'DB.assets는 전혀 건드리면 안 됨(이 기록 하나만 고치는 기능)');
+  assert.strictEqual(q.updatedAt, 'test-updatedAt', 'touchSave로 updatedAt이 갱신돼야 함');
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+});
+test('saveAssetQtyLogEdit: 오늘보다 미래인 날짜는 toastFail로 막고 아무 것도 바뀌지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 15, newQty: 10, field: 'stockQty', updatedAt: 1 };
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }], assetQtyLog: [q] };
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.date = '2026-06-16';
+  sandbox.toastFailCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(q.date, '2026-01-01', '미래 날짜는 반영되면 안 됨');
+  assert.strictEqual(sandbox.toastFailCalls.length, 1, '미래 날짜 안내 toastFail이 떠야 함');
+  assert.strictEqual(sandbox.lastUndo, null, '저장이 막혔으니 undoToast도 뜨면 안 됨');
+  sandbox.TODAY = null;
+});
+test('saveAssetQtyLogEdit: 추가매수 기록의 투입 금액을 고치면 addedAmount만 바뀌고 saleProceeds/realizedGain은 무관하다', () => {
+  sandbox.TODAY = '2099-12-31';
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 10, newQty: 20, field: 'stockQty', updatedAt: 1, addedAmount: 500000 };
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 20 }], assetQtyLog: [q] };
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.addedAmount = 700000;
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(q.addedAmount, 700000);
+  assert.strictEqual(q.saleProceeds, undefined);
+  assert.strictEqual(q.realizedGain, undefined);
+});
+test('saveAssetQtyLogEdit: 매도 금액을 수정하면 realizedGainForSale이 애초에 계산해 둔 costBasisRemoved를 보존한 채 새 realizedGain만 다시 계산한다(자산의 현재 매입원가로 재계산하지 않음)', () => {
+  // realizedGainForSale(원래 보유 20 → 10으로 매도, 당시 매입원가 300000, 매도 200000)
+  // → costBasisRemoved=150000(비례 축소분), realizedGain=200000-150000=50000
+  sandbox.TODAY = '2099-12-31';
+  const r = sandbox.realizedGainForSale(20, 10, 300000, 200000);
+  assert.strictEqual(r.realizedGain, 50000, 'realizedGainForSale 자체 계산이 바뀌면 안 됨(회귀 전제)');
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 20, newQty: 10, field: 'stockQty', updatedAt: 1, saleProceeds: 200000, realizedGain: r.realizedGain };
+  // 자산의 "지금" 매입원가(999999999)는 저 150000과 전혀 무관하게 멀리 움직여 둔다 — 이걸로
+  // realizedGain을 다시 구하면 틀린다는 것을 증명하기 위한 함정.
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 999999999 }], assetQtyLog: [q] };
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.saleProceeds = 300000;
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(q.saleProceeds, 300000);
+  assert.strictEqual(q.realizedGain, 150000, '기존 costBasisRemoved(150000)를 보존한 채 새 saleProceeds(300000)로만 다시 빼야 함');
+});
+test('saveAssetQtyLogEdit: 당시 매입원가를 몰라 realizedGain이 처음부터 null이던 매도 기록은 saleProceeds만 바뀌고 realizedGain은 계속 null로 남는다', () => {
+  sandbox.TODAY = '2099-12-31';
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 20, newQty: 10, field: 'stockQty', updatedAt: 1, saleProceeds: 200000, realizedGain: null };
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }], assetQtyLog: [q] };
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.saleProceeds = 250000;
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(q.saleProceeds, 250000);
+  assert.strictEqual(q.realizedGain, null, '모르는 걸 추측해서 채우면 안 됨(기존 원칙 유지)');
+});
+test('saveAssetQtyLogEdit: undo 콜백을 부르면 date/addedAmount/saleProceeds/realizedGain이 수정 전 값으로 정확히 되돌아간다', () => {
+  sandbox.TODAY = '2099-12-31';
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 20, newQty: 10, field: 'stockQty', updatedAt: 1, saleProceeds: 200000, realizedGain: 50000 };
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }], assetQtyLog: [q] };
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.date = '2026-05-01';
+  sandbox._qtyLogEditDraft.saleProceeds = 300000;
+  sandbox.lastUndo = null;
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(q.date, '2026-05-01');
+  assert.strictEqual(q.saleProceeds, 300000);
+  assert.strictEqual(q.realizedGain, 150000);
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(q.date, '2026-01-01', '되돌리면 날짜가 원래대로');
+  assert.strictEqual(q.saleProceeds, 200000, '되돌리면 매도금액이 원래대로');
+  assert.strictEqual(q.realizedGain, 50000, '되돌리면 실현손익도 원래대로(재계산이 아니라 저장해 둔 원래 값으로)');
+  assert.strictEqual(q.updatedAt, 'test-updatedAt', '되돌릴 때도 touchSave가 불려야 함');
+});
+test('saveAssetQtyLogEdit: 날짜를 다른 연도로 옮기면 yearRealizedGain 집계도 새 연도로 옮겨간다(연도 귀속은 의도된 동작, 회귀 아님)', () => {
+  sandbox.TODAY = '2099-12-31';
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 20, newQty: 10, field: 'stockQty', updatedAt: 1, saleProceeds: 200000, realizedGain: 50000 };
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }], assetQtyLog: [q] };
+  assert.strictEqual(sandbox.yearRealizedGain(2026), 50000, '수정 전엔 2026년 집계에 잡혀야 함');
+  assert.strictEqual(sandbox.yearRealizedGain(2027), null, '수정 전엔 2027년엔 아직 없어야 함');
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.date = '2027-03-15';
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(sandbox.yearRealizedGain(2026), null, '날짜를 옮긴 뒤엔 2026년 집계에서 빠져야 함');
+  assert.strictEqual(sandbox.yearRealizedGain(2027), 50000, '날짜를 옮긴 뒤엔 2027년 집계로 옮겨가야 함');
+});
+test('saveAssetQtyLogEdit: 존재하지 않는 id면 조용히 아무 것도 하지 않는다', () => {
+  sandbox.DB = { assets: [], assetQtyLog: [] };
+  sandbox.lastUndo = null;
+  assert.doesNotThrow(() => sandbox.saveAssetQtyLogEdit('nope'));
+  assert.strictEqual(sandbox.lastUndo, null);
 });
 
 /* ---------- openAssetQtyLogTrashList/restoreTrashQtyLog: 메뉴 › '삭제한 수량기록' —
