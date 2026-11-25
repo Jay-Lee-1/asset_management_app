@@ -1,15 +1,8 @@
 {
   "cycle": 402,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 397,
-      "phase": "review",
-      "timestamp": "2026-11-24T16:05:00.000Z",
-      "summary": "develop(cycle397) 커밋 e6f79e6(codeUpperInput() 신설, asCode(종목코드/심볼) 대문자 변환 입력 캐럿 복원)를 검토. fmtAmt/fmtQty와 동일한 패턴(oldCaret 기록 → 값 재대입 → setSelectionRange 복원)을 그대로 따르고 있고, toUpperCase()는 길이를 바꾸지 않는다는 전제가 ASCII 알파벳(stock/crypto 코드가 실제로 쓰는 문자셋)에서는 항상 성립함을 확인. 다만 toUpperCase()가 일부 문자(독일어 'ß'→'SS', 리가처 'ﬁ'→'FI' 등)에서 길이를 늘릴 수 있어 'oldCaret이 그대로 유효하다'는 주석의 전제가 완전히 보편적이진 않음을 node로 직접 확인했으나, 이 경로는 (1) 이 diff가 새로 만든 게 아니라 원래 this.value=this.value.toUpperCase()도 똑같이 겪던 길이 변화이고(캐럿 위치만 바뀌지 값 자체 로직은 동일, 회귀가 아님) (2) 길이가 줄어드는 case-mapping은 실질적으로 없어 setSelectionRange가 범위를 벗어나거나 크래시하지 않으며(최악의 경우도 캐럿이 몇 글자 안쪽에 위치) (3) 종목코드/심볼 입력란에 그런 문자를 타이핑할 실사용 시나리오가 거의 없어 급하지 않은 지적사항으로 분류 — 코드는 고치지 않고 이 노트에만 남김(다음 critique가 참고용으로 쓸 수 있으나 우선순위는 낮음). stock/crypto 템플릿 2곳의 oninput이 정확히 codeUpperInput(this)로 교체됐는지, maxlength=20(CODE_MAX)이 그대로 유지되는지 재확인. 실제 버그(회귀)는 발견하지 못함. node test/run.js 3911/3911 통과(재실행), node --check(logic.js/sw.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 397,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-25T11:17:31.000Z",
       "summary": "general-purpose 서브에이전트에게 위임해 조사. 여유 통장에서 미리 옮겨두기(해결 방법 보기) 플로우의 planTransfer/planSplitTransfer가 DB.txns에 실제 이체 거래를 push하면서도(잔액에 그대로 반영) celebrate()만 부르고 되돌릴 방법이 전혀 없던 공백을 발견 — 같은 '새 이체 거래 생성' 액션인 doSettle/doSettleN은 둘 다 undoToast를 제공하는 것과 비대칭. doSettle(단건)/doSettleN(여러건 id배열+통합 undoToast) 패턴을 그대로 따라 planTransfer에 단건 undoToast, planSplitTransfer에 생성된 id 배열을 모은 통합 undoToast를 추가. test/run.js에 되돌리기 회귀 테스트 2건 추가. index.html 4개 <script> 블록 + sw.js/test/run.js node --check 통과, node test/run.js 3997/3997 통과(신규 2건 포함, 회귀 없음). index.html/sw.js 수정으로 APP_VERSION 1.47.537->1.47.538, sw.js CACHE v804->v805.",
       "commit": "0e8de97"
+    },
+    {
+      "cycle": 402,
+      "phase": "review",
+      "timestamp": "2026-11-25T12:08:12.831Z",
+      "summary": "develop(cycle402) 커밋 0e8de97(planTransfer/planSplitTransfer에 undoToast 추가)를 검토. doSettle(단건)/doSettleN(여러건, id배열 모아 통합 undoToast)과 나란히 대조해 패턴이 정확히 일치함을 확인 — planTransfer는 단건 tx id를 캡처해 되돌릴 때 그 id만 filter로 제거, planSplitTransfer는 created 배열에 모은 뒤 통합 undoToast 메시지(\"N건\")로 한번에 되돌림. undoToast(msg,undoFn) 시그니처(index.html:13485)와도 일치. 두 함수 다 되돌리기 콜백 안에서 save/invalidateBalances/renderCurrent를 원래 저장 경로와 동일하게 다시 호출해 되돌린 뒤 화면·캐시 상태가 정상 저장 흐름과 같아짐을 확인. 추가된 테스트 2건이 각각 단건/분할 케이스에서 되돌린 뒤 DB.txns 길이가 0으로 돌아오는지, 분할 쪽 메시지에 건수가 포함되는지를 검증하는지 확인. node test/run.js 재실행 3997/3997 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과, APP_VERSION 1.47.538/sw.js CACHE v805 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
     }
   ]
 }
