@@ -1,15 +1,8 @@
 {
   "cycle": 399,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 394,
-      "phase": "review",
-      "timestamp": "2026-11-22T13:00:00.000Z",
-      "summary": "develop(cycle394) 커밋 ac93a41(openSheet() 포커스 복구에 prevSegFocus 추가, .seg/.mseg 탭 전환 시 닫기로 튀던 버그 수정)을 검토해 실제 버그를 발견하고 그 자리에서 고쳤다. 1차 수정('시트 전체에서 첫 .seg/.mseg button.on')은 .seg 그룹이 하나뿐인 화면(openCatManage/openTrashHub/txType·recType/csvMapSetMode)에는 맞지만, renderGoalForm이 networth 유형이고 DB.owners가 설정돼 있으면 한 시트 안에 .seg 그룹이 2개(목표 유형 typeSeg, 귀속 goalOwnerSel이 그리는 ownerSegHtml)가 함께 떠 있음을 코드로 확인(둘 다 goalTypeSel/goalOwnerSel이 renderGoalForm(editing)을 다시 불러 openSheet() 전체를 재렌더). 이 경우 사용자가 두 번째 그룹(귀속)의 버튼을 눌러 전환해도, '시트 전체 첫 .on'은 마크업 순서상 앞서는 첫 번째 그룹(목표 유형)의 .on 버튼을 찾아 거기로 포커스를 보내버린다 — 처음 신고됐던 '닫기로 튐'보다는 가깝지만 여전히 사용자가 실제로 만지던 귀속 그룹이 아닌 엉뚱한 세그먼트로 튀는 재현 가능한 버그. 작은 범위로 고쳤다: prevSegFocus(불리언)를 prevSegGroup(이전 포커스가 속했던 .seg/.mseg 엘리먼트, sh.innerHTML 대입 전에 캡처)과 prevSegLabel(그 그룹의 aria-label — 화면마다 '목표 유형 선택'/'귀속 선택'처럼 고정 문자열이라 재렌더 후에도 같은 그룹을 식별하는 안정적인 키)로 나눠, 포커스 복구 시 재렌더된 시트에서 같은 aria-label을 가진 그룹(sameLabelGroup)을 먼저 찾아 그 안의 .on 버튼을 최우선으로 쓰고, 그 그룹 자체가 재렌더 중 없어졌으면(예: 목표 유형을 asset으로 바꿔 귀속 그룹이 통째로 사라짐) 기존 '시트 전체에서 첫 .on' 폴백으로, 그마저 없으면 첫 포커스 가능 요소로 내려가게 했다 — 단일 .seg 화면에서는 sameLabelGroup이 곧 그 유일한 그룹이라 기존 동작과 결과가 같아 회귀 없음. 기존 2개 소스 패턴 테스트를 prevSegGroup/prevSegLabel/sameLabelGroup 표현에 맞게 갱신하고, renderGoalForm의 두 .seg가 서로 다른 aria-label('목표 유형 선택'/'귀속 선택')을 쓰는지(같은 그룹 재탐색이 둘을 구별할 수 있어야 함) 확인하는 테스트 1건을 추가했다. node test/run.js 3875->3876/3876 통과, logic.js/sw.js node --check 통과, 메인 <script> 블록 4개(HTML 주석 제거 후 추출) new Function 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.521->1.47.522, sw.js CACHE v788->v789.",
-      "commit": null
-    },
     {
       "cycle": 394,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-24T23:10:00.000Z",
       "summary": "general-purpose 서브에이전트에게 cycle340-398 전체 배제 목록(키보드 접근성 전체, 데이터 클램프(setRate/sanitizeAmount/interestRate/acquiredAt/qtyChangeDate/amortizationPayoffMonths), txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, owner별 예산 오버라이드, 모놀리식 구조개편/렌더성능/CSV완성도/가상화/통화·CSV·SRI·음력표/esc() XSS/OS알림 설계상 기각 등)를 주고 조사시킴. txMemo/rMemo(cycle394/396)가 받은 자주 쓴 메모 자동완성이 splitFieldHTML()의 분할 입력(여러 카테고리로 나누기) 항목별 메모(splitMemo{i}, cycle255에서 신설)에는 적용되지 않은 비대칭을 발견 — 습관적으로 같은 방식으로 나누는 지출(예: '마트'를 식비+생활용품으로 분할)의 각 줄 메모를 매번 새로 입력해야 하는 실사용 공백. splitFieldHTML(d,pfx,noToggle)에 frequentMemosForType(d.type,DB.txns,10)로 만든 공유 <datalist id=\"splitMemoList\"> 하나를 모든 분할 줄(splitMemo0, splitMemo1, ...)에 list=\"splitMemoList\"로 공통 연결(한 트랜잭션의 모든 줄이 같은 type이라 datalist 하나로 충분, tx/rec 폼이 이 함수를 공유해 한 번의 수정으로 둘 다 처리됨). test/run.js의 기존 splitFieldHTML 테스트 3건이 logic.js(frequentMemosForType/splitLines)와 DB.txns를 로드하도록 갱신하고, 공유 datalist 배선·빈도순 옵션·다른 type 메모 배제를 확인하는 실행형 테스트 1건을 추가. node test/run.js 3959->3960/3960 통과, node --check(logic.js/sw.js) 통과, index.html inline <script> 블록 전체 파싱(vm.Script) 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.531->1.47.532, sw.js CACHE v798->v799. 커밋 f512b91.",
       "commit": "f512b91"
+    },
+    {
+      "cycle": 399,
+      "phase": "review",
+      "timestamp": "2026-11-25T00:00:00.000Z",
+      "summary": "develop(cycle399) 커밋 f512b91(splitFieldHTML()의 분할 입력 항목별 메모에 frequentMemosForType() 기반 공유 datalist 추가)를 검토. 분할 줄이 몇 개든 하나의 <datalist id=\"splitMemoList\">를 모든 splitMemo{i} input이 list=\"splitMemoList\"로 공유하는 구조가 유효한 HTML임을 확인(datalist id는 한 번만 선언, 여러 input이 같은 id를 참조하는 건 표준 동작), 한 시트에는 tx 또는 rec 폼 하나만 열리므로 id 충돌 가능성 없음. frequentMemosForType(d.type,DB.txns,10) 호출이 txMemo/rMemo(cycle394/396)와 동일한 기존 순수 함수 재사용일 뿐이라 그 함수 자체의 정확성은 이미 검증돼 있었음을 확인. datalist 옵션 값에 esc(m) 이스케이프가 적용돼 메모 텍스트의 HTML 인젝션 벡터가 없음을 확인. git status/branch 상태 확인 — 세션 시작 시 로컬 HEAD가 detached였고(main 로컬 ref가 51c4fcd(cycle394 review)로 정체) origin/main은 이미 HEAD(127c077)까지 최신이라 fetch 후 git branch -f main HEAD로 로컬 ref만 복구(실제 데이터 손실은 없었음, 원인 계속 불명). 실제 버그는 발견하지 못함. node test/run.js 재실행 3960/3960 통과, node --check(logic.js/sw.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
     }
   ]
 }
