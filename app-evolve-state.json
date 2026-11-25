@@ -1,15 +1,8 @@
 {
   "cycle": 402,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 397,
-      "phase": "develop",
-      "timestamp": "2026-11-24T15:13:32.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-397 전체 배제 목록(검색창 Escape 6곳, 공용 피커 5종 Escape/방향키, 카테고리 아이콘 피커/메인 색 그리드/날짜 선택기 방향키, .seg/.mseg 전역 방향키(segKeydown), monthNav/nwCarousel 방향키, openSheet() 탭 전환 포커스 보존, 카테고리 관리 일괄선택 3종, 트래시 허브 통합, fmtAmt/fmtQty 커서버그, commitTx/saveAsset undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt 범위가드, setRate AMOUNT_MAX 클램프, txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지 등)을 주고 조사시킴. stock/crypto 자산 폼의 종목코드/심볼 입력(asCode)이 oninput=\"this.value=this.value.toUpperCase()\"로 매 입력마다 .value를 재대입해 fmtAmt(cycle387)/fmtQty(cycle393)와 같은 버그 클래스(값이 실제로 안 바뀌어도 브라우저가 캐럿을 끝으로 이동)를 그대로 안고 있던 것을 발견. codeUpperInput(inp) 헬퍼를 신설해 selectionStart를 기록 후 toUpperCase 대입하고 같은 오프셋으로 caret을 복원(길이 불변이라 자릿수 재계산 불필요), 템플릿 2곳(stock/crypto asCode) 교체. test/run.js에 FUNCTIONS 추출 대상 추가 및 신규 회귀 테스트 3건(중간 수정 캐럿 보존, 끝부분 무변화 케이스, DOM 없는 방어적 호출) 추가, index.html 4개 <script> 블록 + logic.js/sw.js/test/run.js node --check 통과, node test/run.js 3911/3911 통과. index.html/sw.js 수정으로 APP_VERSION 1.47.527->1.47.528, sw.js CACHE v794->v795.",
-      "commit": "e6f79e6"
-    },
     {
       "cycle": 397,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-25T10:30:00.000Z",
       "summary": "critique(cycle401)의 계획대로 자산 수량 변경 기록(DB.assetQtyLog)에 삭제 말고 수정(edit) 경로를 추가해, 날짜/매도금액/투입금액을 잘못 입력했을 때 지우고 다시 만드는 것 말고는 고칠 방법이 없던(그 과정에서 realizedGain이 영구히 사라지거나, 과거 시점의 올바른 prevQty/newQty 쌍을 다시 만들 수 없던) 데이터 정합성 공백을 메웠다. openAssetQtyLog()의 row() 템플릿에 기존 삭제 버튼 옆으로 수정 버튼을 추가해 editAssetQtyLog(id)를 연다. editInquiry/saveInquiryEdit과 동일하게 '열기(읽기전용)'와 '저장(twGuard 포함)'을 분리 — editAssetQtyLog(id)가 모듈스코프 임시 작업본 _qtyLogEditDraft를 세팅하고 renderQtyLogEditSheet(id)가 그 draft를 기준으로 시트를 그린다(날짜 피커 콜백·금액 input oninput이 draft를 직접 갱신, asDraft와 동일한 관례). prevQty/newQty/field는 읽기전용 요약으로만 보여주고 전혀 건드리지 않음(바꾸려면 그 뒤 모든 기록의 델타를 재계산해야 해서 계획대로 범위 밖). 날짜는 acquiredAt/_qtyChangeDate와 동일하게 미래만 막는 가드(toastFail). addedAmount 입력은 그 기록이 원래 추가매수(addedAmount>0)였을 때만, saleProceeds 입력은 원래 매도(saleProceeds>0)였을 때만 보여줌. saveAssetQtyLogEdit(id)는 twGuard로 시작하고, saleProceeds를 고치면 realizedGain이 null이 아니었던 경우 기존 realizedGain에 암묵적으로 들어있던 costBasisRemoved(=기존 saleProceeds-기존 realizedGain, realizedGainForSale의 역산)를 보존한 채 새 saleProceeds로만 다시 빼서 재계산(자산의 '지금' 매입원가로 다시 구하지 않음 — 매입원가는 그 뒤로 계속 움직였을 수 있어서), realizedGain이 처음부터 null(당시 매입원가를 몰라 계산 못 했던 매도)이면 추측하지 않고 그대로 null 유지. 새 id를 만들지 않고 touchSave(q)로 같은 레코드를 갱신해 sync/tombstone 시맨틱을 그대로 유지하고, delAssetQtyLog와 동일한 undoToast(수정 전 date/addedAmount/saleProceeds/realizedGain 전부 복원)를 건다. 날짜를 다른 해로 옮기면 yearRealizedGain() 집계도 그 해로 옮겨가는 것은 의도된 동작(회귀 아님)으로 테스트에 명시. general-purpose 서브에이전트에게 구현+테스트를 위임했으나 이 환경의 permission 분류기가 서브에이전트의 git commit 자체를 차단해(destructive action 오탐으로 추정, 메시지 내용과 무관하게 모든 커밋이 막힘) 서브에이전트는 변경을 git add까지만 하고 리포트로 핸드백, 오케스트레이터(이 세션)가 diff를 직접 리뷰하고 테스트를 재실행해 커밋했다. test/run.js에 editAssetQtyLog/renderQtyLogEditSheet/saveAssetQtyLogEdit 관련 13건 추가(行·twGuard·prevQty/newQty 불변·미래날짜 가드·addedAmount 단독 수정·costBasisRemoved 보존 재계산·realizedGain null 유지·undo 전체 복원·연도 귀속 이동·존재하지 않는 id 등), 공유 sandbox에 toastFail/toastFailCalls 스텁 신규 추가(이 함수를 실행형으로 직접 부르는 첫 테스트라 기존엔 스텁이 없었음). node test/run.js 3982->3995/3995 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 2개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.536->1.47.537, sw.js CACHE v803->v804. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 402,
+      "phase": "develop",
+      "timestamp": "2026-11-25T11:17:31.000Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 조사. 여유 통장에서 미리 옮겨두기(해결 방법 보기) 플로우의 planTransfer/planSplitTransfer가 DB.txns에 실제 이체 거래를 push하면서도(잔액에 그대로 반영) celebrate()만 부르고 되돌릴 방법이 전혀 없던 공백을 발견 — 같은 '새 이체 거래 생성' 액션인 doSettle/doSettleN은 둘 다 undoToast를 제공하는 것과 비대칭. doSettle(단건)/doSettleN(여러건 id배열+통합 undoToast) 패턴을 그대로 따라 planTransfer에 단건 undoToast, planSplitTransfer에 생성된 id 배열을 모은 통합 undoToast를 추가. test/run.js에 되돌리기 회귀 테스트 2건 추가. index.html 4개 <script> 블록 + sw.js/test/run.js node --check 통과, node test/run.js 3997/3997 통과(신규 2건 포함, 회귀 없음). index.html/sw.js 수정으로 APP_VERSION 1.47.537->1.47.538, sw.js CACHE v804->v805.",
+      "commit": "0e8de97"
     }
   ]
 }
