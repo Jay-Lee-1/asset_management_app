@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.534';
+const APP_VERSION='1.47.535';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -11865,7 +11865,16 @@ $('dpScrim').addEventListener('click',()=>{
 function confirmSheet(title,msg,ok,cb){window._cf=cb;
  openSheet(`<h3>${title}</h3><div class="desc" style="margin-bottom:22px">${msg}</div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
-   <button class="btn btn-danger" onclick="closeSheet();_cf&&_cf()">${ok}</button></div>`);}
+   <button class="btn btn-danger" onclick="confirmSheetGo()">${ok}</button></div>`);}
+/* confirmSheetGo(): confirmSheet()의 확인 버튼이 기존엔 closeSheet();_cf&&_cf()를 그 자리에서 바로
+ * 호출했는데, closeSheet()는 .show 클래스만 떼고 .sheet의 CSS 트랜지션(.46s)이 끝나야 실제로
+ * 사라져 그동안 버튼이 DOM에 남아 탭 가능했다 — saveTx/saveRec(_savedDrafts WeakSet, cycle79)·
+ * saveAsset(cycle285)이 각자 개별적으로 막은 것과 같은 더블탭 버그 클래스가, 이 모든 흐름의
+ * 공용 확인 단계인 confirmSheet 자체에는 없었다(doSettle/doSettleN처럼 더블탭이 실제 중복
+ * 이체 거래를 만드는 경로 포함, app-evolve cycle400 critique → advance). _sheetGuardDiscard와
+ * 동일하게 "로컬 변수로 캡처 → 공유 변수 null화 → 호출" 순서로 두 번째 탭(또는 늦게 도착한
+ * 클릭 이벤트)이 콜백을 다시 못 찾게 한다. */
+function confirmSheetGo(){const cb=window._cf;if(!cb)return;window._cf=null;closeSheet();cb();}
 /* caretPosAfterFormat(oldValue,oldCaret,newValue): fmtAmt()가 매 oninput마다 inp.value를
  * 통째로 재포맷하면서(천단위 콤마 삽입/제거) 커서 위치를 전혀 다루지 않아, 코드로 .value를
  * 대입하면(모든 주요 브라우저 공통) 커서가 항상 끝으로 튀던 버그(app-evolve cycle387

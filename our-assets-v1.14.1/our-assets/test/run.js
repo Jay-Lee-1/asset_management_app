@@ -32393,6 +32393,82 @@ test('doSettleN: 튜토리얼 모드 중에는 twGuard가 막아서 이체 내�
   sandbox.TWi = -1;
 });
 
+/* confirmSheetGo(): confirmSheet()의 확인 버튼이 closeSheet();_cf&&_cf()를 그 자리에서 직접 호출해,
+ * closeSheet()가 .show 클래스만 떼고 .46s CSS 트랜지션이 끝나야 실제로 사라지는 동안(734행)
+ * 버튼이 DOM에 남아 탭 가능했던 더블탭 공백을 메운 가드다(saveTx/saveRec의 _savedDrafts WeakSet,
+ * saveAsset의 더블탭 가드와 같은 버그 클래스, app-evolve cycle400 critique → advance). 메인
+ * sandbox는 confirmSheet 자체를 confirmSheetCalls로 스텁해 두어(1047행, 위 doSettle 등 수십 건이
+ * 의존) window._cf/confirmSheetGo 경로를 타지 않으므로, 실제 confirmSheet/confirmSheetGo를
+ * doSettle과 함께 별도 격리된 vm 컨텍스트에 로드해(syncThemeColorMeta 등과 같은 패턴) 검증한다. */
+let _confirmSheetGoCtx = null;
+function confirmSheetGoCtx() {
+  if (_confirmSheetGoCtx) return _confirmSheetGoCtx;
+  const ctx = {
+    window: { _cf: null },
+    _openSheetHtml: null,
+    _closeSheetCalls: 0,
+    openSheet: (html) => { ctx._openSheetHtml = html; },
+    closeSheet: () => { ctx._closeSheetCalls++; },
+    twGuard: () => false,
+    firstCashForOwner: (owner) => (owner === '배우자' ? 'a2' : 'a1'),
+    uid: (() => { let n = 0; return () => `tx${n++}`; })(),
+    touch: (obj) => { obj.updatedAt = 1; return obj; },
+    save: () => {},
+    invalidateBalances: () => {},
+    renderCurrent: () => {},
+    undoToast: () => {},
+    toast: () => {},
+    TODAY: '2026-01-10',
+    DB: null,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('confirmSheet'), extractFunction('confirmSheetGo'), extractFunction('doSettle')].join('\n'),
+    ctx, { filename: 'confirmSheetGo-real' },
+  );
+  _confirmSheetGoCtx = ctx;
+  return ctx;
+}
+test('[실행형] confirmSheetGo: 같은 시트에서 두 번(더블탭) 불러도 콜백은 정확히 한 번만 실행된다', () => {
+  const ctx = confirmSheetGoCtx();
+  let calls = 0;
+  ctx.confirmSheet('제목', '내용', '확인', () => { calls++; });
+  ctx.confirmSheetGo();
+  ctx.confirmSheetGo();
+  assert.strictEqual(calls, 1, '트랜지션 창 안에 두 번째 탭이 들어와도 콜백이 또 실행되면 안 됨');
+  assert.strictEqual(ctx._closeSheetCalls, 1, 'closeSheet()도 콜백과 함께 한 번만 불려야 함');
+});
+test('[실행형] confirmSheetGo: confirmSheet()를 거치지 않고(또는 이미 소비된 뒤) 불러도 에러 없이 조용히 무시한다', () => {
+  const ctx = confirmSheetGoCtx();
+  ctx.window._cf = null;
+  ctx._closeSheetCalls = 0; // 컨텍스트는 테스트 간 공유되므로(캐시) 이전 테스트의 호출 횟수를 지우고 시작
+  assert.doesNotThrow(() => ctx.confirmSheetGo(), 'cf가 없을 때도 안전하게 no-op이어야 함');
+  assert.strictEqual(ctx._closeSheetCalls, 0, 'cf가 없으면 closeSheet()도 불리면 안 됨(이미 닫힌 시트를 또 닫지 않음)');
+});
+test('[실행형] confirmSheetGo: 하나를 취소(소비 안 함)하고 새 confirmSheet를 열면, window._cf가 이전 시트에 걸쳐 stale하지 않고 두 번째 콜백만 실행된다', () => {
+  const ctx = confirmSheetGoCtx();
+  let firstCalls = 0, secondCalls = 0;
+  ctx.confirmSheet('첫 번째', '내용', '확인', () => { firstCalls++; });
+  // 사용자가 '취소'를 눌러 confirmSheetGo를 호출하지 않고 시트를 닫은 뒤, 같은 화면에서 새 확인 시트를 또 연 상황
+  ctx.confirmSheet('두 번째', '내용', '확인', () => { secondCalls++; });
+  ctx.confirmSheetGo();
+  assert.strictEqual(firstCalls, 0, '취소된 첫 번째 콜백은 실행되면 안 됨');
+  assert.strictEqual(secondCalls, 1, '두 번째(실제로 연) 확인 시트의 콜백만 실행돼야 함');
+});
+test('[실행형] confirmSheetGo + doSettle: 공용 확인 시트를 더블탭해도 정산 이체 거래가 중복 생성되지 않는다', () => {
+  const ctx = confirmSheetGoCtx();
+  ctx.DB = {
+    settings: { settledThrough: null },
+    assets: [{ id: 'a1', type: 'cash', owner: '나' }, { id: 'a2', type: 'cash', owner: '배우자' }],
+    txns: [],
+  };
+  ctx.confirmSheet('정산 완료로 표시', '10,000원을 보낸 걸로...', '완료로 표시', () => ctx.doSettle('배우자', '나', 10000));
+  ctx.confirmSheetGo();
+  ctx.confirmSheetGo(); // 더블탭: 같은 콜백이 두 번 불리면 정산 이체가 2건 생겨 양쪽 현금 자산 잔액이 틀어짐
+  assert.strictEqual(ctx.DB.txns.length, 1, '더블탭해도 정산 이체 거래는 정확히 1건만 생겨야 함');
+  assert.strictEqual(ctx.DB.settings.settledThrough, '2026-01-10');
+});
+
 test('renderMenu: "가계부" 그룹에 정산(openSettlement) 진입점이 있고, 설정 여부에 따라 값 라벨이 바뀐다(소스 패턴 검증)', () => {
   const body = extractFunction('renderMenu');
   assert.ok(body.includes("{ic:'users',l:'정산',v:settleConfigured()?'설정됨':'미설정',a:\"openSettlement()\"}"), 'renderMenu에 정산 진입점이 정확히 연결돼 있지 않음');
