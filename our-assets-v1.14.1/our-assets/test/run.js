@@ -28642,6 +28642,26 @@ test('toggleAdjustSurplus: 조정 내역의 "수지에 포함" 토글에도 touc
   assert.strictEqual(t.inSurplus, true, '토글로 inSurplus가 켜져야 함');
   assert.strictEqual(t.updatedAt, 'test-updatedAt', '"수지에 포함" 토글에도 touch()가 호출되어야 함');
 });
+/* doBulkRecActive/doBulkInclToggle(일괄판)는 twGuard로 튜토리얼 중 실저장을 막는데, 같은 토글의
+ * 건별 경로인 toggleRecActive/toggleAdjustSurplus만 그 보호 없이 바로 touchSave/save했다
+ * (app-evolve cycle401 develop). */
+test('toggleRecActive: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  const rec = { id: 'r1', active: true };
+  sandbox.DB = { settings: {}, recurrences: [rec] };
+  sandbox.toggleRecActive('r1');
+  assert.strictEqual(rec.active, true, '튜토리얼 중에는 일시중지 토글이 실제로 적용되면 안 됨');
+  sandbox.TWi = -1;
+});
+test('toggleAdjustSurplus: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  const t = { id: 't1', inSurplus: false };
+  sandbox.DB = { settings: {}, txns: [t] };
+  const el = { classList: { _on: false, toggle(c) { this._on = !this._on; }, contains() { return this._on; } }, setAttribute: () => {} };
+  sandbox.toggleAdjustSurplus('t1', el);
+  assert.strictEqual(t.inSurplus, false, '튜토리얼 중에는 "수지에 포함" 토글이 실제로 적용되면 안 됨');
+  sandbox.TWi = -1;
+});
 
 /* ---------- openRecManage: 메인 sandbox에서는 editRec/openRecSheet 등 다른 화면 진입점을
  * 참조하는 onclick 문자열을 그대로 실행하지 않아도 되도록 무조건 no-op 스텁(591줄)으로 남겨두는데,
