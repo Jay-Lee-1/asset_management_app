@@ -1,15 +1,8 @@
 {
   "cycle": 401,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 396,
-      "phase": "review",
-      "timestamp": "2026-11-24T12:10:00.000Z",
-      "summary": "develop(cycle396) 커밋 7f818d9(반복거래 메모 입력 #rMemo에 frequentMemosForType()+datalist 자동완성 추가)를 검토. cycle394가 renderTxSheet()의 #txMemo에 쓴 것과 완전히 동일한 배선(list=\"...List\" + frequentMemosForType(d.type,DB.txns,10).map(m=>`<option value=\"${esc(m)}\">`))을 #rMemo/rMemoList에 그대로 재사용했을 뿐 새 로직이 없어 frequentMemosForType 자체의 정확성은 cycle394에서 이미 검증됐음을 확인. txMemoList와 rMemoList가 서로 다른 id라 한 시트 안에서 동시에 열릴 수 없는 #sheet 공용 바텀시트 구조상 id 충돌 가능성이 없음을 grep으로 재확인. #rMemo의 value 표시 조건((d.memo&&d.memo!==d.category)?esc(d.memo):'')은 이번 diff가 건드리지 않은 기존 로직이라 자동완성 추가와 무관함을 확인. 실제 버그는 발견하지 못함. node test/run.js 3896/3896 통과(재실행), node --check(sw.js/logic.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. CACHE v793/APP_VERSION 1.47.526 일치 확인. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 396,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-25T07:00:00.000Z",
       "summary": "general-purpose 서브에이전트에게 위임해 cycle340-400 전체 배제 목록(키보드 접근성 전체, 데이터 클램프, txMemo/rMemo/split메모 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, owner별 예산 오버라이드, 연간 결산 아카이브 겹침 인지, 문의하기 twGuard, confirmSheet 더블탭 가드, 모놀리식 구조개편/렌더성능/CSV완성도/통화·세무리포트·부채상환엔지니어링·클라우드 병합 재설계/esc() XSS/OS알림/할부기능/스크린리더 등 기각 항목)를 주고 twGuard 감사를 계속 확장시켰다. 반복거래 관리 목록의 건별 토글 toggleRecActive(id)와 잔액 조정 전용 편집 시트의 toggleAdjustSurplus(id,el)가 각각 touchSave(r)/touch(t);save()로 실제 DB.recurrences/DB.txns를 직접 변경·저장하면서도 twGuard()가 없어, 같은 화면의 벌크 버전(doBulkRecActive/doBulkInclToggle)과 같은 시트의 삭제 액션(delAdjust→deleteTxnsUndo)은 이미 가드돼 있는데도 튜토리얼 중 건별 토글만 실제로 저장되던 비대칭을 발견(cycle308/309/307/331/400이 owner/category/goal/inquiry/transfer-confirm에 메운 것과 같은 버그 클래스). index.html 2곳(toggleRecActive, toggleAdjustSurplus) 함수 시작부에 `if(twGuard())return;` 추가. test/run.js에 각 함수의 기존 touch() 테스트 바로 뒤 twGuard 회귀 테스트 2건 추가(TWi=0으로 막힘 확인 후 복원). node test/run.js 3980->3982/3982 통과, node --check(sw.js/test/run.js/logic.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 vm.Script 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.535->1.47.536, sw.js CACHE v802->v803. 참고: 이번 사이클 시작 시에도 로컬 HEAD가 detached였고(main 로컬 ref가 51c4fcd(cycle394 review)로 정체, origin/main은 이미 HEAD(8e89a36)까지 최신) git branch -f main HEAD && git checkout main으로 복구(원인 계속 불명, 데이터 손실 없음 — 매 사이클 반복되는 증상이지만 app 코드가 아니라 클라우드 세션의 clone/checkout 동작 자체로 보여 app-evolve 스킬 범위 밖으로 둠).",
       "commit": "f1d168e"
+    },
+    {
+      "cycle": 401,
+      "phase": "review",
+      "timestamp": "2026-11-25T08:05:00.000Z",
+      "summary": "develop(cycle401) 커밋 f1d168e(toggleRecActive/toggleAdjustSurplus에 twGuard 추가)를 검토. twGuard() 정의(index.html:9769, twActive()가 아니면 toast+true를 돌려주는 표준 가드)와 호출 패턴을 doBulkRecActive/doBulkInclToggle(13603/13636, if(twGuard())return; 함수 최상단)과 대조해 이번 diff의 두 함수도 동일한 위치·형태로 가드를 넣었음을 확인. 가드가 함수 맨 앞에서 반환하므로 el.classList.toggle 등 어떤 DOM/DB 부수효과도 twGuard 통과 전에는 실행되지 않아 기존 비가드 호출부와의 충돌 가능성 없음. 추가된 회귀 테스트 2건(TWi=0으로 막힘 확인 후 TWi=-1 복원)의 격리 여부도 재확인 — 두 테스트 모두 테스트 끝에 TWi를 원복해 뒤따르는 테스트의 전역 상태를 오염시키지 않음. node test/run.js 재실행 3982/3982 전부 통과. node --check(sw.js/logic.js) 통과. index.html에서 HTML 주석을 제거한 뒤 추출한 inline <script> 블록 4개 전부 new Function()으로 파싱 통과(주석 제거 없이 돌리면 주석 속 코드 설명문 때문에 거짓 실패가 나는 것도 함께 재확인). APP_VERSION 1.47.536/sw.js CACHE v803 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
     }
   ]
 }
