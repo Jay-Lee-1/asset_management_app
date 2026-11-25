@@ -1,22 +1,12 @@
 {
   "cycle": 403,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "목표(goal) 목록에 실제 수동 순서 변경(moveGoal) 추가 — 죽어있는 '사용자 정의순' 옵션 수리",
+    "why": "openGoalSortSheet()의 '사용자 정의순' 옵션(index.html:5009-5012)이 자산 목록의 동일 옵션(openSortSheet, index.html:5002-5004, moveAsset()/movedAssetOrder() 기반 실제 순서 변경)과 구조적으로 똑같이 생겼지만, 목표 쪽은 부제가 '등록한 순서 그대로예요'로 실제로는 바꿀 수 없는 죽은 옵션이다. index.html:4242-4246 주석이 목표에 order 필드 자체가 없음을 이미 인정하고 있다. 비상금/주택자금/자녀교육비처럼 목표를 여러 개 관리하는 가구가 가장 중요한 목표를 맨 위로 옮길 방법이 없는데도 UI는 '사용자 정의순'을 고를 수 있다고 알려주는 실제 제품 공백이며, 자산 목록에 이미 검증된 패턴(moveAsset/movedAssetOrder)을 그대로 재사용할 수 있어 한 사이클에 안전하게 끝낼 수 있다.",
+    "approach": "1) goal에 order 필드를 지연 부여(migrate 불필요, 기존 데이터는 ||0으로 안정 정렬): saveGoal(editing)에서 order=d.order!=null?d.order:(DB.goals||[]).reduce((m,g)=>Math.max(m,g.order||0),0)+1 계산 후 touch({...}) 객체에 order 포함(achievedAckAt과 같은 명시적 필드 보존 패턴). duplicateGoal(id)에서 d.id=uid() 바로 뒤에 delete d.order 추가(duplicateAsset과 동일), 복제본이 끝에 붙도록. openGoalForm(id)는 ...g 스프레드로 기존 order가 자동 보존돼 수정 불필요.\n2) goalOrderedIds()(order로 정렬된 id 배열 반환)와 moveGoal(id,dir)을 duplicateGoal 근처에 신설 — 기존 movedAssetOrder(ids,id,dir) 헬퍼(index.html:5427-5432)를 그대로 재사용(헬퍼 자체는 id-generic이라 수정 불필요): map=movedAssetOrder(goalOrderedIds(),id,dir); 각 goal에 order 반영 후 touch(g); save();openGoalsList(). movedAssetOrder가 호출마다 전체 목록의 order를 정규화하므로 order가 아직 없는 레거시 목표도 첫 이동 시 자동 복구됨(moveAsset이 의존하는 것과 동일한 부트스트랩).\n3) goalsManageBody(qRaw)(index.html:4247-4290)에 배선: 정렬 체인에 custom/미설정 분기로 else gs.sort((a,b)=>(a.order||0)-(b.order||0)) 추가. canReorder=(!goalSort||goalSort==='custom')&&!q&&!ST.goalSel.mode&&gs.length>1 (검색 중이거나 선택모드면 숨김 — moveCat/moveAsset과 동일한 제약). gs.map((g,gi,garr)=>...)로 인덱스 확보 후, 일반 행 템플릿에 moveCat 행(index.html:9191-9193)과 동일한 형태로 위/아래 버튼(svg('arrowUp')/svg('arrowDn'), 경계에서 disabled, aria-label 포함)을 <div class=\"row-acts\"> 바로 앞에 삽입.\n4) 범위 제외: 반복거래(recurrences) 순서 변경, 목표 다중선택 일괄 순서변경, order 필드에 대한 migrate()/백필 단계(지연 부여로 대체).\n5) test/run.js: FUNCTIONS 화이트리스트에 moveGoal(및 goalOrderedIds) 추가. moveGoal 테스트(인접 교환, 경계 no-op, order 없는 레거시 목표 자동 정규화). goalsManageBody 테스트(custom/미설정 정렬 시 moveGoal 버튼 존재+경계 disabled, targetDate/progress/name 정렬이면 버튼 숨김, 검색어 있으면 숨김, 선택모드면 기존 체크박스 유지, 목표 1개면 버튼 없음). saveGoal 테스트(신규 목표는 max(order)+1, 기존 목표 수정 시 order 보존). duplicateGoal 테스트(복제본 order 없음→끝에 붙음)."
+  },
   "history": [
-    {
-      "cycle": 398,
-      "phase": "review",
-      "timestamp": "2026-11-24T19:30:00.000Z",
-      "summary": "develop(cycle398) 커밋 b7567cd(confirmTransferNow/postponeTransfer/confirmRecNow/postponeRecTransfer 4곳에 twGuard 추가)를 검토. 기존 twGuard 호출 관례(addOwner/delOwner/doRenameOwner, addCat류, doBulk*, deleteTxnsUndo 등 index.html 전체 50여 곳)와 동일하게 각 함수 시작부에 'if(twGuard())return;' 한 줄씩만 추가되어 패턴이 일관됨을 grep으로 확인. 이 4개 함수의 유일한 호출부(openConfirmTransfer/confirmRecTransfer가 그리는 '이체 확인' 시트의 두 버튼)도 함께 확인 — 시트를 '여는' openConfirmTransfer/confirmRecTransfer 자체는 twGuard가 없고 실제 DB를 바꾸는 confirm/postpone 쪽에만 있는 것도 기존 관례(열기는 read-only, 실행 함수에만 가드)와 일치. 새로 추가된 회귀 테스트 4건(sandbox.TWi=0으로 튜토리얼 모드를 만들고 DB가 안 바뀌는지 확인) 로직도 setupRecTransferDB 헬퍼와 기존 confirmRecNow 테스트들의 패턴을 그대로 따름을 확인. node test/run.js 재실행 3919/3919 통과. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 398,
-      "phase": "critique",
-      "timestamp": "2026-11-24T20:05:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-398 전체 배제 목록(키보드 접근성 전체(검색창/필드 Escape, 공용 피커·세그먼트·날짜선택기·카테고리 피커·monthNav·nwCarousel 방향키, openSheet 탭 전환 포커스 보존, 카테고리 관리 일괄선택, 트래시 허브 통합, fmtAmt/fmtQty/asCode 커서버그, commitTx/saveAsset/commitRec/이체확인 undo+twGuard), 데이터 클램프(setRate/sanitizeAmount/interestRate AMOUNT_MAX, acquiredAt/qtyChangeDate 가드, amortizationPayoffMonths 가드), txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, 모놀리식 구조개편/렌더성능/CSV완성도/가상화/통화·CSV·SRI·음력표 설계상 기각 등)를 주고 접근성 외 차원에서 전략적 재검토시킴. 클라우드 동기화 필드 단위 병합(이미 코드 주석이 데이터 모델 재설계 보류로 명문화, 범위 과대), esc() XSS 공백(onclick이 전부 숫자 인덱스 참조·toast가 esc() 경유라 실제 벡터 없음, 60여 호출부 점검 후 기각), OS 알림 포그라운드 한정(서버 푸시 인프라 필요, 코드 주석에 이미 수용된 범위로 명문화) 세 후보를 검토 후 기각하고, spendByCategory(y,m,owner) 주석(index.html:8346, '예산은 귀속과 무관하게 전역이라 필터하지 않는다')·openBudgetPrompt 주석(8723-8725)이 명시하듯 예산 한도(DB.budgetHistory)는 항상 가구 전체 기준인데, openSpendAnalysis(8684-8700)가 ownerSegHtml(ST.spendOwner,...)(8703)로 특정 귀속을 고르면 r.v=spendByCategory(y,m,ST.spendOwner)(그 사람 지출만)를 budget=budgetForMonthWithCarry(r.c,y,m,...)(귀속 인자 없이 가구 전체 한도)로 나눠 퍼센트/초과 표시를 만드는 불일치를 발견 — 순자산/배분/결산은 전부 귀속별로 일관된데 예산 한도만 예외인 실제 제품 공백. pending_advance_plan에 DB.ownerBudgets(owner별 budgetHistory와 동일 shape) 신설 + budgetForMonthOwner 폴백 함수 + openSpendAnalysis/openBudgetPrompt/saveBudget/delBudget 분기 + 카테고리/귀속 이름변경·삭제·merge cascade 확장 + mergeRemoteDataIntoLocal owner별 병합 + 테스트 계획 저장(catBudgetRollover/budgetOver 홈알림/CSV노출은 범위 제외로 명시). node test/run.js 3919/3919 통과 확인(서브에이전트가 재실행). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전). 참고: 이번 사이클 시작 시에도 로컬 HEAD가 detached였고 main 로컬 브랜치 ref만 origin보다 뒤처져 있었음(origin/main 자체는 이미 최신) — git branch -f main HEAD && git checkout main으로 복구, 근본 원인은 여전히 불명이라 다음 사이클도 git status/branch 확인 필요.",
-      "commit": null
-    },
     {
       "cycle": 398,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-25T16:05:00.000Z",
       "summary": "develop(cycle403) 커밋 804f636(saveBudget/delBudget에 누락된 twGuard 추가)를 검토. twGuard() 정의(index.html:9840, twActive()가 아니면 toast+true)와 호출 패턴을 addOwner/saveGoal/sendInquiry 등 기존 twGuard 감사 사이클들과 대조해 이번 diff도 동일하게 함수 맨 앞에서 early return해 DB.budgetHistory/DB.ownerBudgets 변경·undoToast 호출 전에 막는 위치임을 확인. saveBudget/delBudget 둘 다 existing/prevAmount 계산과 setBudgetFrom(Owner) 호출, undoToast 등록이 모두 twGuard 통과 이후에만 일어나 가드가 기존 되돌리기 로직과 충돌하지 않음을 확인. 추가된 테스트 2건(TWi=0으로 저장/삭제가 budgetForMonth 값을 바꾸지 못하고 lastUndo도 null로 남는지 확인 후 TWi=-1 복원)이 올바른 대상(budgetForMonth 결과)과 부작용(undoToast 미호출) 둘 다 검증하는지 확인. node test/run.js 재실행 4003/4003 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과, APP_VERSION 1.47.540/sw.js CACHE v807 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 403,
+      "phase": "critique",
+      "timestamp": "2026-11-25T17:30:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-403 전체 배제 목록(키보드/스크린리더/명암비 접근성 전체, 데이터 클램프, txMemo/rMemo/split메모 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, owner별 예산 오버라이드, 연간 결산 아카이브 겹침 인지, twGuard 감사 전체(owner/category/goal/inquiry/toggleRecActive/toggleAdjustSurplus/budget 등), confirmSheet 더블탭 가드, assetQtyLog edit, planTransfer/planSplitTransfer undo, CSV import 미지원/split 재가져오기 v1 한계(설계 의도 주석으로 명문화), 공유계정 멀티유저 인증 재설계, 성능(이미 완화됨), CDN SRI(네트워크 egress 없음), 모놀리식 구조개편, 다중통화 FX/stock/crypto/gold, 세무리포트, 부채상환엔지니어링, 클라우드 병합 재설계, esc() XSS, OS알림, 할부기능, auth_expired 분류(cycle402) 등 기각 항목)를 주고 전략적 재검토시킴. 반복거래 수동 순서변경 부재(목표와 달리 '사용자 정의순'을 잘못 약속하는 UI가 없어 덜 급함), 트랜잭션 태그 시스템(할부기능과 같은 체급의 데이터모델 신설이라 과대), 카테고리 일괄선택 툴바의 merge/reorder 부재(이미 단건 머지/순서변경이 있어 사소함, develop 몫) 세 후보를 검토 후 기각하고, openGoalSortSheet()의 '사용자 정의순' 옵션(index.html:5009-5012)이 자산 목록의 동일 옵션(openSortSheet, moveAsset/movedAssetOrder 기반 실제 동작)과 구조적으로 똑같이 생겼으면서도 목표 쪽은 부제가 '등록한 순서 그대로예요'인 죽은 옵션임을 발견 — index.html:4242-4246 주석이 목표에 order 필드 자체가 없음을 이미 인정. 비상금/주택자금/자녀교육비 등 목표를 여러 개 관리하는 가구가 우선순위를 못 바꾸는데도 UI는 '사용자 정의순'을 고를 수 있다고 알려주는 실제 공백이자, 자산 목록에 이미 검증된 moveAsset/movedAssetOrder 패턴을 그대로 재사용 가능한 scoped fix. pending_advance_plan에 goal.order 지연부여 + moveGoal/goalOrderedIds(movedAssetOrder 재사용) + goalsManageBody 배선(canReorder 가드: custom정렬&&검색없음&&선택모드아님&&2개이상) + duplicateGoal order 제거 + 테스트 계획 저장(반복거래 순서변경/목표 일괄 순서변경/order migrate 백필은 범위 제외로 명시). node test/run.js 4003/4003 통과 확인(서브에이전트가 코드 변경 전 베이스라인으로 확인, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
