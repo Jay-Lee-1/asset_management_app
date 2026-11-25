@@ -9368,24 +9368,25 @@ test('goalsToCSV: 목표 이름/귀속에 콤마·큰따옴표가 있으면 필�
   assert.strictEqual(row[0], "'=HYPERLINK(\"evil\")");
   assert.strictEqual(row[7], '메모, 콤마');
 });
-/* ---------- budgetHistoryToCSV: 카테고리별 예산 설정 CSV 내보내기(app-evolve cycle278 develop) ---------- */
+/* ---------- budgetHistoryToCSV: 카테고리별 예산 설정 CSV 내보내기(app-evolve cycle278 develop,
+ * '귀속' 컬럼 + ownerBudgets(귀속별 오버라이드) 지원은 app-evolve cycle405 develop) ---------- */
 test('budgetHistoryToCSV: 빈 객체면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
   const csv = sandbox.budgetHistoryToCSV({}, {});
-  assert.strictEqual(csv, '﻿카테고리,적용 시작월,월 예산,이월 여부');
+  assert.strictEqual(csv, '﻿카테고리,귀속,적용 시작월,월 예산,이월 여부');
 });
-test('budgetHistoryToCSV: 한 카테고리에 적용 시작월이 여러 개면 그만큼 행이 펼쳐지고, 이월 여부는 catBudgetRollover로 결정한다', () => {
+test('budgetHistoryToCSV: 한 카테고리에 적용 시작월이 여러 개면 그만큼 행이 펼쳐지고, 이월 여부는 catBudgetRollover로 결정하며, household 행의 귀속은 "전체"다', () => {
   const csv = sandbox.budgetHistoryToCSV(
     { 식비: [{ from: '2026-01', amount: 300000 }, { from: '2026-03', amount: 350000 }] },
     { 'expense:식비': true }
   );
   const rows = sandbox.parseCSV(csv);
   assert.strictEqual(rows.length, 3, '헤더 + 2행');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows[1])), ['식비', '2026-01', '300000', 'Y']);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows[2])), ['식비', '2026-03', '350000', 'Y']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows[1])), ['식비', '전체', '2026-01', '300000', 'Y']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows[2])), ['식비', '전체', '2026-03', '350000', 'Y']);
 });
 test('budgetHistoryToCSV: 이월(catBudgetRollover)이 꺼져 있거나 설정 자체가 없으면 N이다', () => {
   const csv = sandbox.budgetHistoryToCSV({ 교통: [{ from: '2026-01', amount: 100000 }] }, {});
-  assert.strictEqual(sandbox.parseCSV(csv)[1][3], 'N');
+  assert.strictEqual(sandbox.parseCSV(csv)[1][4], 'N');
 });
 test('budgetHistoryToCSV: 카테고리명 오름차순으로 먼저 정렬하고, 같은 카테고리 안에서는 적용 시작월 오름차순으로 정렬한다(Object.keys 순서에 기대지 않음)', () => {
   const csv = sandbox.budgetHistoryToCSV(
@@ -9394,16 +9395,55 @@ test('budgetHistoryToCSV: 카테고리명 오름차순으로 먼저 정렬하고
   );
   const rows = sandbox.parseCSV(csv);
   assert.strictEqual(rows[1][0], '쇼핑', '카테고리명 오름차순이면 쇼핑이 식비보다 먼저 나와야 함');
-  assert.strictEqual(rows[2][1], '2026-02', '식비 카테고리 안에서는 적용 시작월 오름차순(02월이 05월보다 먼저)');
-  assert.strictEqual(rows[3][1], '2026-05');
+  assert.strictEqual(rows[2][2], '2026-02', '식비 카테고리 안에서는 적용 시작월 오름차순(02월이 05월보다 먼저)');
+  assert.strictEqual(rows[3][2], '2026-05');
 });
 test('budgetHistoryToCSV: 레거시 플랫 예산(BUDGET_EPOCH)도 그대로 적용 시작월에 내보낸다', () => {
   const csv = sandbox.budgetHistoryToCSV({ 통신비: [{ from: sandbox.BUDGET_EPOCH, amount: 50000 }] }, {});
-  assert.strictEqual(sandbox.parseCSV(csv)[1][1], sandbox.BUDGET_EPOCH);
+  assert.strictEqual(sandbox.parseCSV(csv)[1][2], sandbox.BUDGET_EPOCH);
 });
 test('budgetHistoryToCSV: 카테고리명에 콤마·큰따옴표가 있으면 필드 전체를 따옴표로 감싸고, =,+,-,@ 로 시작하면 \'를 붙여 수식 인젝션을 막는다', () => {
   const csv = sandbox.budgetHistoryToCSV({ '=HYPERLINK("evil")': [{ from: '2026-01', amount: 1 }] }, {});
   assert.strictEqual(sandbox.parseCSV(csv)[1][0], "'=HYPERLINK(\"evil\")");
+});
+test('budgetHistoryToCSV: ownerBudgets(귀속별 오버라이드)를 세 번째 인자로 넘기면 해당 귀속명이 귀속 컬럼에 담겨 household 행과 함께 내보내진다', () => {
+  const csv = sandbox.budgetHistoryToCSV(
+    { 식비: [{ from: '2026-01', amount: 300000 }] },
+    {},
+    { 엄마: { 식비: [{ from: '2026-01', amount: 100000 }] } }
+  );
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows.length, 3, '헤더 + household 1행 + 귀속별 오버라이드 1행');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows[1])), ['식비', '전체', '2026-01', '300000', 'N'], '같은 카테고리 안에서 household("전체") 행이 귀속별 오버라이드보다 먼저 와야 함');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows[2])), ['식비', '엄마', '2026-01', '100000', 'N']);
+});
+test('budgetHistoryToCSV: ownerBudgets만 있고 household budgetHistory에는 해당 카테고리가 없어도 귀속별 오버라이드 행은 빠지지 않는다', () => {
+  const csv = sandbox.budgetHistoryToCSV(
+    {},
+    { 'expense:용돈': true },
+    { 아빠: { 용돈: [{ from: '2026-02', amount: 50000 }] } }
+  );
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows.length, 2, '헤더 + 귀속별 오버라이드 1행');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows[1])), ['용돈', '아빠', '2026-02', '50000', 'Y'], '이월 여부(catBudgetRollover)는 귀속과 무관하게 카테고리 단위로 그대로 적용돼야 함');
+});
+test('budgetHistoryToCSV: 같은 카테고리에 귀속별 오버라이드가 여럿이면 귀속명 오름차순으로 정렬한다', () => {
+  const csv = sandbox.budgetHistoryToCSV(
+    {},
+    {},
+    { 엄마: { 식비: [{ from: '2026-01', amount: 1 }] }, 아빠: { 식비: [{ from: '2026-01', amount: 2 }] } }
+  );
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][1], '아빠', '귀속명 오름차순이면 아빠가 엄마보다 먼저 나와야 함');
+  assert.strictEqual(rows[2][1], '엄마');
+});
+test('budgetHistoryToCSV: 귀속명에 콤마가 있으면 카테고리/목표명과 동일하게 필드 전체를 따옴표로 감싸 CSV 인젝션을 막는다', () => {
+  const csv = sandbox.budgetHistoryToCSV(
+    {},
+    {},
+    { '=HYPERLINK("evil")': { 식비: [{ from: '2026-01', amount: 1 }] } }
+  );
+  assert.strictEqual(sandbox.parseCSV(csv)[1][1], "'=HYPERLINK(\"evil\")");
 });
 /* ---------- doExport(assetsCsv/nwCsv/gainCsv/recsCsv) 배선 회귀: exportData() 시트의 새 버튼이 doExport로 올바르게 연결되는지.
  * exportData()는 canShareFiles()/svg()/IS_IOS 등 FUNCTIONS 목록 밖의 의존이 많아 실행형으로 돌리지 않고,
@@ -9427,7 +9467,7 @@ test('CSV_KIND_META/doExport: gainCsv/recsCsv/goalsCsv/budgetCsv가 각각 asset
   assert.ok(exportBody.includes("kind==='gainCsv'?assetQtyLogToCSV(DB.assetQtyLog,DB.assets)"), 'doExport가 gainCsv를 assetQtyLogToCSV로 연결하지 않음');
   assert.ok(exportBody.includes("kind==='recsCsv'?recurrencesToCSV(DB.recurrences,DB.assets)"), 'doExport가 recsCsv를 recurrencesToCSV로 연결하지 않음');
   assert.ok(exportBody.includes("kind==='goalsCsv'?goalsToCSV("), 'doExport가 goalsCsv를 goalsToCSV로 연결하지 않음');
-  assert.ok(exportBody.includes("kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover)"), 'doExport가 budgetCsv를 budgetHistoryToCSV로 연결하지 않음');
+  assert.ok(exportBody.includes("kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover,DB.ownerBudgets)"), 'doExport가 budgetCsv를 budgetHistoryToCSV(+DB.ownerBudgets)로 연결하지 않음');
 });
 test('csvDateValid: YYYY-MM-DD 형식이 아니거나 실존하지 않는 날짜(예: 2월 30일)는 거부한다', () => {
   assert.strictEqual(sandbox.csvDateValid('2026-01-15'), true);

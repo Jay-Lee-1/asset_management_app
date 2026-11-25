@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.543';
+const APP_VERSION='1.47.544';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -10187,16 +10187,36 @@ function goalsToCSV(items,assets){
    보장되지 않으므로 카테고리명 오름차순으로 먼저 정렬하고, 같은 카테고리 안에서는 적용 시작월
    오름차순으로 다시 정렬한다(budgetHistory 저장 순서에 기대지 않음). from이 migrate()의 1회
    변환이 남긴 레거시 플랫 예산(BUDGET_EPOCH='2000-01')이면 그 값 그대로 내보낸다 — 어떤 실제
-   조회 달보다도 이른 값이라 '처음부터 적용'이라는 뜻을 그대로 전달한다. */
-function budgetHistoryToCSV(budgetHistory,catBudgetRollover){
+   조회 달보다도 이른 값이라 '처음부터 적용'이라는 뜻을 그대로 전달한다.
+   ownerBudgets(귀속별 예산 오버라이드, DB.ownerBudgets[owner][카테고리]={from,amount}[], app-evolve
+   cycle398 critique/advance)는 budgetHistory와 동일한 shape이면서도 이 CSV에는 cycle398 이후 쭉
+   빠져 있었다 — 화면(openBudgetPrompt/카테고리별 예산 설정)에는 보이는 귀속별 한도가 예산 CSV
+   백업/내보내기에는 조용히 누락돼, 내보낸 CSV만 보고 예산을 복기하거나 다른 시트로 옮기려는
+   사용자가 가구 전체 한도만 있는 걸로 오인하게 된다(app-evolve cycle405 develop). '귀속' 컬럼을
+   추가해 가구 전체 행은 '전체'로, 귀속별 오버라이드 행은 해당 귀속명으로 구분해 같은 CSV 한 장에
+   담는다 — 이월 여부(catBudgetRollover)는 귀속과 무관하게 카테고리 단위로만 저장되므로
+   (saveBudget/setBudgetFromOwner 모두 catKey('expense',c) 하나를 공유) 귀속별 행에도 그대로
+   적용한다. 정렬은 카테고리명 오름차순이 1순위, 같은 카테고리 안에서는 '전체'가 먼저 오고 그
+   다음 귀속명 오름차순, 그 안에서는 적용 시작월 오름차순(household 정렬과 동일 원칙을
+   귀속 레이어로 한 단계 확장). */
+function budgetHistoryToCSV(budgetHistory,catBudgetRollover,ownerBudgets){
  const guard=csvInjectGuard,esc=csvCellEsc;
- const header=['카테고리','적용 시작월','월 예산','이월 여부'].map(esc).join(',');
- const cats=Object.keys(budgetHistory||{}).sort((a,b)=>a<b?-1:a>b?1:0);
- const rows=[];
- cats.forEach(c=>{
-  const entries=(budgetHistory[c]||[]).slice().sort((a,b)=>(a.from||'')<(b.from||'')?-1:(a.from||'')>(b.from||'')?1:0);
-  const rollover=(catBudgetRollover||{})[catKey('expense',c)]?'Y':'N';
-  entries.forEach(e=>{rows.push([guard(c),e.from||'',e.amount||0,rollover].map(esc).join(','))});
+ const header=['카테고리','귀속','적용 시작월','월 예산','이월 여부'].map(esc).join(',');
+ const flat=[]; /* {cat,owner,from,amount} — household('전체')와 귀속별 오버라이드를 한 목록으로 합쳐 공통 정렬·출력 로직을 공유 */
+ Object.keys(budgetHistory||{}).forEach(c=>{
+  (budgetHistory[c]||[]).forEach(e=>flat.push({cat:c,owner:'전체',from:e.from||'',amount:e.amount||0}));
+ });
+ Object.keys(ownerBudgets||{}).forEach(o=>{
+  Object.keys(ownerBudgets[o]||{}).forEach(c=>{
+   (ownerBudgets[o][c]||[]).forEach(e=>flat.push({cat:c,owner:o,from:e.from||'',amount:e.amount||0}));
+  });
+ });
+ flat.sort((a,b)=>a.cat!==b.cat?(a.cat<b.cat?-1:1)
+  :a.owner!==b.owner?(a.owner==='전체'?-1:b.owner==='전체'?1:(a.owner<b.owner?-1:1))
+  :(a.from<b.from?-1:a.from>b.from?1:0));
+ const rows=flat.map(e=>{
+  const rollover=(catBudgetRollover||{})[catKey('expense',e.cat)]?'Y':'N';
+  return [guard(e.cat),guard(e.owner),e.from,e.amount,rollover].map(esc).join(',');
  });
  return '﻿'+[header,...rows].join('\r\n');
 }
@@ -10420,7 +10440,7 @@ function exportData(){ /* 저장 방식 선택 */
     <div class="pc">${svg('chev')}</div></button>
   <button class="pk-item" onclick="closeSheet();doExport('${sharable?'share':'download'}','budgetCsv')">
     <div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('coins')}</div>
-    <div class="pbody"><div class="pn">예산 설정 CSV로 내보내기</div><div class="psub">카테고리별 월 예산과 이월 설정을 스프레드시트로 꺼내요</div></div>
+    <div class="pbody"><div class="pn">예산 설정 CSV로 내보내기</div><div class="psub">카테고리별 월 예산·이월 설정과 귀속별 오버라이드를 스프레드시트로 꺼내요</div></div>
     <div class="pc">${svg('chev')}</div></button>`);
 }
 /* kind별 CSV 파일명 접두사/공유 제목/복사 안내 — csv(거래내역)는 기존 그대로, assetsCsv/nwCsv는
@@ -10475,7 +10495,7 @@ async function doExport(mode,kind){
   :kind==='gainCsv'?assetQtyLogToCSV(DB.assetQtyLog,DB.assets)
   :kind==='recsCsv'?recurrencesToCSV(DB.recurrences,DB.assets)
   :kind==='goalsCsv'?goalsToCSV((DB.goals||[]).map(g=>{const p=goalProgress(g,goalHistoryFor(g),TODAY);return Object.assign({},g,{cur:p.cur,pct:p.pct,achieved:p.achieved})}),DB.assets)
-  :kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover)
+  :kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover,DB.ownerBudgets)
   :kind==='csv'?txnsToCSV(DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)).filter(t=>!(t.adjust&&!t.inSurplus)&&t.date<=TODAY),DB.assets)
   :JSON.stringify(DB,null,2);
  if(exportPin)text=JSON.stringify(await encryptDbBlob(text,exportPin));
