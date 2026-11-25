@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.542';
+const APP_VERSION='1.47.543';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -6441,9 +6441,15 @@ function modeSeg(tab){ /* 달력/목록 컴팩트 세그먼트 (헤더용) */
  const filtered=(ST.hist.cat!=='전체'||ST.hist.q!==''||!!ST.hist.assetId||!!ST.hist.catExact||(ST.hist.owner&&ST.hist.owner!=='전체')); /* catExact/owner(지출분석 카테고리 드릴다운이 세팅)도 봐야 함 — 안 그러면 달력↔전체내역 토글 중 필터가 안 보이는 흔적 공백(cat/q/assetId만 보던 원래 체크의 누락) */
  return `<div class="mseg" role="group" aria-label="보기 방식 선택"><button class="${isCal?'on':''}" aria-pressed="${isCal}" onclick="${isCal?'':'toCal()'}">달력</button><button class="${!isCal?'on':''}" aria-pressed="${!isCal}" onclick="${!isCal?'':'toList()'}">검색${filtered?'<span class="chip-dot"></span>':''}</button></div>`;
 }
+/* 선택한 날이 "오래된 데이터 정리"로 지워진 범위면(archivedThroughDate 이하) 진짜로 아무것도
+ * 안 쓴 날과 구분해 전용 빈 상태를 보여준다 — 그냥 "조용하네요" + 내역 추가 CTA를 그대로 두면
+ * 이미 의도적으로 지운 내역을 다시 입력하라고 유도하는 꼴이 된다(app-evolve cycle404 critique/advance). */
 function ledgerRowsHtml(d){
  const selTx=dayTxns(d);
- return selTx.length?selTx.map(t=>txRow(t)).join(''):`<div class="empty"><div class="ei">${svg('ledger')}</div><div class="et">이 날은 조용하네요 🌱</div><div class="es">쓴 게 있다면 지금 남겨두세요</div><button class="empty-cta" onclick="openTxSheet()">${svg('plus')} 내역 추가하기</button></div>`;
+ if(selTx.length)return selTx.map(t=>txRow(t)).join('');
+ const archivedThrough=DB.settings&&DB.settings.archivedThroughDate;
+ if(archivedThrough&&d<=archivedThrough)return `<div class="empty"><div class="ei">${svg('ledger')}</div><div class="et">이 날은 "오래된 데이터 정리"로 비워졌어요</div><div class="es">자산 잔액은 그대로 보존돼요</div></div>`;
+ return `<div class="empty"><div class="ei">${svg('ledger')}</div><div class="et">이 날은 조용하네요 🌱</div><div class="es">쓴 게 있다면 지금 남겨두세요</div><button class="empty-cta" onclick="openTxSheet()">${svg('plus')} 내역 추가하기</button></div>`;
 }
 function ledgerDayHeadHtml(d){
  return `<div><div class="d">${fmtDate(d)}</div>${isFuture(d)?'<div class="s" style="color:var(--gold)">예정</div>':''}</div>${ST.lSel.mode?'':`<button type="button" class="sch-chip" aria-label="내역 선택" onclick="ST.lSel.mode=true;renderLedger()">${svg('check',14)} 선택</button>`}`;
@@ -6454,9 +6460,16 @@ function renderLedger(){
  /* 3개월(이전/현재/다음) 패널이 각자 dayTxns()를 셀마다 다시 스캔하지 않도록,
     캐러셀이 실제로 보여줄 3개월 범위 전체를 한 번만 버킷화해 공유한다 */
  const txMap=txnsByDateInRange(monthStartStr(py,pm),monthEndStr(ny,nm));
+ /* archiveMonthPicked가 늘 월 단위로 cutoff를 넘기므로 현재 보고 있는 달이 통째로 지워졌는지만
+  * 확인하면 된다(partial 없음) — ledgerRowsHtml의 날짜별 전용 빈 상태와 같은 신호를 월 전체
+  * 단위로 한 번 더 보여줘, monthNav로 그 달에 들어온 순간 캘린더를 보기 전에도 알 수 있게 한다
+  * (openYearReview의 archiveNoticeHtml과 같은 시각 패턴, app-evolve cycle404 critique/advance). */
+ const archivedThrough=DB.settings&&DB.settings.archivedThroughDate;
+ const ledArchiveNoticeHtml=monthIsArchived(y,m,archivedThrough)?`<div style="text-align:center;color:var(--text-3);font-size:11.5px;font-weight:600;margin:8px 0 0">이 달은 "오래된 데이터 정리"로 비워졌어요 · 자산 잔액은 보존돼요</div>`:'';
  $('page-ledger').innerHTML=`
  ${pageHead('ledger')}
  ${monthNav('ledger',`${y}년 ${m}월`)}
+ ${ledArchiveNoticeHtml}
  <div class="mc-viewport" id="ledgerVP"><div class="mc-track">
    ${calPane(py,pm,null,false,txMap)}
    ${calPane(y,m,sel,true,txMap)}

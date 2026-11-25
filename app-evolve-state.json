@@ -1,19 +1,8 @@
 {
-  "cycle": 404,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "가계부(Ledger) 화면에 '오래된 데이터 정리'로 지워진 달/일 안내 추가",
-    "why": "archiveTxnsBefore()(index.html:13642, '오래된 데이터 정리')가 cutoff 이전 거래를 영구 삭제한 뒤, renderLedger()(6451)/ledgerRowsHtml()(6444)는 아카이브된 달/일을 진짜 빈 날과 구분 없이 보여줘 '이 날은 조용하네요 🌱 · 내역 추가하기' CTA까지 띄운다. 사용자가 monthNav/openYMSheet(12420-12462)로 뒤로 돌아가면 데이터 손실로 보이고, CTA는 이미 의도적으로 지운 내역을 다시 입력하라고 유도한다. cycle399가 Year Review(yearSummary/openYearReview)에 적용한 archiveNotice 패턴이 가계부 자체에는 전파되지 않은 사각지대.",
-    "approach": "1) logic.js에 monthEndStr 근처(또는 yearArchiveOverlap 근처, 719/728행)에 순수 헬퍼 monthIsArchived(y,m,archivedThroughDate) = !!archivedThroughDate && monthEndStr(y,m)<=archivedThroughDate 추가(아카이브는 항상 archiveMonthPicked가 monthEndStr(y,m)를 cutoff로 넘기는 월 단위라 partial 케이스 불필요). 2) index.html renderLedger()(6451)에서 DB.settings?.archivedThroughDate로 월 전체가 아카이브됐으면 monthNav 바로 아래에 안내 카드 삽입(archiveMonthPicked와 같은 톤: \"이 달은 '오래된 데이터 정리'로 비워졌어요 · 자산 잔액은 보존돼요\"). 3) ledgerRowsHtml(d)(6444)에서 selTx가 비어있고 d<=archivedThroughDate(문자열 비교, 헬퍼 불필요)이면 기존 빈 상태 대신 '내역 추가하기' CTA 없는 전용 빈 상태(아카이브 안내 문구)를 반환. 4) test/run.js: monthIsArchived 순수 테스트(없음/이전/경계/이후), renderLedger 아카이브 안내 카드 렌더 테스트, ledgerRowsHtml 아카이브된 날 전용 빈 상태(+CTA 부재) 및 비-아카이브 빈 날 기존 CTA 유지(회귀) 테스트를 yearArchiveOverlap/renderLedger 기존 테스트 패턴 옆에 추가. 범위 제외: openSpendAnalysis/openIncomeAnalysis 안내 카드, 캘린더 셀 시각 스타일링, monthNav 경계 제한, archiveMonthPicked 문구 변경, 전체내역(검색) 날짜범위 처리."
-  },
+  "cycle": 405,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 399,
-      "phase": "advance",
-      "timestamp": "2026-11-25T01:15:00.000Z",
-      "summary": "critique(cycle399)의 계획대로 yearArchiveOverlap() 순수 헬퍼를 신설하고 yearSummary()/openYearReview()에 배선해, archiveTxnsBefore('오래된 데이터 정리')가 지운 기간이 섞인 해의 연간 결산이 틀린 전년대비 배지를 보여주던 데이터 정합성 공백을 메웠다. logic.js monthStartStr(719행) 바로 뒤에 yearArchiveOverlap(y,archivedThroughDate,endDate=null) 신설 — archivedThroughDate가 없으면 'none', 그 해(또는 endDate로 좁힌 YTD 상한)의 1/1~종료일 전체가 archivedThroughDate 이하면 'full', 일부만 겹치면(종료일 이전·1/1 이후) 'partial'. yearSummary()(index.html)에서 DB.settings.archivedThroughDate로 curOverlap(올해)/pyOverlap(전년, pyEndDate 상한 포함)을 계산해 hasArchiveGap으로 묶고, 기존 null 가드(income/expense/rate/investDelta)에 전부 '||hasArchiveGap' 조건을 추가해 raw 수치가 0이 아니라서 기존 null 가드로는 못 잡혔던 왜곡된 YoY 배지를 막았다. curOverlap만으로(pyOverlap은 보지 않음) archiveNotice('full'/'partial'/null)를 반환에 추가 — 올해 자체 raw 총수입/총지출/TOP3/투자손익은 curOverlap이 none이면 항상 정확하므로, 안내는 '지금 보고 있는 해'가 지워진 범위와 겹칠 때만 띄운다. openYearReview()에 archiveNoticeHtml(YTD 안내와 동일한 시각 패턴, full/partial 문구 분기)을 요약 카드 안에 추가하고, archiveNotice==='full'일 때만 투자 실현손익 카드와 지출/수입 TOP3 카드를 raw 숫자 대신 짧은 안내 카드(archivedGoneCard)로 대체(partial은 TOP3/투자손익이 아직 신뢰 가능해 그대로 유지, 계획대로 openSpendAnalysis/openIncomeAnalysis·전체내역 날짜범위·연도별 실현손익 재구성·archiveMonthPicked 문구 변경은 범위 제외). test/run.js에 yearArchiveOverlap 순수 테스트 5건(없음/이전/경계/일부겹침/endDate 상한), yearSummary archiveNotice·null가드 테스트 6건(full/partial/안겹침 회귀/pyOverlap만 겹침/settings 없음 회귀), openYearReview 렌더 테스트 3건(full일 때 안내+TOP3·투자손익 숨김, partial일 때 안내만+카드 유지, archivedThroughDate 없을 때 안내 없음 회귀) 총 14건 추가. node test/run.js 3960->3973/3973 통과, node --check(logic.js/sw.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.532->1.47.533, sw.js CACHE v799->v800. pending_advance_plan null로 비움. 참고: 이번 사이클 시작 시에도 로컬 HEAD가 detached였고(main 로컬 ref가 51c4fcd(cycle394 review)로 정체, origin/main은 이미 HEAD(33244e3)까지 최신) git branch -f main HEAD && git checkout main으로 복구(원인 계속 불명, 데이터 손실 없음 — cycle396부터 매 사이클 반복되는 증상이라 다음 develop 사이클이 조사해볼 만함).",
-      "commit": null
-    },
     {
       "cycle": 400,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-25T06:00:00.000Z",
       "summary": "general-purpose 서브에이전트에게 위임해 git log 전체([app-evolve:develop|advance|critique] 전부)와 state.json history를 훑어 cycle340-404 기각/완료 항목(twGuard 감사 전체, 반복거래 수동 순서변경, 키보드/스크린리더/명암비 접근성, 데이터 클램프, 메모 자동완성, 전역 에러 배너, seenAt 정체 감지, owner별 예산 오버라이드, 연간 결산 아카이브 겹침 인지(yearArchiveOverlap, cycle399), 모놀리식 구조개편, 다중통화, 세무리포트, 할부, 공유계정 인증 재설계, 클라우드 병합 재설계 등)를 배제하고 전략적으로 재검토시킴. trackingTx 태그 시스템(과대한 신규 데이터모델), 반복거래 순서변경(목표와 달리 '거짓 약속' UI가 없어 덜 급함), openSpendAnalysis/openIncomeAnalysis까지 아카이브 안내 확장(가계부와 한 사이클에 같이 하면 과대) 세 후보를 검토 후 기각하고, cycle399가 openYearReview()/yearSummary()에만 적용한 아카이브 인지(archiveNotice)가 가계부(renderLedger/ledgerRowsHtml, index.html:6451/6444)에는 전혀 전파되지 않아, '오래된 데이터 정리'(archiveTxnsBefore)로 지워진 달/일을 사용자가 뒤로 돌아가 보면 진짜로 비어있던 날과 똑같은 '이 날은 조용하네요 🌱 · 내역 추가하기' 빈 상태로 보여 데이터 손실처럼 보이고, 심지어 CTA가 이미 의도적으로 지운 내역을 다시 입력하라고 유도하는 공백을 최우선 과제로 선정 — cycle399와 같은 결의 버그지만 가계부 화면 자체는 그때 범위 밖이었다. pending_advance_plan에 logic.js monthIsArchived(y,m,archivedThroughDate) 순수 헬퍼 신설(아카이브는 항상 월 전체 단위라 partial 불필요) + renderLedger()에 월 전체 아카이브 시 안내 카드 + ledgerRowsHtml()에 아카이브된 날짜 전용 빈 상태(내역 추가하기 CTA 제거) 배선 + monthIsArchived/renderLedger/ledgerRowsHtml 회귀 테스트(archiveNotice 관련 기존 테스트 패턴 재사용) 추가 계획 저장(openSpendAnalysis/openIncomeAnalysis 안내 카드, 캘린더 셀 시각 스타일링, 월 네비게이션 경계 제한, archiveMonthPicked 문구 변경, 전체내역 검색 날짜범위는 범위 제외로 명시). node test/run.js 4019/4019 통과 확인(서브에이전트가 베이스라인으로 실행, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 404,
+      "phase": "advance",
+      "timestamp": "2026-11-25T22:09:08.000Z",
+      "summary": "critique(cycle404)의 계획대로 가계부(Ledger) 화면에 \"오래된 데이터 정리\"로 지워진 달/일 안내를 추가해, 연간 결산(yearSummary/openYearReview, cycle399)에만 적용됐던 archiveNotice 패턴이 가계부 자체에는 전파되지 않았던 사각지대를 메웠다. logic.js monthStartStr/monthEndStr 바로 뒤에 monthIsArchived(y,m,archivedThroughDate) 순수 헬퍼 신설 — archiveMonthPicked가 항상 monthEndStr(y,m)를 cutoff로 넘기는 월 단위라 yearArchiveOverlap과 달리 partial 케이스 없이 boolean(!!archivedThroughDate && monthEndStr(y,m)<=archivedThroughDate)만 돌려준다. index.html renderLedger()에서 DB.settings?.archivedThroughDate로 보고 있는 달 전체가 아카이브됐으면 monthNav 바로 아래에 안내 카드(\"이 달은 \"오래된 데이터 정리\"로 비워졌어요 · 자산 잔액은 보존돼요\")를 삽입(openYearReview의 archiveNoticeHtml과 같은 시각 패턴). ledgerRowsHtml(d)에서는 selTx가 비어있고 d<=archivedThroughDate(문자열 비교)면 기존 \"이 날은 조용하네요 🌱 · 내역 추가하기\" 빈 상태 대신 CTA 없는 전용 빈 상태(\"이 날은 \"오래된 데이터 정리\"로 비워졌어요\")를 반환해, 이미 의도적으로 지운 내역을 다시 입력하라고 유도하던 문제도 함께 없앴다. 월 단위 안내와 날짜 단위 안내는 서로 독립적으로 동작(월 일부만 아카이브된 경우 월 안내는 없이 그 날짜만 전용 빈 상태). test/run.js에 monthIsArchived 순수 테스트 4건(없음/이전/경계/이후), renderLedger 아카이브 안내 테스트 3건(월 전체 아카이브 시 월+날짜 안내·CTA 부재, 일부만 겹칠 때 월 안내 없음, archivedThroughDate 없거나 안 겹치면 기존 CTA 유지 회귀) 총 7건 추가. node test/run.js 4019->4026/4026 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. 범위 제외(계획대로): openSpendAnalysis/openIncomeAnalysis 안내 카드, 캘린더 셀 시각 스타일링, monthNav 경계 제한, archiveMonthPicked 문구 변경, 전체내역(검색) 날짜범위 처리. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.542->1.47.543, sw.js CACHE v809->v810. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

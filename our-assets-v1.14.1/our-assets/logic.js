@@ -718,6 +718,16 @@ function lastDay(y,m){return new Date(y,m,0).getDate()}
 function monthEndStr(y,m){return `${y}-${String(m).padStart(2,'0')}-${String(lastDay(y,m)).padStart(2,'0')}`}
 function monthStartStr(y,m){return `${y}-${String(m).padStart(2,'0')}-01`}
 /* archiveTxnsBefore(오래된 데이터 정리)가 DB.settings.archivedThroughDate 이전 거래를 영구히
+ * 지우지만, yearArchiveOverlap(연간 결산, cycle399)과 달리 가계부(renderLedger/ledgerRowsHtml)는
+ * 이 마커를 전혀 확인하지 않아 지워진 달로 돌아가면 진짜 빈 날과 똑같은 "조용하네요" 빈 상태와
+ * 내역 추가 CTA를 보여준다(app-evolve cycle404 critique). archiveMonthPicked가 항상 그 달의
+ * 마지막 날(monthEndStr)을 cutoff로 넘겨 아카이브가 늘 월 단위 전체로 떨어지므로, yearArchiveOverlap과
+ * 달리 partial 케이스가 없다 — 그 달이 통째로 지워졌는지(그 달의 마지막 날이 archivedThroughDate
+ * 이하)만 보면 된다. archivedThroughDate가 없으면(아카이브를 한 번도 안 쓴 사용자) 항상 false. */
+function monthIsArchived(y,m,archivedThroughDate){
+ return !!archivedThroughDate&&monthEndStr(y,m)<=archivedThroughDate;
+}
+/* archiveTxnsBefore(오래된 데이터 정리)가 DB.settings.archivedThroughDate 이전 거래를 영구히
  * 지우고 그 합계를 자산 baseline(assetBase/archivedRealizedGain)에 흡수한다 — budgetCarryFor(cycle295)만
  * 이 마커를 참조해 "정리된 달은 이월 0"으로 막아왔지만, 연간 결산(yearSummary/openYearReview)은
  * 전혀 확인하지 않아 아카이브로 지워진 기간이 섞인 해를 "실제보다 적게 쓴 해"로 집계해 전년대비

@@ -13353,6 +13353,26 @@ test('monthEndStr: 그 달의 마지막 날(윤년 2월 포함)로 끝난다', (
   assert.strictEqual(sandbox.monthEndStr(2024, 2), '2024-02-29');
   assert.strictEqual(sandbox.monthEndStr(2026, 4), '2026-04-30');
 });
+/* ---------- monthIsArchived(logic.js, 순수): archiveTxnsBefore('오래된 데이터 정리')가 지운
+ * DB.settings.archivedThroughDate 범위가 그 달 전체를 덮는지 — yearArchiveOverlap과 달리
+ * archiveMonthPicked가 항상 월 단위(monthEndStr)로 cutoff를 넘기므로 partial 없이 boolean
+ * (app-evolve cycle404 critique/advance) ---------- */
+test('monthIsArchived: archivedThroughDate가 없으면(아카이브를 한 번도 안 씀) 항상 false이다', () => {
+  assert.strictEqual(sandbox.monthIsArchived(2026, 6, null), false);
+  assert.strictEqual(sandbox.monthIsArchived(2026, 6, undefined), false);
+  assert.strictEqual(sandbox.monthIsArchived(2026, 6, ''), false);
+});
+test('monthIsArchived: archivedThroughDate가 그 달 마지막 날보다 이전이면(안 겹침) false이다', () => {
+  assert.strictEqual(sandbox.monthIsArchived(2026, 6, '2026-05-31'), false);
+});
+test('monthIsArchived: archivedThroughDate가 그 달 마지막 날과 정확히 같으면(경계) true이다', () => {
+  assert.strictEqual(sandbox.monthIsArchived(2026, 6, '2026-06-30'), true);
+  assert.strictEqual(sandbox.monthIsArchived(2024, 2, '2024-02-29'), true, '윤년 2월 경계도 정확히 맞아야 함');
+});
+test('monthIsArchived: archivedThroughDate가 그 달 마지막 날보다 이후면(그 달 전체가 지워진 범위 안) true이다', () => {
+  assert.strictEqual(sandbox.monthIsArchived(2026, 6, '2026-12-31'), true);
+  assert.strictEqual(sandbox.monthIsArchived(2026, 6, '2027-01-01'), true, '그 달보다 한참 뒤까지 정리됐어도 true');
+});
 test('budgetKey: "YYYY-MM" 형식이고 월이 한 자리여도 0-패딩된다', () => {
   assert.strictEqual(sandbox.budgetKey(2026, 3), '2026-03');
   assert.strictEqual(sandbox.budgetKey(2026, 11), '2026-11');
@@ -39089,6 +39109,42 @@ test('renderLedger: 오늘보다 미래 날짜를 선택하면 "예정" 라벨�
   sandbox.renderLedger();
   const html = sandbox.pageLedgerEl.innerHTML;
   assert.ok(html.includes('>예정<'), '오늘보다 미래인 날을 선택하면 day-head에 예정 라벨이 나와야 함');
+});
+
+/* ---------- ledgerRowsHtml/renderLedger: archiveTxnsBefore('오래된 데이터 정리')가 지운 범위로
+ * 돌아가면 진짜 빈 날과 구분되는 전용 안내를 보여준다(내역 추가 CTA 없음) — 가계부 자체는
+ * yearArchiveOverlap(cycle399)이 연간 결산에만 적용하고 빠뜨린 사각지대였다
+ * (app-evolve cycle404 critique/advance) ---------- */
+test('renderLedger: 보고 있는 달 전체가 아카이브됐으면 월 단위 안내 카드가 나오고, 선택한 날은 CTA 없는 전용 빈 상태를 보여준다', () => {
+  setupLedgerDB();
+  sandbox.DB.settings.archivedThroughDate = '2026-06-30'; // 6월 전체가 지워짐(월 마지막 날과 정확히 일치)
+  sandbox.renderLedger();
+  const html = sandbox.pageLedgerEl.innerHTML;
+  assert.ok(html.includes('이 달은 "오래된 데이터 정리"로 비워졌어요'), '그 달 전체가 아카이브됐으면 월 단위 안내 카드가 나와야 함');
+  assert.ok(html.includes('이 날은 "오래된 데이터 정리"로 비워졌어요'), '선택한 날의 빈 상태도 아카이브 전용 문구여야 함');
+  assert.ok(!html.includes('내역 추가하기'), '아카이브된 날짜엔 지운 내역을 다시 입력하라고 유도하는 CTA가 없어야 함');
+});
+test('renderLedger: 선택한 날만 아카이브되고 그 달 전체는 아니면(일부만 겹침) 월 단위 안내 카드는 없고 날짜 빈 상태만 아카이브 전용이다', () => {
+  setupLedgerDB();
+  sandbox.DB.settings.archivedThroughDate = '2026-06-15'; // sel('2026-06-15')까지만 지워짐, 6월 전체(2026-06-30)는 아님
+  sandbox.renderLedger();
+  const html = sandbox.pageLedgerEl.innerHTML;
+  assert.ok(!html.includes('이 달은 "오래된 데이터 정리"로 비워졌어요'), '일부만 겹치면 월 단위 안내 카드가 나오면 안 됨');
+  assert.ok(html.includes('이 날은 "오래된 데이터 정리"로 비워졌어요'), '선택한 날 자체는 여전히 아카이브 전용 빈 상태여야 함');
+});
+test('renderLedger: archivedThroughDate가 없거나(또는 그 날짜가 안 겹치면) 기존처럼 일반 빈 상태와 내역 추가 CTA가 나온다(회귀)', () => {
+  setupLedgerDB();
+  sandbox.renderLedger();
+  let html = sandbox.pageLedgerEl.innerHTML;
+  assert.ok(html.includes('이 날은 조용하네요 🌱'), 'archivedThroughDate가 없으면 기존 빈 상태 문구가 그대로 나와야 함');
+  assert.ok(html.includes('내역 추가하기'), 'archivedThroughDate가 없으면 CTA가 그대로 있어야 함');
+  assert.ok(!html.includes('"오래된 데이터 정리"로 비워졌어요'));
+
+  sandbox.DB.settings.archivedThroughDate = '2026-05-31'; // 선택한 날(6/15)보다 한참 이전만 지워짐 — 안 겹침
+  sandbox.renderLedger();
+  html = sandbox.pageLedgerEl.innerHTML;
+  assert.ok(html.includes('이 날은 조용하네요 🌱'), '선택한 날과 안 겹치면 기존 빈 상태 문구여야 함');
+  assert.ok(html.includes('내역 추가하기'));
 });
 
 /* ---------- ledSumBox/ledSumInner/ledSumTap: 가계부 요약 카드 탭 → 전체내역 이동 (app-evolve cycle116 develop) ----------
