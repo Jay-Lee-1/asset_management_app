@@ -1,6 +1,6 @@
 {
   "cycle": 403,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-11-25T15:12:38.000Z",
       "summary": "general-purpose 서브에이전트에게 위임해 twGuard 감사를 예산(budget) 기능까지 확장. openSpendAnalysis → openBudgetPrompt(예산 설정 시트)는 다른 가드된 화면들(owner/category/goal/inquiry 등)과 마찬가지로 튜토리얼 중에도 그대로 열리는데, 정작 저장/삭제 경로인 saveBudget(idx)/delBudget(idx)에는 twGuard가 없어 튜토리얼 중 예산을 설정·삭제하면 DB.budgetHistory/DB.ownerBudgets에 실제로 영구 저장되던 공백을 발견(addOwner/delOwner/doRenameOwner(cycle308), addCat류(cycle309), saveGoal/delGoal(cycle307), sendInquiry/delInquiry/saveInquiryEdit(cycle400)과 동일한 버그 클래스). index.html의 saveBudget/delBudget 함수 시작부에 `if(twGuard())return;` 한 줄씩 추가(설명 주석 포함). test/run.js에 기존 undo 테스트 바로 뒤 twGuard 회귀 테스트 2건 추가(TWi=0으로 저장/삭제가 막히고 undoToast도 호출되지 않음을 확인 후 TWi=-1 복원). 오케스트레이터가 diff를 직접 리뷰하고 node test/run.js 재실행(4001->4003/4003 통과), node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과를 재확인한 뒤 커밋. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.539->1.47.540, sw.js CACHE v806->v807.",
+      "commit": null
+    },
+    {
+      "cycle": 403,
+      "phase": "review",
+      "timestamp": "2026-11-25T16:05:00.000Z",
+      "summary": "develop(cycle403) 커밋 804f636(saveBudget/delBudget에 누락된 twGuard 추가)를 검토. twGuard() 정의(index.html:9840, twActive()가 아니면 toast+true)와 호출 패턴을 addOwner/saveGoal/sendInquiry 등 기존 twGuard 감사 사이클들과 대조해 이번 diff도 동일하게 함수 맨 앞에서 early return해 DB.budgetHistory/DB.ownerBudgets 변경·undoToast 호출 전에 막는 위치임을 확인. saveBudget/delBudget 둘 다 existing/prevAmount 계산과 setBudgetFrom(Owner) 호출, undoToast 등록이 모두 twGuard 통과 이후에만 일어나 가드가 기존 되돌리기 로직과 충돌하지 않음을 확인. 추가된 테스트 2건(TWi=0으로 저장/삭제가 budgetForMonth 값을 바꾸지 못하고 lastUndo도 null로 남는지 확인 후 TWi=-1 복원)이 올바른 대상(budgetForMonth 결과)과 부작용(undoToast 미호출) 둘 다 검증하는지 확인. node test/run.js 재실행 4003/4003 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과, APP_VERSION 1.47.540/sw.js CACHE v807 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
