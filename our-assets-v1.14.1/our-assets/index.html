@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.540';
+const APP_VERSION='1.47.541';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -4239,11 +4239,13 @@ function goalQInput(v){
  if(v.trim()===''){const b=$('goalBody');if(b)b.innerHTML=goalsManageBody(v);return}
  _goalQT=setTimeout(()=>{const b=$('goalBody');if(b)b.innerHTML=goalsManageBody(v)},220);
 }
-/* 자산 목록의 openSortSheet()/groupItems()와 동일한 패턴(DB.settings.assetSort) — 목표는
- * 자산과 달리 드래그 재정렬(a.order) 자체가 없어 'custom'은 그냥 DB.goals의 생성 순서다.
+/* 자산 목록의 openSortSheet()/groupItems()와 동일한 패턴(DB.settings.assetSort) — 'custom'(또는
+ * 미설정)은 moveGoal()이 매기는 g.order를 쓴다(기존엔 목표에 order 자체가 없어 그냥 DB.goals의
+ * 생성 순서였지만, app-evolve cycle407 advance가 moveAsset()과 같은 패턴으로 실제 수동 재정렬을
+ * 추가했다 — saveGoal()이 지연 부여하므로 마이그레이션은 필요 없다).
  * gs를 항상 .slice()한 새 배열로 만들어 정렬해야 한다 — q가 빈 문자열이면 all(=DB.goals)을
  * 그대로 참조하므로, .slice() 없이 sort()하면 'name'/'progress' 정렬이 DB.goals 자체의
- * 순서를 영구히 바꿔버려 'custom'으로 되돌려도 원래 생성 순서를 잃는다(app-evolve cycle384). */
+ * 순서를 영구히 바꿔버려 'custom'으로 되돌려도 원래 순서(order)를 잃는다(app-evolve cycle384). */
 function goalsManageBody(qRaw){
  const q=(qRaw||'').trim();
  const all=DB.goals||[];
@@ -4257,7 +4259,12 @@ function goalsManageBody(qRaw){
  if(goalSort==='targetDate')gs.sort((a,b)=>{if(!a.targetDate)return b.targetDate?1:0;if(!b.targetDate)return -1;return a.targetDate<b.targetDate?-1:a.targetDate>b.targetDate?1:0});
  else if(goalSort==='progress')gs.sort((a,b)=>goalProgress(b,goalHistoryFor(b),TODAY).pct-goalProgress(a,goalHistoryFor(a),TODAY).pct);
  else if(goalSort==='name')gs.sort((a,b)=>a.name.localeCompare(b.name,'ko'));
- return `<div class="card" style="margin-bottom:6px">${gs.map(g=>{
+ else gs.sort((a,b)=>(a.order||0)-(b.order||0)); /* '사용자 정의순'(custom/unset) — moveGoal()이 매긴 order를 실제로 반영한다. 지금까진 이 옵션도 그냥 all의 등록 순서를 그대로 뒀을 뿐 order를 쓰지 않아 moveGoal로 바꾼 순서가 무시됐다(app-evolve cycle407 advance) */
+ /* moveCat()/moveAsset()과 동일한 위/아래 버튼 — 검색 중·다른 정렬 기준·선택모드·항목 1개 이하일 때는
+  * 숨긴다(검색/다른 정렬은 표시 순서가 order와 다르거나 부분집합이라 moveGoal이 뜻대로 동작하지
+  * 않고, 선택모드는 체크박스 전용 레이아웃이라 row-acts 자체가 없음, app-evolve cycle407 advance). */
+ const canReorder=(!goalSort||goalSort==='custom')&&!q&&!ST.goalSel.mode&&gs.length>1;
+ return `<div class="card" style="margin-bottom:6px">${gs.map((g,gi,garr)=>{
    const p=goalProgress(g,goalHistoryFor(g),TODAY);
    const ownerBadge=goalOwnerEff(g)!=='all'?` · ${esc(g.owner)}`:'';
    const assetGone=goalLinkedAssetGone(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle214 advance) */
@@ -4282,8 +4289,12 @@ function goalsManageBody(qRaw){
     return `<div class="manage-row${on?' sel-on':''}" tabindex="0" role="button" aria-pressed="${on}" aria-label="${ariaBase}" onclick="goalToggleSel('${g.id}')" onkeydown="rowKeydown(event,()=>goalToggleSel('${g.id}'))">
      <div class="sel-check ${on?'on':''}">${svg('check')}</div>${avatarHTML}${textHTML}</div>`;
    }
+   /* moveCat() 행의 .grp-move/.grp-move-btn과 동일한 모양 — 이 행 전체가 role="button"으로 ackGoalAchieved를
+    * 걸고 있어 row-acts 버튼들과 마찬가지로 event.stopPropagation()이 필요하다(moveCat 행엔 바깥 onclick이
+    * 없어 없어도 되지만, 이 행엔 있어야 탭이 move와 ackGoalAchieved 둘 다를 부르지 않는다). */
+   const moveBtns=canReorder?`<div class="grp-move"><button type="button" class="grp-move-btn" aria-label="${esc(g.name)} 위로 이동" onclick="event.stopPropagation();moveGoal('${g.id}',-1)"${gi===0?' disabled':''}>${svg('arrowUp')}</button><button type="button" class="grp-move-btn" aria-label="${esc(g.name)} 아래로 이동" onclick="event.stopPropagation();moveGoal('${g.id}',1)"${gi===garr.length-1?' disabled':''}>${svg('arrowDn')}</button></div>`:'';
    return `<div class="manage-row" data-id="${g.id}" data-lp="1" tabindex="0" role="button" aria-label="${ariaBase}" onclick="ackGoalAchieved('${g.id}')" onkeydown="rowKeydown(event,()=>ackGoalAchieved('${g.id}'))">
-    ${avatarHTML}${textHTML}
+    ${avatarHTML}${textHTML}${moveBtns}
     <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(g.name)} 복제" onclick="event.stopPropagation();duplicateGoal('${g.id}')">${svg('copy')}</button><button type="button" class="act-btn danger" aria-label="${esc(g.name)} 삭제" onclick="event.stopPropagation();delGoal('${g.id}')">${svg('trash')}</button></div>
     <div class="mc">${svg('chev')}</div></div>`;
  }).join('')}</div>`;
@@ -4302,10 +4313,28 @@ function duplicateGoal(id){
  const g=(DB.goals||[]).find(x=>x.id===id);if(!g)return;
  const d=JSON.parse(JSON.stringify(g));
  const dupSuffix=' 복사';
- d.id=uid();d.name=cleanName(g.name).slice(0,NAME_MAX-dupSuffix.length)+dupSuffix;d.owner=goalOwnerEff(g);d.createdAt=Date.now(); /* duplicateAsset()과 동일한 이유로 NAME_MAX 근처 이름의 접미사가 saveGoal의 cleanName(slice(0,60))에 잘려나가지 않도록 미리 자리를 비워둔다 */
+ d.id=uid();delete d.order;d.name=cleanName(g.name).slice(0,NAME_MAX-dupSuffix.length)+dupSuffix;d.owner=goalOwnerEff(g);d.createdAt=Date.now(); /* duplicateAsset()과 동일한 이유로 NAME_MAX 근처 이름의 접미사가 saveGoal의 cleanName(slice(0,60))에 잘려나가지 않도록 미리 자리를 비워둔다. order도 duplicateAsset()과 동일한 이유로 지운다 — 복제본은 saveGoal의 지연 부여(max(order)+1)로 목록 맨 끝에 놓인다 */
  delete d.achievedAckAt;
  goalDraft=d;snapDraft('goal');renderGoalForm(false);
  setTimeout(()=>{const n=$('goalName');if(n){n.focus();n.select()}},300);
+}
+/* '사용자 정의순' 정렬이 쓰는 표시 순서 — moveAsset()이 groupItems(type)로 그 그룹의 현재 id 순서를
+ * 얻는 것과 같은 역할(app-evolve cycle407 advance). order가 없는 레거시 목표는 (g.order||0)로
+ * 0 취급돼 앞쪽에 몰리지만, moveGoal()을 한 번만 호출해도 movedAssetOrder가 전체 순서를 다시
+ * 번호 매겨 정상화된다(moveAsset의 기존 부트스트랩과 동일한 전제). */
+function goalOrderedIds(){return (DB.goals||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)).map(g=>g.id)}
+/* 목표 수동 순서 변경 — openGoalSortSheet()의 '사용자 정의순' 옵션이 지금까지 등록 순서 고정이던
+ * 죽은 옵션이었던 걸, 자산 목록의 moveAsset()과 완전히 같은 패턴(movedAssetOrder 재사용)으로
+ * 고친다(app-evolve cycle407 advance). movedAssetOrder는 id-generic이라 그대로 재사용 — 자산은
+ * 그룹별 ids(groupItems)를 넘기지만 목표는 그룹이 없으니 goalOrderedIds() 전체를 넘긴다. */
+function moveGoal(id,dir){
+ const map=movedAssetOrder(goalOrderedIds(),id,dir);
+ if(!map)return;
+ Object.keys(map).forEach(gid=>{
+  const g=(DB.goals||[]).find(x=>x.id===gid);
+  if(g){g.order=map[gid];touch(g)}
+ });
+ save();openGoalsList();
 }
 /* 목표 유형 전환(순자산 전체 ↔ 특정 자산) — 자산 전환 시 연결 자산은 그대로 두고(재선택 유도), 순자산으로
  * 되돌리면 linkedAssetId를 지워 saveGoal이 혼란 없이 type:'networth' 레코드를 저장하게 한다. */
@@ -4378,7 +4407,8 @@ function saveGoal(editing){
  const isAsset=d.type==='asset';
  if(isAsset&&!d.linkedAssetId){toast('연결할 자산을 선택해 주세요');return}
  const linkedAsset=isAsset?(DB.assets||[]).find(x=>x.id===d.linkedAssetId):null;
- const rec=touch({id:d.id,name:d.name,type:isAsset?'asset':'networth',linkedAssetId:isAsset?d.linkedAssetId:null,targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,owner:isAsset?(linkedAsset?linkedAsset.owner:(d.owner||'all')):(d.owner||'all'),createdAt:d.createdAt||Date.now(),achievedAckAt:d.achievedAckAt||null}); /* touch() 누락 시 mergeRemoteDataIntoLocal의 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 목표를 이 저장이 조용히 되돌릴 수 있음(saveAsset 등과 동일한 불변식). asset형은 owner를 연결 자산의 귀속으로 맞춰 goalOwnerEff/캐러셀 필터가 일관되게 동작하게 함. achievedAckAt을 d.achievedAckAt||null로 명시적으로 이어주지 않으면 목표를 한 번이라도 수정할 때 조용히 사라져 goalNewlyAchieved가 다시 true가 되어 재알림이 발생함(app-evolve cycle256 advance) */
+ const order=d.order!=null?d.order:(DB.goals||[]).reduce((m,g)=>Math.max(m,g.order||0),0)+1; /* moveGoal()의 '사용자 정의순'이 쓸 order를 지연 부여 — 기존 목표(order 없음)는 goalsManageBody의 (g.order||0) 정렬·goalOrderedIds()에서 0으로 취급돼 안전하고, moveGoal이 처음 호출될 때 movedAssetOrder가 전체를 다시 번호 매겨 정상화된다(moveAsset 부트스트랩과 동일, app-evolve cycle407 advance) */
+ const rec=touch({id:d.id,name:d.name,type:isAsset?'asset':'networth',linkedAssetId:isAsset?d.linkedAssetId:null,targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,owner:isAsset?(linkedAsset?linkedAsset.owner:(d.owner||'all')):(d.owner||'all'),createdAt:d.createdAt||Date.now(),achievedAckAt:d.achievedAckAt||null,order}); /* touch() 누락 시 mergeRemoteDataIntoLocal의 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 목표를 이 저장이 조용히 되돌릴 수 있음(saveAsset 등과 동일한 불변식). asset형은 owner를 연결 자산의 귀속으로 맞춰 goalOwnerEff/캐러셀 필터가 일관되게 동작하게 함. achievedAckAt을 d.achievedAckAt||null로 명시적으로 이어주지 않으면 목표를 한 번이라도 수정할 때 조용히 사라져 goalNewlyAchieved가 다시 true가 되어 재알림이 발생함(app-evolve cycle256 advance). order도 같은 이유로 명시적으로 이어줘야 수정 저장이 순서를 되돌리지 않음 */
  if(!goalProgress(rec,goalHistoryFor(rec),TODAY).achieved)rec.achievedAckAt=null; /* 목표 금액을 나중에 올려 더는 achieved가 아니게 되면 ack도 리셋 — 재달성 시 다시 축하 알림이 뜨게 함(cycle256) */
  const i=(DB.goals||[]).findIndex(x=>x.id===d.id);
  if(i>=0)DB.goals[i]=rec;else DB.goals.push(rec);
@@ -5003,11 +5033,14 @@ function openSortSheet(){
  const opts=[['custom','사용자 정의순','편집 모드에서 그룹 내 순서를 직접 바꿀 수 있어요'],['amount','금액순',''],['owner','귀속순',''],['name','이름순','']];
  openSheet(`<h3>정렬 기준</h3><div class="desc">각 자산 종류 그룹 안의 정렬 기준이에요</div><div class="opt-list">${opts.map(([v,l,s])=>`<button class="${DB.settings.assetSort===v?'on':''}" onclick="DB.settings.assetSort='${v}';save();closeSheet();renderAssets()"><span class="rd"></span><div><div>${l}</div>${s?`<div class="ol-sub">${s}</div>`:''}</div></button>`).join('')}</div>`);
 }
-/* openSortSheet()와 동일한 패턴 — 목표는 'custom'(생성 순서) 외에 목표일순/진행률순/이름순을 고를 수
+/* openSortSheet()와 동일한 패턴 — 목표는 'custom'(수동 순서) 외에 목표일순/진행률순/이름순을 고를 수
  * 있게 한다(app-evolve cycle384 develop). 목표 관리 시트 위에 떠 있는 하위 시트라 닫을 때 openGoalsList()로
- * #goalBody만 다시 그리면 되고, 검색/선택모드 상태(ST.goalSel)는 그대로 유지된다. */
+ * #goalBody만 다시 그리면 되고, 검색/선택모드 상태(ST.goalSel)는 그대로 유지된다. 'custom'은 기존엔 그냥
+ * 등록 순서 고정인 죽은 옵션이었지만, moveGoal()이 추가되며 목표 관리 목록의 위/아래 버튼으로 실제로
+ * 바꿀 수 있는 순서가 됐다(app-evolve cycle407 advance) — 자산의 '편집 모드' 안내와 달리 목표는 별도
+ * 편집 모드 없이 목록에서 바로 버튼이 보이므로 안내 문구도 다르게 쓴다. */
 function openGoalSortSheet(){
- const opts=[['custom','사용자 정의순','등록한 순서 그대로예요'],['targetDate','목표일순',''],['progress','진행률순',''],['name','이름순','']];
+ const opts=[['custom','사용자 정의순','목표 관리 목록의 위/아래 버튼으로 순서를 바꿀 수 있어요'],['targetDate','목표일순',''],['progress','진행률순',''],['name','이름순','']];
  openSheet(`<h3>정렬 기준</h3><div class="desc">목표 관리 목록의 정렬 기준이에요</div><div class="opt-list">${opts.map(([v,l,s])=>`<button class="${DB.settings.goalSort===v?'on':''}" onclick="DB.settings.goalSort='${v}';save();closeSheet();openGoalsList()"><span class="rd"></span><div><div>${l}</div>${s?`<div class="ol-sub">${s}</div>`:''}</div></button>`).join('')}</div>`);
 }
 /* 삭제될 자산(들)을 참조하는 '활성' 반복거래를 찾는다 — id 하나 또는 Set<id> 둘 다 받는다.

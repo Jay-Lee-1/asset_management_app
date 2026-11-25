@@ -375,7 +375,7 @@ const FUNCTIONS = [
   // $(...)가 없으면 바로 return하는 얕은 래퍼라(기본 $ 스텁은 'assetBody' 등을 세팅하지 않는 한
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshAllocationHistoryCard', 'refreshInvestGainLossCard',
-  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
+  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved', 'goalOrderedIds', 'moveGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'inquiriesTrashBody', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry', 'inqTextInput',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
   'modeSeg', 'monthNav', 'monthNavKeydown', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
@@ -6264,6 +6264,85 @@ test('[실행형] goalsManageBody: 정렬 후에도 DB.goals 원본 배열 순�
   assert.strictEqual(sandbox.DB.goals[0].id, 'g1', "goalsManageBody가 'name' 정렬을 적용해도 DB.goals[0]은 여전히 생성 순서상 첫 목표(g1)여야 함");
   assert.strictEqual(sandbox.DB.goals[1].id, 'g2');
 });
+/* ---------- goalsManageBody: moveGoal() 위/아래 버튼 — moveCat()/moveAsset() 행과 동일한
+ * .grp-move/.grp-move-btn 모양(app-evolve cycle407 advance). '사용자 정의순'(custom/미설정)일
+ * 때만 뜨고, 검색 중이거나 다른 정렬 기준이거나 선택모드거나 목표가 1개뿐이면 숨긴다 — 그
+ * 경우들은 화면 순서가 g.order와 다르거나(다른 정렬) 부분집합(검색)이거나 애초에 row-acts
+ * 자체가 없거나(선택모드) 옮길 대상이 없다(1개). */
+test('[실행형] goalsManageBody: 사용자 정의순(custom/미설정)이고 목표가 2개 이상이면 moveGoal 위/아래 버튼이 뜨고 양끝은 disabled된다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '첫목표', targetAmount: 1000, targetDate: null, order: 0 },
+      { id: 'g2', name: '둘째목표', targetAmount: 1000, targetDate: null, order: 1 },
+      { id: 'g3', name: '셋째목표', targetAmount: 1000, targetDate: null, order: 2 },
+    ],
+    nwHistory: [],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsManageBody('');
+  assert.ok(html.includes("onclick=\"event.stopPropagation();moveGoal('g1',1)\""), '첫 목표는 아래로 이동 버튼이 있어야 함');
+  assert.ok(html.includes("onclick=\"event.stopPropagation();moveGoal('g2',-1)\""), '중간 목표는 위로 이동 버튼이 있어야 함');
+  assert.ok(html.includes("onclick=\"event.stopPropagation();moveGoal('g2',1)\""), '중간 목표는 아래로 이동 버튼도 있어야 함');
+  const upG1 = html.indexOf("moveGoal('g1',-1)");
+  const dnG3 = html.indexOf("moveGoal('g3',1)");
+  const dnG1 = html.indexOf("moveGoal('g1',1)");
+  assert.ok(html.slice(upG1, upG1 + 40).includes('disabled'), '맨 위 목표의 위로 버튼은 disabled여야 함');
+  assert.ok(html.slice(dnG3, dnG3 + 40).includes('disabled'), '맨 아래 목표의 아래로 버튼은 disabled여야 함');
+  assert.ok(!html.slice(dnG1, dnG1 + 40).includes('disabled'), '중간으로 이어지는 버튼은 활성 상태여야 함');
+});
+test('[실행형] goalsManageBody: goalSort가 targetDate/progress/name이면 moveGoal 버튼을 숨긴다(화면 순서가 order와 무관해져 눌러도 뜻대로 안 움직임)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.TODAY = '2026-01-01';
+  ['targetDate', 'progress', 'name'].forEach(s => {
+    sandbox.DB = {
+      settings: { goalSort: s },
+      goals: [
+        { id: 'g1', name: '가 목표', targetAmount: 1000, targetDate: '2027-01-01', order: 0 },
+        { id: 'g2', name: '나 목표', targetAmount: 1000, targetDate: '2026-06-01', order: 1 },
+      ],
+      nwHistory: [],
+    };
+    const html = sandbox.goalsManageBody('');
+    assert.ok(!html.includes('grp-move'), `goalSort=${s}일 때는 moveGoal 버튼이 없어야 함`);
+  });
+});
+test('[실행형] goalsManageBody: 검색어가 있으면(q) moveGoal 버튼을 숨긴다(필터된 부분집합이라 order가 전체 표시 순서와 안 맞음)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '비상금', targetAmount: 1000, targetDate: null, order: 0 },
+      { id: 'g2', name: '여행자금', targetAmount: 1000, targetDate: null, order: 1 },
+    ],
+    nwHistory: [],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsManageBody('비상금');
+  assert.ok(html.includes('비상금'), '검색 결과 자체는 나와야 함(테스트가 의미 있으려면)');
+  assert.ok(!html.includes('grp-move'), '검색 중에는 moveGoal 버튼이 없어야 함');
+});
+test('[실행형] goalsManageBody: 선택모드(ST.goalSel.mode)에서는 moveGoal 버튼 없이 기존 체크박스만 그대로 나온다', () => {
+  sandbox.ST = { goalSel: { mode: true, ids: new Set(['g1']) } };
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '비상금', targetAmount: 1000, targetDate: null, order: 0 },
+      { id: 'g2', name: '여행자금', targetAmount: 1000, targetDate: null, order: 1 },
+    ],
+    nwHistory: [],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsManageBody('');
+  assert.ok(!html.includes('grp-move'), '선택모드에선 moveGoal 버튼이 없어야 함');
+  assert.ok(html.includes('sel-check on'), '선택된 목표의 체크박스는 기존처럼 그대로 켜져 있어야 함');
+  assert.ok(html.includes('sel-check') , '선택모드 체크박스 자체는 그대로 렌더돼야 함');
+});
+test('[실행형] goalsManageBody: 목표가 1개뿐이면 moveGoal 버튼이 뜨지 않는다(옮길 대상이 없음)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = { goals: [{ id: 'g1', name: '단독목표', targetAmount: 1000, targetDate: null, order: 0 }], nwHistory: [] };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsManageBody('');
+  assert.ok(!html.includes('grp-move'));
+});
 (() => {
   const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout, orig$ = sandbox.$;
   function restore() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; sandbox.$ = orig$; }
@@ -7433,6 +7512,34 @@ test('saveGoal: 새 목표는 achievedAckAt이 null로 시작한다', () => {
   sandbox.saveGoal(false);
   assert.strictEqual(sandbox.DB.goals[0].achievedAckAt, null);
 });
+/* ---------- saveGoal: order 지연 부여 (app-evolve cycle407 advance) ----------
+ * moveGoal()의 '사용자 정의순'이 쓸 g.order가 지금까지 목표에는 전혀 없었다 — saveAsset()이
+ * 자산에 order를 주는 것과 같은 이유로, 신규 저장 시점에 기존 목표들의 최댓값+1을 매겨
+ * 마이그레이션 없이도 항상 목록 끝에 놓이게 한다. */
+test('saveGoal: 새 목표는 기존 목표들의 order 중 최댓값+1을 받는다(moveGoal의 "사용자 정의순" 맨 끝자리)', () => {
+  sandbox.DB = { owners: ['나'], assets: [], goals: [], nwHistory: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '첫 목표';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals[0].order, 1, '목표가 하나도 없었으면 0(기준값)+1=1을 받아야 함');
+
+  sandbox.DB.goals.push({ id: 'g2', name: '기존', type: 'networth', targetAmount: 1000, targetDate: null, order: 5 });
+  sandbox.goalDraft = { id: 'test-uid2', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '둘째 목표';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  const saved = sandbox.DB.goals.find(g => g.id === 'test-uid2');
+  assert.strictEqual(saved.order, 6, '기존 목표들 중 최댓값(5)+1을 받아야 함(order 없는 목표는 0으로 취급)');
+});
+test('saveGoal: 기존 목표를 수정하면 order를 그대로 보존한다(moveGoal로 바꾼 순서가 이름/금액 수정 저장으로 되돌아가면 안 됨)', () => {
+  sandbox.DB = { owners: ['나'], assets: [], goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null, order: 3 }] };
+  sandbox.goalDraft = { id: 'g1', name: '', type: 'networth', targetAmount: 0, targetDate: null, order: 3 };
+  sandbox.goalNameValue = '여행자금(유럽)';
+  sandbox.goalAmtValue = '5,000,000';
+  sandbox.saveGoal(true);
+  assert.strictEqual(sandbox.DB.goals[0].order, 3, '수정 저장이 order를 되돌리거나 지우면 안 됨');
+});
 /* ---------- duplicateGoal: 복제(app-evolve cycle276 develop) ----------
  * 거래·자산·반복(duplicateTx/duplicateAsset/duplicateRec)엔 전용 복제가 있지만 목표에는 없어,
  * 비슷한 목표를 또 세울 때마다 유형·금액·날짜를 처음부터 다시 입력해야 하던 기능 대등성 공백을
@@ -7499,6 +7606,22 @@ test('duplicateGoal: 원본 이름이 NAME_MAX(60자)에 가까워도 " 복사" 
   assert.strictEqual(sandbox.goalDraft.name, '나'.repeat(57) + ' 복사', '원본이 60자를 꽉 채워도 뒤를 잘라 접미사가 들어갈 자리를 만들어야 함(원본과 달라야 saveGoal 혼선이 없음)');
   assert.notStrictEqual(sandbox.goalDraft.name, name60, '잘못 자르면 원본과 동일한 이름이 돼버리던 버그가 재발하지 않아야 함');
 });
+/* duplicateAsset()이 복제본의 order를 지우는 것과 동일한 이유(app-evolve cycle407 advance) —
+ * 원본의 order를 그대로 복사하면 저장 시 원본과 같은 자리를 다퉈 moveGoal 순서가 뒤틀린다. */
+test('duplicateGoal: 복제본은 order가 지워져 saveGoal이 지연 부여하는 값(기존 최댓값+1)을 받아 목록 맨 끝에 놓인다', () => {
+  sandbox.DB = { owners: ['나'], assets: [], goals: [
+    { id: 'g1', name: '비상금', type: 'networth', targetAmount: 3000000, targetDate: null, owner: 'all', order: 0 },
+    { id: 'g2', name: '여행자금', type: 'networth', targetAmount: 1000000, targetDate: null, owner: 'all', order: 1 },
+  ] };
+  sandbox.duplicateGoal('g1');
+  assert.strictEqual('order' in sandbox.goalDraft, false, '복제 draft에는 order가 없어야 함(saveGoal이 지연 부여하도록)');
+  sandbox.goalNameValue = '비상금 복사';
+  sandbox.goalAmtValue = '3,000,000';
+  sandbox.saveGoal(false);
+  const dup = sandbox.DB.goals[sandbox.DB.goals.length - 1];
+  assert.strictEqual(dup.name, '비상금 복사');
+  assert.strictEqual(dup.order, 2, '복제본은 기존 최댓값(1)+1을 받아 맨 끝에 놓여야 함');
+});
 /* ackGoalAchieved: 홈 알림의 goalAchieved 카드와 goalRowHTML/openGoalsList 행 진입점이 공유하는 ack+이동 핸들러
  * (app-evolve cycle256 advance) */
 test('[실행형] ackGoalAchieved: 달성했지만 아직 ack 안 된 목표를 열면 achievedAckAt을 기록하고 save() 후 openGoalForm으로 이동한다', () => {
@@ -7564,6 +7687,63 @@ test('[실행형] ackDebtPayoff: 아직 안 갚았거나 이미 ack된 부채는
   assert.strictEqual(sandbox.DB.assets[1].payoffAckAt, 1700000000000, '이미 있던 ack 시각이 덮어써지면 안 됨');
   assert.strictEqual(saveCallCount, 0, '둘 다 ack할 게 없으므로 save()가 호출되면 안 됨');
   sandbox.save = origSave;
+});
+/* ---------- goalOrderedIds/moveGoal: 목표 목록 수동 순서 변경 (app-evolve cycle407 advance) ----------
+ * openGoalSortSheet()의 '사용자 정의순' 옵션이 "등록한 순서 그대로예요"라는 죽은 옵션이었던 걸,
+ * 자산 목록의 moveAsset()/movedAssetOrder()와 완전히 같은 패턴으로 실제로 동작하게 고친다.
+ * goalOrderedIds()는 groupItems(type)의 목표판 — 그룹이 없으니 전체 DB.goals를 order로 정렬한
+ * id 배열을 돌려준다. */
+test('goalOrderedIds: g.order로 정렬한 id 배열을 돌려주고, order가 없는 레거시 목표는 0으로 취급해 앞쪽에 안정적으로 둔다', () => {
+  sandbox.DB = { goals: [
+    { id: 'g3', order: 2 },
+    { id: 'g1' }, // order 없음(레거시) → 0 취급
+    { id: 'g2', order: 1 },
+  ] };
+  assert.deepStrictEqual(sandbox.goalOrderedIds(), ['g1', 'g2', 'g3']);
+});
+test('moveGoal: 중간 목표를 위로 이동하면 바로 앞 목표와 order가 바뀌고 둘 다 touch()된다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = { goals: [
+    { id: 'g1', name: 'g1', order: 0 },
+    { id: 'g2', name: 'g2', order: 1 },
+    { id: 'g3', name: 'g3', order: 2 },
+  ] };
+  sandbox.moveGoal('g2', -1);
+  assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g2').order, 0);
+  assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g1').order, 1);
+  assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g3').order, 2, '관련 없는 목표는 건드리면 안 됨');
+  assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g1').updatedAt, 'test-updatedAt', 'moveAsset()과 동일하게 touch()로 updatedAt이 찍혀야 함(동기화 불변식)');
+  assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g2').updatedAt, 'test-updatedAt');
+});
+test('moveGoal: 맨 위 목표를 위로, 맨 아래 목표를 아래로 이동하려 하면(경계) 아무것도 바꾸지 않는다', () => {
+  sandbox.DB = { goals: [
+    { id: 'g1', name: 'g1', order: 0 },
+    { id: 'g2', name: 'g2', order: 1 },
+  ] };
+  sandbox.moveGoal('g1', -1);
+  assert.strictEqual(sandbox.DB.goals[0].order, 0);
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, undefined, '경계라 movedAssetOrder가 null을 돌려주면 touch()도 호출되면 안 됨');
+  sandbox.moveGoal('g2', 1);
+  assert.strictEqual(sandbox.DB.goals[1].order, 1);
+  assert.strictEqual(sandbox.DB.goals[1].updatedAt, undefined);
+});
+test('moveGoal: order가 전혀 없던 레거시 목표들도 처음 한 번만 호출하면 전체가 정상적인 번호로 재배열된다(moveAsset의 기존 부트스트랩과 동일한 전제)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = { goals: [
+    { id: 'g1', name: 'legacy1' }, // order 없음
+    { id: 'g2', name: 'legacy2' }, // order 없음
+    { id: 'g3', name: 'legacy3' }, // order 없음
+  ] };
+  sandbox.moveGoal('g1', 1); // g1을 한 칸 아래로 — 전부 0으로 취급되니 g1<->g2 교환
+  assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g1').order, 1);
+  assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g2').order, 0);
+  assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g3').order, 2, '이동 대상이 아니었어도 전체 정상화 과정에서 order를 받아야 함');
+});
+test('moveGoal: 존재하지 않는 id를 넘기면 아무것도 바꾸지 않는다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: 'g1', order: 0 }] };
+  sandbox.moveGoal('없는id', 1);
+  assert.strictEqual(sandbox.DB.goals[0].order, 0);
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, undefined);
 });
 test('goalHistoryFor/goalLinkedAssetGone: asset형 목표는 연결된 자산 하나의 잔액 추이(assetBalanceSeries)를 쓰고, networth형은 그대로 nwHistoryForOwner를 쓴다', () => {
   sandbox.TODAY = '2026-06-15';
