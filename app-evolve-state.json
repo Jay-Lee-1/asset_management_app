@@ -1,15 +1,8 @@
 {
   "cycle": 403,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 398,
-      "phase": "develop",
-      "timestamp": "2026-11-24T19:05:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-397 전체 배제 목록(검색창/필드 Escape, 공용 피커·세그먼트·날짜선택기·카테고리 피커·monthNav·nwCarousel 방향키 전역화, openSheet 탭 전환 포커스 보존, 카테고리 관리 일괄선택, 트래시 허브 통합, fmtAmt/fmtQty/asCode 커서버그, commitTx/saveAsset/commitRec undo, field-clear 전역 Escape, 문의하기 메모 클램프, acquiredAt/qtyChangeDate 가드, setRate AMOUNT_MAX 클램프, txMemo/rMemo 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지 등 + 기각된 구조개편/성능캐시/CSV완성도/가상화)를 주고 조사시킴. addOwner/delOwner/doRenameOwner(cycle308), addCat류(cycle309), mergeAssetInto(cycle310), saveGoal/delGoal(cycle307) 등 과거 사이클들이 하나씩 메워온 '튜토리얼 중에는 저장되지 않는다'(twGuard) 불변식 — 하단 네비(#nav)가 twStage 오버레이 밖의 실제 DOM이라 튜토리얼 중에도 늘 클릭 가능해, 메뉴로 벗어나면 twGuard 없는 함수는 실제로 DB를 건드린다는 구조적 공백 — 가 홈 화면의 실제 '이체 확인' 알림 카드에서 열리는 confirmTransferNow/postponeTransfer(일반 이체)·confirmRecNow/postponeRecTransfer(반복 이체 회차)에는 끝까지 적용되지 않았음을 발견(grep으로 twGuard 호출이 전무함을 확인, openConfirmTransfer/confirmRecTransfer는 twScreen() 리플리카가 아니라 진짜 시트임도 확인). index.html 4곳(1882/1886/1892/1896행) 함수 시작부에 addOwner 등과 동일한 `if(twGuard())return;` 한 줄씩 추가. test/run.js에 동일 함수들의 기존 touch() 테스트(confirmTransferNow/postponeTransfer/confirmRecNow/postponeRecTransfer, 33112-33133행) 바로 뒤에 addOwner twGuard 테스트와 같은 관례로 4건 추가(TWi=0으로 설정 후 각각 confirmed/date/confirmedDates/skip·txns.length가 바뀌지 않음을 확인, TWi=-1로 복원) — FUNCTIONS 추출 목록은 이미 포함돼 있어 변경 불필요. node test/run.js 3915->3919/3919 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.529->1.47.530, sw.js CACHE v796->v797.",
-      "commit": null
-    },
     {
       "cycle": 398,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-25T14:11:24.228Z",
       "summary": "critique(cycle402)의 계획대로 Supabase 클라우드 동기화 에러 분류에 auth_expired(인증 만료)를 추가해, 세션이 만료/revoke된 사용자가 '인터넷 연결을 확인해 주세요'만 반복해서 보고 재로그인 경로를 못 찾던 공백을 메웠다. index.html:2143 isMissingTableError 바로 아래 isAuthExpiredError(e) 신설 — e.status===401 또는 e.code가 PGRST301/401/invalid_grant/refresh_token_not_found 중 하나, 또는 message+details+hint 합친 문자열에 jwt expired/invalid, invalid refresh token/grant, refresh_token_not_found, session expired/missing/not found, not authenticated, unauthorized 패턴 매칭(isRlsPolicyError/isMissingTableError와 동일한 null-safe 구조). CLOUD_SYNC_ERR_KIND에 'auth_expired' 추가, cloudSyncFailed()의 분류 순서를 isAuthExpiredError(e)?'auth_expired':isMissingTableError(e)?'missing_table':isRlsPolicyError(e)?'rls':'network'로 바꿔 auth_expired를 최우선 검사(죽은 세션이 RLS 메시지처럼 보여도 더 구체적인 쪽을 우선). toast 문구와 cloudSyncLabel()에 auth_expired 전용 문구('로그인이 만료됐어요 · 다시 로그인해 주세요' / '다시 로그인 필요') 추가, '인터넷 연결' 문구는 쓰지 않음. homeAlertCard()의 cloudSyncError 분기에 isAuthExpired 변수를 추가해 ha-s 안내 문구만 전용으로 바꾸고, onclick은 새 CTA를 만들지 않고 기존 openAccountSheet()를 그대로 재사용(이메일 클라우드 계정이면 이미 로그아웃 버튼이 있어 재로그인 경로로 충분, rls/missing_table과 달리 안내 SQL이 필요하지 않으므로 openHelpCloud()로는 보내지 않음). pushCloud/pullCloud 등 catch(e){cloudSyncFailed(e)} 호출부는 이미 에러 객체를 그대로 넘기고 있어 변경 불필요(계획대로). test/run.js에 isAuthExpiredError 순수 함수 테스트 1건(양성 6케이스+음성 3케이스+null/undefined), FUNCTIONS 목록에 isAuthExpiredError 등록, cloudSyncErrCtx에 extractFunction('isAuthExpiredError') 추가, 실행형 테스트 2건(auth_expired 분류+toast+label 전용 문구, 401이면서 RLS 메시지가 섞여도 auth_expired가 우선됨을 확인하는 분류 순서 가드), homeAlertCard 렌더 테스트 1건(auth_expired면 openAccountSheet()로 열리고 전용 문구가 보이며 '자동으로 다시 시도' 문구는 없음) 총 4건 추가. node test/run.js 3997->4001/4001 통과, node --check(sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. 범위 제외(계획대로): 자동 토큰 갱신 로직 추가 안 함, 인증 아키텍처 변경 안 함, 카카오 경로 안 건드림. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.538->1.47.539, sw.js CACHE v805->v806. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 403,
+      "phase": "develop",
+      "timestamp": "2026-11-25T15:12:38.000Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 twGuard 감사를 예산(budget) 기능까지 확장. openSpendAnalysis → openBudgetPrompt(예산 설정 시트)는 다른 가드된 화면들(owner/category/goal/inquiry 등)과 마찬가지로 튜토리얼 중에도 그대로 열리는데, 정작 저장/삭제 경로인 saveBudget(idx)/delBudget(idx)에는 twGuard가 없어 튜토리얼 중 예산을 설정·삭제하면 DB.budgetHistory/DB.ownerBudgets에 실제로 영구 저장되던 공백을 발견(addOwner/delOwner/doRenameOwner(cycle308), addCat류(cycle309), saveGoal/delGoal(cycle307), sendInquiry/delInquiry/saveInquiryEdit(cycle400)과 동일한 버그 클래스). index.html의 saveBudget/delBudget 함수 시작부에 `if(twGuard())return;` 한 줄씩 추가(설명 주석 포함). test/run.js에 기존 undo 테스트 바로 뒤 twGuard 회귀 테스트 2건 추가(TWi=0으로 저장/삭제가 막히고 undoToast도 호출되지 않음을 확인 후 TWi=-1 복원). 오케스트레이터가 diff를 직접 리뷰하고 node test/run.js 재실행(4001->4003/4003 통과), node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과를 재확인한 뒤 커밋. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.539->1.47.540, sw.js CACHE v806->v807.",
       "commit": null
     }
   ]

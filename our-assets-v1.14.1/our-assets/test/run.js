@@ -4832,6 +4832,31 @@ test('delBudget: undo는 그 달에 원래 있던 값이 아니라 삭제 직전
   assert.strictEqual(sandbox.DB.budgetHistory.식비.length, 1, '되돌리면 원래 없던 6월 항목이 제거되고 1월 항목만 남아야 함');
   assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 8), 50000, '되돌린 뒤에는 8월도 다시 1월부터 이어지는 5만원이어야 함');
 });
+/* addOwner/delOwner/doRenameOwner(cycle308)·addCat 계열(cycle309)·saveGoal/delGoal(cycle307)·
+ * sendInquiry/delInquiry(cycle400)과 동일한 twGuard 감사의 연장 — openBudgetPrompt는 튜토리얼
+ * 진행 중에도 그대로 열리는데, 저장/삭제 경로인 saveBudget/delBudget에만 twGuard가 빠져 있어
+ * 튜토리얼 중에도 예산이 실제로 저장·삭제됐다(app-evolve cycle403 develop). */
+test('delBudget: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 삭제되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { txns: [], recurrences: [], budgetHistory: { 식비: [{ from: '2026-01', amount: 50000 }] } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.lastUndo = null;
+  sandbox.delBudget(0);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 50000, '튜토리얼 중에는 삭제가 막혀야 함');
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되면 안 됨');
+  sandbox.TWi = -1;
+});
+test('saveBudget: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 저장되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { txns: [{ type: 'expense', category: '식비', amount: 10000, date: '2026-06-10' }], recurrences: [], budgetHistory: {} };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.budgetInValue = '300000';
+  sandbox.lastUndo = null;
+  sandbox.saveBudget(0);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 0, '튜토리얼 중에는 저장이 막혀야 함');
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되면 안 됨');
+  sandbox.TWi = -1;
+});
 
 /* ---------- openBudgetPrompt: budgetIn도 다른 금액 입력란과 같은 지우기(×) 버튼 관례를 따라야 함
  * (app-evolve develop cycle — txAmt/rAmt/goalAmt/asCostBasis/asAmt/qAmt/bigMinInput은 모두

@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.539';
+const APP_VERSION='1.47.540';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -8965,6 +8965,7 @@ function openBudgetPrompt(idx){
  setTimeout(()=>{const el=$('budgetIn');el&&el.focus()},300);
 }
 function saveBudget(idx){
+ if(twGuard())return;
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
  const owner=ST.spendOwner||'전체';const ownerMode=owner!=='전체';
  const v=Math.round(num($('budgetIn')));
@@ -8986,7 +8987,14 @@ function saveBudget(idx){
   save();renderCurrent();openSpendAnalysis();toast('되돌렸어요')
  });
 }
+/* addOwner/delOwner/doRenameOwner(cycle308)·addCat 계열(cycle309)·saveGoal/delGoal(cycle307)·
+ * sendInquiry/delInquiry/saveInquiryEdit(cycle400)과 동일한 twGuard 감사의 연장 — 예산 설정
+ * 화면(openSpendAnalysis → openBudgetPrompt)은 튜토리얼 진행 중에도 그대로 열리는데, 저장/삭제
+ * 경로인 saveBudget/delBudget에만 twGuard가 빠져 있어 튜토리얼 중에 누른 예산 저장·삭제가
+ * "튜토리얼 중에는 실제로 저장되지 않아요" 약속과 달리 DB.budgetHistory/DB.ownerBudgets에
+ * 그대로 영구 저장됐다(app-evolve cycle403 develop). */
 function delBudget(idx){
+ if(twGuard())return;
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
  const owner=ST.spendOwner||'전체';const ownerMode=owner!=='전체';
  const key=budgetKey(y,m);
