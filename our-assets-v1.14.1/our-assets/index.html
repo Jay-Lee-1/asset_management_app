@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.537';
+const APP_VERSION='1.47.538';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -12674,24 +12674,41 @@ function planSplitTransfer(plan,toId,date){
  if(dateBelowRangeFloor(date)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
  if(dateAboveRangeCeil(date)){toast(`${RANGE_TO} 이후 날짜는 저장할 수 없어요`);return}
  const to=DB.assets.find(a=>a.id===toId);
+ /* doSettleN(6215행)과 동일한 '여러 건을 만들고 한 undoToast로 묶어 되돌리기' 패턴(app-evolve
+  * cycle402 develop) — 아래 기존 celebrate()는 이 함수가 DB.txns에 새 이체 거래를 실제로
+  * push하는데도(잔액에 그대로 반영됨) 되돌릴 방법을 전혀 주지 않던 공백이었다. saveTx/saveAsset/
+  * saveBudget/saveQuickAmount/doSettle/doSettleN 등 DB.txns·DB.assets를 바꾸는 다른 모든 저장
+  * 경로는 예외 없이 undoToast(또는 동급의 되돌리기)를 제공하는데, 같은 '새 이체 거래 생성'인
+  * doSettle/doSettleN과 나란히 놓고 보면 이 두 함수만 빠져 있었다. */
+ const created=[];
  plan.forEach(p=>{
-  DB.txns.push(touch({id:uid(),type:'transfer',category:'이체',
+  const tx=touch({id:uid(),type:'transfer',category:'이체',
    memo:`${to?to.name:''} 채우기`,amount:p.amount,fromAssetId:p.id,toAssetId:toId,date,
-   confirmed:DB.settings.confirmTransfers?false:true}));
+   confirmed:DB.settings.confirmTransfers?false:true});
+  DB.txns.push(tx);created.push(tx.id);
  });
  save({recsChanged:false});invalidateBalances(null,{recsChanged:false});closeSheet();renderCurrent();_fixWhen=null;_fixCtx=null; /* transfer 거래만 추가 — DB.recurrences는 안 바뀌므로 _recCache 보존(app-evolve cycle207 advance) */
- celebrate(`예정 이체 ${plan.length}건을 남겼어요 ✅`);
+ undoToast(`예정 이체 ${plan.length}건을 남겼어요 ✅`,()=>{
+  DB.txns=DB.txns.filter(t=>!created.includes(t.id));
+  save({recsChanged:false});invalidateBalances(null,{recsChanged:false});renderCurrent();toast('되돌렸어요');
+ });
 }
 function planTransfer(fromId,toId,date,amount){
  if(twGuard())return;
  if(dateBelowRangeFloor(date)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
  if(dateAboveRangeCeil(date)){toast(`${RANGE_TO} 이후 날짜는 저장할 수 없어요`);return}
  const from=DB.assets.find(a=>a.id===fromId),to=DB.assets.find(a=>a.id===toId);
- DB.txns.push(touch({id:uid(),type:'transfer',category:'이체',
+ /* planSplitTransfer(바로 위)와 동일한 이유로 undoToast 추가(app-evolve cycle402 develop) —
+  * doSettle(6174행)의 단건 생성+undoToast와 나란한 패턴. */
+ const tx=touch({id:uid(),type:'transfer',category:'이체',
   memo:`${to?to.name:''} 채우기`,amount,fromAssetId:fromId,toAssetId:toId,date,
-  confirmed:DB.settings.confirmTransfers?false:true}));
+  confirmed:DB.settings.confirmTransfers?false:true});
+ DB.txns.push(tx);
  save({recsChanged:false});invalidateBalances(null,{recsChanged:false});closeSheet();renderCurrent();_fixWhen=null;_fixCtx=null; /* transfer 거래만 추가 — DB.recurrences는 안 바뀌므로 _recCache 보존(app-evolve cycle207 advance) */
- celebrate('예정 이체로 남겼어요 ✅');
+ undoToast('예정 이체로 남겼어요 ✅',()=>{
+  DB.txns=DB.txns.filter(t=>t.id!==tx.id);
+  save({recsChanged:false});invalidateBalances(null,{recsChanged:false});renderCurrent();toast('되돌렸어요');
+ });
 }
 function nextOutflowCard(){
  const t=nextBigOutflow();

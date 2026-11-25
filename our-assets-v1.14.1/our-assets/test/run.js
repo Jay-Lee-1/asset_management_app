@@ -34407,6 +34407,34 @@ test('planSplitTransfer: 여러 출처로 나눠 남기는 예정 이체 거래 
   assert.ok(sandbox.DB.txns.every((t) => t.updatedAt === 'test-updatedAt'), '나눠 남기는 예정 이체 거래 각각에 touch()가 호출되어야 함');
 });
 
+/* ---------- planTransfer/planSplitTransfer: undoToast로 되돌리기 (app-evolve cycle402 develop) ----------
+ * saveTx/saveAsset/saveBudget/saveQuickAmount와 나란히, 같은 '새 이체 거래 생성' 액션인
+ * doSettle/doSettleN(32401/32531행)도 undoToast로 되돌릴 수 있는데, 이 두 함수만 celebrate()
+ * (화면 효과뿐인 축하 애니메이션, 1030행 주석 참고)만 부르고 되돌릴 방법이 전혀 없던 공백이었다.
+ * "해결 방법 보기"에서 실제로 잔액에 반영되는 거래가 새로 생기는데도, 잘못 고른 통장/날짜를
+ * 고치려면 가계부에서 직접 찾아 지우는 수밖에 없었다. */
+test('planTransfer: undoToast로 되돌리면 새로 남긴 예정 이체 거래가 사라진다', () => {
+  setupFixShortfallDB();
+  sandbox.lastUndo = null;
+  sandbox.planTransfer('donor', 'assetA', '2026-06-19', 50000);
+  assert.strictEqual(sandbox.DB.txns.length, 1);
+  const tx = sandbox.DB.txns[0];
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.txns.length, 0, '되돌리면 새로 남긴 예정 이체 거래가 제거돼야 함');
+  assert.ok(!sandbox.DB.txns.some((t) => t.id === tx.id));
+});
+test('planSplitTransfer: undoToast로 되돌리면 나눠 남긴 예정 이체 거래가 모두 한번에 사라진다', () => {
+  setupFixShortfallDB();
+  sandbox.lastUndo = null;
+  sandbox.planSplitTransfer([{ id: 'donor', amount: 30000 }, { id: 'assetB', amount: 20000 }], 'assetA', '2026-06-19');
+  assert.strictEqual(sandbox.DB.txns.length, 2);
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  assert.ok(/2건/.test(sandbox.lastUndo.msg), '몇 건을 남겼는지 메시지에 포함돼야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.txns.length, 0, '되돌리면 나눠 남긴 거래가 모두 사라져야 함');
+});
+
 /* ---------- planTransfer/planSplitTransfer: 날짜피커('날짜 선택')로 고른 날짜가
  * RANGE_FROM/RANGE_TO 범위를 벗어나도 saveTx/saveRec과 달리 아무 검증 없이 DB.txns.push로
  * 직접 적재되던 경계버그(app-evolve cycle123 develop). 이 두 함수는 saveTx를 거치지 않아
