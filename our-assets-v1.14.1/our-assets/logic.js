@@ -2421,3 +2421,27 @@ function maturityToastMsg(count,overdueCount){
  if(overdueCount>=count)return `저축 만기 ${count}건이 지났어요`;
  return `저축 만기 ${count}건이 임박했어요${overdueCount>0?' (지난 건 포함)':''}`;
 }
+
+/* ================= 백업 복원 확인 시트 미리보기 (순수) ================= */
+/* proceedWithBackupObj()(index.html)가 '현재 데이터를 백업 파일로 교체할까요?'라는 일반 문구만
+ * 보여주고 어떤 백업을 복원하는지(생성 시점·건수) 전혀 알려주지 않던 공백을 메운다(app-evolve
+ * cycle405 critique). sanitizeBackup() 직전의 원본 파싱 결과(raw)를 받아 거래/자산 건수와
+ * 생성 시점을 구하는 순수 집계만 한다 — 문구 포맷팅(날짜 표시 형식)은 호출부가 한다.
+ * exportedAt은 doExport()가 cycle405부터 전체 백업 JSON에 심는 obj._exportedAt 타임스탬프
+ * (number, ms)다. 이 마커가 없는 구버전 백업(또는 손으로 편집한 파일)은 latestDate로
+ * 근사한다 — txns/nwHistory에 적힌 날짜 중 가장 늦은 것으로, "내보낸 시각"이 아니라 "이
+ * 백업에 담긴 데이터가 언제까지인지"에 대한 근사치일 뿐이다. 손상된 입력(obj가 null/배열이
+ * 아닌 txns·assets 등)에도 던지지 않고 0/null로 돌아간다(sanitizeBackup과 같은 방어 수준). */
+function backupSummary(obj){
+ const txns=Array.isArray(obj&&obj.txns)?obj.txns:[];
+ const assets=Array.isArray(obj&&obj.assets)?obj.assets:[];
+ const nwHistory=Array.isArray(obj&&obj.nwHistory)?obj.nwHistory:[];
+ const exportedAt=obj&&typeof obj._exportedAt==='number'?obj._exportedAt:null;
+ let latestDate=null;
+ if(exportedAt==null){
+  const consider=d=>{if(typeof d==='string'&&(!latestDate||d>latestDate))latestDate=d};
+  txns.forEach(t=>consider(t&&t.date));
+  nwHistory.forEach(h=>consider(h&&h.date));
+ }
+ return{txnCount:txns.length,assetCount:assets.length,exportedAt,latestDate};
+}

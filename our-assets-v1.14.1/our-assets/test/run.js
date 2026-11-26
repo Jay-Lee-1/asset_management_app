@@ -43503,6 +43503,42 @@ test('[소스] 부팅 저축 만기 토스트가 maturityToastMsg(logic.js)를 �
   assert.ok(!src.includes('저축 만기 ${soon.length}건이 임박했어요`)},1200)'), '부팅 토스트가 overdue 구분 없는 과거 리터럴 문구로 되돌아감');
 });
 
+/* ---------- backupSummary(logic.js): proceedWithBackupObj()의 복원 확인 시트가 "어떤 백업을
+ * 복원하는지"(생성 시점·건수) 미리 보여주기 위한 순수 집계 — sanitizeBackup() 직전의 원본
+ * 파싱 결과를 받는다(app-evolve cycle405 critique/advance). ---------- */
+test('backupSummary: _exportedAt(doExport가 cycle405부터 심는 마커)이 있으면 그 값을 쓰고 latestDate는 근사하지 않는다', () => {
+  const r = sandbox.backupSummary({ _exportedAt: 1700000000000, txns: [{ id: 't1', date: '2026-01-01' }, { id: 't2', date: '2026-06-15' }], assets: [{ id: 'a1' }, { id: 'a2' }] });
+  assert.strictEqual(r.exportedAt, 1700000000000);
+  assert.strictEqual(r.txnCount, 2);
+  assert.strictEqual(r.assetCount, 2);
+  assert.strictEqual(r.latestDate, null, 'exportedAt이 있으면 latestDate로 근사할 필요가 없음');
+});
+test('backupSummary: _exportedAt이 없는 구버전 백업은 txns/nwHistory 중 가장 늦은 날짜로 latestDate를 근사한다', () => {
+  const r = sandbox.backupSummary({ txns: [{ id: 't1', date: '2026-01-01' }, { id: 't2', date: '2026-03-10' }], assets: [{ id: 'a1' }], nwHistory: [{ date: '2026-02-01' }, { date: '2026-05-20' }] });
+  assert.strictEqual(r.exportedAt, null);
+  assert.strictEqual(r.latestDate, '2026-05-20', 'txns보다 늦은 nwHistory 날짜를 놓침');
+  assert.strictEqual(r.txnCount, 2);
+  assert.strictEqual(r.assetCount, 1);
+});
+test('backupSummary: txns/assets가 비어있거나 없으면(마커도 없으면) 0건/null을 돌려주고 던지지 않는다', () => {
+  // sandbox.backupSummary()가 돌려주는 객체는 vm 컨텍스트 안에서 새로 만든 리터럴이라 Object.prototype이
+  // 이 테스트 파일(바깥 realm)의 것과 달라, deepStrictEqual로 바깥에서 쓴 {} 리터럴과 통째로 비교하면
+  // "구조는 같은데 reference-equal이 아니다"로 거짓 실패한다 — 필드별로 strictEqual로 비교한다.
+  const empty1 = sandbox.backupSummary({ txns: [], assets: [] });
+  assert.strictEqual(empty1.txnCount, 0); assert.strictEqual(empty1.assetCount, 0); assert.strictEqual(empty1.exportedAt, null); assert.strictEqual(empty1.latestDate, null);
+  const empty2 = sandbox.backupSummary({});
+  assert.strictEqual(empty2.txnCount, 0); assert.strictEqual(empty2.assetCount, 0); assert.strictEqual(empty2.exportedAt, null); assert.strictEqual(empty2.latestDate, null);
+});
+test('backupSummary: null/undefined나 배열이 아닌 txns/assets/nwHistory가 섞인 손상된 입력에도 던지지 않는다', () => {
+  const r1 = sandbox.backupSummary(null);
+  assert.strictEqual(r1.txnCount, 0); assert.strictEqual(r1.assetCount, 0); assert.strictEqual(r1.exportedAt, null); assert.strictEqual(r1.latestDate, null);
+  const r2 = sandbox.backupSummary(undefined);
+  assert.strictEqual(r2.txnCount, 0); assert.strictEqual(r2.assetCount, 0); assert.strictEqual(r2.exportedAt, null); assert.strictEqual(r2.latestDate, null);
+  assert.doesNotThrow(() => sandbox.backupSummary({ txns: '손상됨', assets: null, nwHistory: 42 }));
+  const r = sandbox.backupSummary({ txns: '손상됨', assets: null, nwHistory: 42 });
+  assert.strictEqual(r.txnCount, 0); assert.strictEqual(r.assetCount, 0); assert.strictEqual(r.exportedAt, null); assert.strictEqual(r.latestDate, null);
+});
+
 /* ---------- dismissWipeBackup(): '지우기' 버튼이 wipeBackup 카드의 유일한 복구 수단(전체
  * 계정 백업)을 바로 지워버리던 공백 — dismissCorruptBackup()(단일 레코드, 주 행동이 '다운로드')과
  * 달리 이 백업은 지우면 영영 못 되돌리므로 doResetAll/doLogout 등과 같은 confirmSheet 확인을
@@ -43590,6 +43626,65 @@ test('[실행형] proceedWithBackupObj: onDone 없이 호출해도(기존 호출
   try {
     sandbox.proceedWithBackupObj({ assets: [{ id: 'new1' }], txns: [] });
     assert.doesNotThrow(() => sandbox.confirmSheetCalls[0].cb());
+  } finally {
+    sandbox.DB = dbOrig; sandbox.save = saveOrig; sandbox.invalidateBalances = invalidateOrig; sandbox.renderCurrent = renderOrig; sandbox.setTimeout = setTimeoutOrig;
+  }
+});
+
+/* ---------- proceedWithBackupObj: 복원 확인 시트 미리보기 — backupSummary(logic.js)로 "현재
+ * 데이터를 백업 파일로 교체할까요?"라는 일반 문구뿐이던 확인 시트에 어떤 백업을 복원하는지
+ * (생성 시점·건수) 미리 보여준다(app-evolve cycle405 critique/advance). ---------- */
+test('[실행형] proceedWithBackupObj: _exportedAt이 있으면 확인 시트 문구에 생성 시점(날짜+시간)과 거래/자산 건수가 미리 보인다', () => {
+  const dbOrig = sandbox.DB;
+  const saveOrig = sandbox.save, invalidateOrig = sandbox.invalidateBalances, renderOrig = sandbox.renderCurrent, setTimeoutOrig = sandbox.setTimeout;
+  sandbox.DB = { owners: ['나'], assets: [{ id: 'old' }], txns: [], categories: { expense: [], income: [], saving: [] } };
+  sandbox.save = () => {}; sandbox.invalidateBalances = () => {}; sandbox.renderCurrent = () => {};
+  sandbox.setTimeout = () => 'restore-push-timer';
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  try {
+    const exportedAt = 1700000000000;
+    sandbox.proceedWithBackupObj({ _exportedAt: exportedAt, assets: [{ id: 'new1', type: 'cash' }], txns: [{ id: 't1', date: '2026-01-01', amount: 1000 }, { id: 't2', date: '2026-01-02', amount: 2000 }] });
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+    const ed = new Date(exportedAt);
+    const eds = `${ed.getFullYear()}-${String(ed.getMonth() + 1).padStart(2, '0')}-${String(ed.getDate()).padStart(2, '0')}`;
+    const etime = `${String(ed.getHours()).padStart(2, '0')}:${String(ed.getMinutes()).padStart(2, '0')}`;
+    const expected = `${sandbox.fmtDateFull(eds)} ${etime}에 만든 백업 · 거래 2건, 자산 1개`;
+    assert.ok(sandbox.confirmSheetCalls[0].msg.includes(expected), `확인 시트 문구에 백업 생성 시점/건수 미리보기가 없음 — got: ${sandbox.confirmSheetCalls[0].msg}`);
+  } finally {
+    sandbox.DB = dbOrig; sandbox.save = saveOrig; sandbox.invalidateBalances = invalidateOrig; sandbox.renderCurrent = renderOrig; sandbox.setTimeout = setTimeoutOrig;
+  }
+});
+test('[실행형] proceedWithBackupObj: _exportedAt이 없는 구버전 백업은 거래 중 가장 늦은 날짜로 근사한 문구가 보인다', () => {
+  const dbOrig = sandbox.DB;
+  const saveOrig = sandbox.save, invalidateOrig = sandbox.invalidateBalances, renderOrig = sandbox.renderCurrent, setTimeoutOrig = sandbox.setTimeout;
+  sandbox.DB = { owners: ['나'], assets: [{ id: 'old' }], txns: [], categories: { expense: [], income: [], saving: [] } };
+  sandbox.save = () => {}; sandbox.invalidateBalances = () => {}; sandbox.renderCurrent = () => {};
+  sandbox.setTimeout = () => 'restore-push-timer';
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  try {
+    sandbox.proceedWithBackupObj({ assets: [{ id: 'new1', type: 'cash' }], txns: [{ id: 't1', date: '2026-01-01', amount: 1000 }, { id: 't2', date: '2026-03-15', amount: 2000 }] });
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+    const expected = `${sandbox.fmtDateFull('2026-03-15')}까지의 데이터로 보이는 백업 · 거래 2건, 자산 1개`;
+    assert.ok(sandbox.confirmSheetCalls[0].msg.includes(expected), `구버전 백업 근사 문구가 없음 — got: ${sandbox.confirmSheetCalls[0].msg}`);
+  } finally {
+    sandbox.DB = dbOrig; sandbox.save = saveOrig; sandbox.invalidateBalances = invalidateOrig; sandbox.renderCurrent = renderOrig; sandbox.setTimeout = setTimeoutOrig;
+  }
+});
+test('[실행형] proceedWithBackupObj: _exportedAt도 날짜 있는 거래도 없는 백업은 미리보기 없이 기존 문구만 보여주고 던지지 않는다', () => {
+  const dbOrig = sandbox.DB;
+  const saveOrig = sandbox.save, invalidateOrig = sandbox.invalidateBalances, renderOrig = sandbox.renderCurrent, setTimeoutOrig = sandbox.setTimeout;
+  sandbox.DB = { owners: ['나'], assets: [{ id: 'old' }], txns: [], categories: { expense: [], income: [], saving: [] } };
+  sandbox.save = () => {}; sandbox.invalidateBalances = () => {}; sandbox.renderCurrent = () => {};
+  sandbox.setTimeout = () => 'restore-push-timer';
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  try {
+    assert.doesNotThrow(() => sandbox.proceedWithBackupObj({ assets: [{ id: 'new1', type: 'cash' }], txns: [] }));
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+    assert.ok(sandbox.confirmSheetCalls[0].msg.startsWith('현재 데이터를 백업 파일로 교체할까요?'), '미리보기 줄이 없을 때도 기존 문구가 그대로 맨 앞에 와야 함');
+    assert.ok(!/만든 백업|데이터로 보이는 백업/.test(sandbox.confirmSheetCalls[0].msg), '건수를 모르면서 미리보기를 추측해서 보여주면 안 됨');
   } finally {
     sandbox.DB = dbOrig; sandbox.save = saveOrig; sandbox.invalidateBalances = invalidateOrig; sandbox.renderCurrent = renderOrig; sandbox.setTimeout = setTimeoutOrig;
   }

@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.544';
+const APP_VERSION='1.47.545';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -10471,6 +10471,11 @@ async function doExport(mode,kind){
  }
  const d=new Date();const pad=n=>String(n).padStart(2,'0');
  const stamp=`${String(d.getFullYear()).slice(2)}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+ /* 전체 JSON 백업에만 심는 생성 시점 마커 — proceedWithBackupObj()의 복원 확인 시트가
+    backupSummary()(logic.js)로 "언제 만든 백업인지"를 미리 보여줄 때 쓴다(app-evolve cycle405
+    critique/advance). stamp와 같은 d를 그대로 써 파일명과 마커가 같은 순간을 가리키게 한다.
+    DB 필드 중 이 이름을 쓰는 게 없음을 grep으로 확인(네임스페이스 충돌 없음). */
+ const exportedAt=d.getTime();
  const name=isCsv?`${csvMeta.prefix}_${stamp}.csv`:`backup_${stamp}.json`;
  /* 반복거래는 확인 전까지 DB.txns에 저장되지 않고 expandRec()이 매번 즉석 생성하는
     가상 행이라(allTxns 패턴 참고, index.html:1960) 합쳐주지 않으면 CSV에서 통째로 빠진다.
@@ -10497,7 +10502,7 @@ async function doExport(mode,kind){
   :kind==='goalsCsv'?goalsToCSV((DB.goals||[]).map(g=>{const p=goalProgress(g,goalHistoryFor(g),TODAY);return Object.assign({},g,{cur:p.cur,pct:p.pct,achieved:p.achieved})}),DB.assets)
   :kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover,DB.ownerBudgets)
   :kind==='csv'?txnsToCSV(DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)).filter(t=>!(t.adjust&&!t.inSurplus)&&t.date<=TODAY),DB.assets)
-  :JSON.stringify(DB,null,2);
+  :JSON.stringify(Object.assign({},DB,{_exportedAt:exportedAt}),null,2);
  if(exportPin)text=JSON.stringify(await encryptDbBlob(text,exportPin));
  const mime=isCsv?'text/csv':'application/json';
  /* CSV는 복원용 백업이 아니므로 백업 알림 상태(lastExport/backupSnooze)를 건드리지 않는다 */
@@ -10519,7 +10524,7 @@ async function doExport(mode,kind){
    /* text는 위에서 이미 exportPin으로 암호화됐지만 이 사진-제외 분기는 DB를 redactTxnPhotos로
       다시 직렬화하므로, PIN이 걸려 있으면 여기서도 다시 암호화해야 한다 — 안 그러면 공유/파일저장이
       막혀 이 폴백으로 넘어온 순간 PIN 보호가 조용히 사라진다(app-evolve cycle289 advance). */
-   let redacted=redactTxnPhotos(DB);
+   let redacted=redactTxnPhotos(Object.assign({},DB,{_exportedAt:exportedAt}));
    if(exportPin)redacted=JSON.stringify(await encryptDbBlob(redacted,exportPin));
    openCopyBackup(redacted,reason,{note:`복원할 때는 이 내용을 .json 파일로 저장해 불러오면 돼요. 단, 영수증 사진 ${photoCount}장은 용량이 커 복사에서 제외됐어요 — 사진까지 백업하려면 파일로 내보내기를 이용해 주세요.`});
    return;
@@ -11448,8 +11453,24 @@ function restoreBackup(obj){
  * 파일과, PIN으로 암호화된 백업을 복호화한 뒤의 결과(아래 doImportPinSubmit) 양쪽이 공유하는
  * 경로다(app-evolve cycle289 advance, 암호화 여부와 무관하게 복원 로직은 하나로 유지). */
 function proceedWithBackupObj(raw,onDone){
+ /* sanitizeBackup 전에(파일 그대로의 건수를 보여주기 위해) backupSummary(logic.js)로 이 백업이
+  * 언제 만들어졌고 거래/자산이 몇 건인지 미리보기 한 줄을 만든다 — CSV 가져오기 미리보기
+  * (buildImportPreview)는 이미 있는데 훨씬 더 파괴적인(전체 교체) 복원 쪽엔 없던 비대칭을
+  * 메운다(app-evolve cycle405 critique/advance). exportedAt(cycle405부터 doExport가 심는 마커)이
+  * 없는 구버전 백업은 latestDate로 근사하고, 둘 다 없으면(더 오래된 백업/손상 파일) 미리보기 줄
+  * 없이 기존 문구만 보여준다. */
+ const bs=backupSummary(raw);
+ let previewLine='';
+ if(bs.exportedAt!=null){
+  const ed=new Date(bs.exportedAt);
+  const eds=`${ed.getFullYear()}-${String(ed.getMonth()+1).padStart(2,'0')}-${String(ed.getDate()).padStart(2,'0')}`;
+  const etime=`${String(ed.getHours()).padStart(2,'0')}:${String(ed.getMinutes()).padStart(2,'0')}`;
+  previewLine=`${fmtDateFull(eds)} ${etime}에 만든 백업 · 거래 ${bs.txnCount}건, 자산 ${bs.assetCount}개<br>`;
+ }else if(bs.latestDate){
+  previewLine=`${fmtDateFull(bs.latestDate)}까지의 데이터로 보이는 백업 · 거래 ${bs.txnCount}건, 자산 ${bs.assetCount}개<br>`;
+ }
  const{data:obj,fixedCount,droppedCount,rangeCount}=sanitizeBackup(raw);
- confirmSheet('데이터 복원','현재 데이터를 백업 파일로 교체할까요?<br><span style="color:var(--text-2);font-size:13px">복원 후 6초 안에는 되돌릴 수 있어요.</span>','복원',()=>{
+ confirmSheet('데이터 복원',previewLine+'현재 데이터를 백업 파일로 교체할까요?<br><span style="color:var(--text-2);font-size:13px">복원 후 6초 안에는 되돌릴 수 있어요.</span>','복원',()=>{
   /* doResetAll/doDeleteAccount와 동일한 wipe-직전 백업 패턴(app-evolve cycle328) — restoreBackup()이
    * DB를 즉시 교체하므로, 교체 전 데이터를 prev 메모리 클로저 하나와 6초짜리 undoToast grace에만
    * 맡기지 않고 __preRestore_ localStorage 키로도 최선 노력 저장해 둔다. 복원은 기기 교체·재설치
