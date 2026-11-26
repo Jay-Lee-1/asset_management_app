@@ -1,15 +1,8 @@
 {
   "cycle": 407,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 402,
-      "phase": "review",
-      "timestamp": "2026-11-25T12:08:12.831Z",
-      "summary": "develop(cycle402) 커밋 0e8de97(planTransfer/planSplitTransfer에 undoToast 추가)를 검토. doSettle(단건)/doSettleN(여러건, id배열 모아 통합 undoToast)과 나란히 대조해 패턴이 정확히 일치함을 확인 — planTransfer는 단건 tx id를 캡처해 되돌릴 때 그 id만 filter로 제거, planSplitTransfer는 created 배열에 모은 뒤 통합 undoToast 메시지(\"N건\")로 한번에 되돌림. undoToast(msg,undoFn) 시그니처(index.html:13485)와도 일치. 두 함수 다 되돌리기 콜백 안에서 save/invalidateBalances/renderCurrent를 원래 저장 경로와 동일하게 다시 호출해 되돌린 뒤 화면·캐시 상태가 정상 저장 흐름과 같아짐을 확인. 추가된 테스트 2건이 각각 단건/분할 케이스에서 되돌린 뒤 DB.txns 길이가 0으로 돌아오는지, 분할 쪽 메시지에 건수가 포함되는지를 검증하는지 확인. node test/run.js 재실행 3997/3997 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과, APP_VERSION 1.47.538/sw.js CACHE v805 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 402,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-26T08:00:00.000Z",
       "summary": "general-purpose 서브에이전트에게 위임해 조사. budgetForMonth/setBudgetFrom과 budgetForMonthOwner/setBudgetFromOwner(귀속별 예산 오버라이드, cycle398)가 공유하는 순수 핵심인 logic.js의 budgetHistoryValueAt(h,y,m)/setBudgetHistoryAt(h,y,m,amount)가, 같은 섹션의 다른 순수 함수들(budgetProgress/budgetCarry/budgetForMonthEffective/projectedMonthSpend)과 달리 한 번도 직접 호출하는 테스트 없이 전부 index.html 래퍼(DB.budgetHistory 전역 경유)를 통해서만 간접 검증되고 있던 공백을 발견 — `for fn in $(grep -oP '^function \\K\\w+' logic.js); do grep -c \"\\b$fn\\b\" test/run.js; done`으로 전체 logic.js 함수 중 test/run.js에 0회 언급된 유일한 함수임을 확인. 이 둘 자체에 회귀가 생기면(예: budgetHistoryValueAt의 선형 스캔이 전제하는 'from 오름차순' 불변식이 setBudgetHistoryAt에서 깨짐) 래퍼 레벨 테스트만으로는 정확한 원인을 못 잡을 수 있는 실제 커버리지 공백. test/run.js의 기존 budgetForMonth/setBudgetFrom 테스트 블록 바로 뒤(budgetForMonthOwner 블록 앞)에 budgetHistoryValueAt/setBudgetHistoryAt를 배열만으로(DB 전역 없이) 직접 호출하는 테스트 7건 추가: h가 undefined/null/[]면 0, 가장 이른 from 이전 조회시 0, from 달 이후 적용 유지, 여러 항목 중 조회 달 이하 최신 from 선택, 빈 배열에 삽입, 같은 달 재기록시 덮어쓰기(중복 생성 안함), from 비순차 삽입시 오름차순 재정렬(budgetHistoryValueAt이 전제하는 불변식 직접 검증). vm 샌드박스 객체의 cross-realm Object prototype 불일치로 deepStrictEqual이 거짓 실패하는 기존에 문서화된 이슈(qtyCaretAfterFilter와 동일 원인)를 만나 필드별 strictEqual 비교로 수정. logic.js/index.html/sw.js 자체는 변경 없음(테스트 전용 추가라 APP_VERSION/CACHE 버전 변경 불필요). 오케스트레이터가 diff를 직접 리뷰(budgetHistoryValueAt/setBudgetHistoryAt 실제 정의, from<=key 선형스캔과 else break가 정렬 불변식에 의존함을 logic.js:1090-1107에서 재확인)하고 node --check(logic.js/test/run.js), node test/run.js 재실행 4043->4050/4050 통과를 재검증한 뒤 커밋. 코드 동작 변경 없음, 테스트만 추가.",
+      "commit": null
+    },
+    {
+      "cycle": 407,
+      "phase": "review",
+      "timestamp": "2026-11-26T09:00:00.000Z",
+      "summary": "develop(cycle407) 커밋 4ff955e(budgetHistoryValueAt/setBudgetHistoryAt에 배열을 직접 받는 단위 테스트 7건 추가, logic.js 자체는 변경 없음)를 검토. logic.js:1090-1107의 두 함수 실제 정의를 직접 읽고 diff의 핵심 가정(budgetHistoryValueAt이 h를 from 오름차순으로 전제하고 for+break로 선형스캔하며, setBudgetHistoryAt이 findIndex로 같은 달이면 덮어쓰고 아니면 push 후 매번 전체를 from 문자열 비교로 재정렬함)을 한 줄씩 확인 — 테스트가 검증하는 동작과 정확히 일치. 빈/undefined/null h, 가장 이른 from 이전 조회, 여러 항목 중 조회 달 이하 최신 from 선택, 같은 달 재기록시 덮어쓰기(길이 불변), from 비순차 삽입 후 오름차순 재정렬 불변식까지 각 테스트가 실제로 그 분기/불변식을 짚고 있는지 확인. vm 샌드박스 cross-realm 이슈로 deepStrictEqual 대신 필드별 strictEqual을 쓴 것도 qtyCaretAfterFilter 등 기존 패턴과 일치. logic.js/index.html/sw.js 코드 변경이 전혀 없는 테스트 전용 커밋이라 APP_VERSION/CACHE 버전 변경 불필요함도 확인. node test/run.js 재실행 4050/4050 통과, node --check(logic.js/sw.js/test/run.js) 통과. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
