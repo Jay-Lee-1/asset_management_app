@@ -1,15 +1,12 @@
 {
   "cycle": 406,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "지출/수입 분석 시트(openSpendAnalysis/openIncomeAnalysis)에 아카이브 안내 추가 — 지워진 달을 '지출 없음'으로 오해하게 하는 공백 메움",
+    "why": "openSpendAnalysis (index.html:8943-8996)와 openIncomeAnalysis (index.html:7780-7800)는 ST.ledger.y/m 기준으로 spendByCategory/incomeByCategory를 읽어 카테고리별 지출·수입을 보여준다. '오래된 데이터 정리'(archiveTxnsBefore, index.html:13684 근처, DB.settings.archivedThroughDate 기록)로 그 달 거래가 영구 삭제되면 두 함수는 그냥 빈 rows=[]를 반환하고, 화면은 total=0 상태의 칭찬성 빈 상태 문구를 보여준다: 지출 쪽은 '아직 쓴 게 없어요 👏'+'이대로만 가면 완벽해요'(index.html:8980), 수입 쪽은 '아직 들어온 수입이 없어요'(index.html:7793). 사용자가 과거 달(예: 3년 전)의 지출/수입 분석을 열면 실제로는 데이터가 지워진 것인데 '그 달에 한 푼도 안 썼다/못 벌었다'로 오해하게 된다. 이미 동일한 문제를 로직 레벨에서 해결한 전례가 세 곳 있다: (1) 날짜별 빠른보기 빈 상태(index.html:6450-6451), (2) 가계부 월별 화면의 ledArchiveNoticeHtml(index.html:6467-6468, monthIsArchived(y,m,archivedThrough) 사용, cycle404), (3) 연간 리뷰의 archiveNoticeHtml(index.html:8918-8940, logic.js:738 yearArchiveOverlap 사용, cycle399). 지출/수입 분석 시트만 이 안내 패턴에서 빠져 있다.",
+    "approach": "logic.js의 monthIsArchived(y,m,archivedThroughDate)(logic.js:727, 이미 존재·테스트됨)를 그대로 재사용한다. 1) openSpendAnalysis()와 openIncomeAnalysis() 시작부에 archivedThrough=DB.settings&&DB.settings.archivedThroughDate; isArchived=monthIsArchived(y,m,archivedThrough)를 추가한다(ledArchiveNoticeHtml과 동일 패턴, index.html:6467). 2) isArchived가 true면 두 함수 모두에서 (a) 총액 카드 바로 아래에 중립적 안내('이 달은 \"오래된 데이터 정리\"로 비워졌어요 · 자산 잔액은 보존돼요')를 삽입하되, 기존 ledArchiveNoticeHtml 호출부들의 동작은 그대로 보존한 채 공유 가능하게 만들 수 있다면 재사용(새 헬퍼를 만들거나 기존 함수를 그 자리에서 호출), 아니면 간단히 동일 문자열을 인라인으로 작성해도 된다. (b) '아직 쓴 게 없어요 👏'/'이대로만 가면 완벽해요'/'아직 들어온 수입이 없어요' 같은 칭찬·낙관적 문구는 isArchived일 때 노출하지 않고 안내문으로 대체한다(정말 안 쓴 달과 지워진 달을 구분). 3) 예산 카드(index.html:8985-8993)와 trend 배지(spendTrendBadge/incomeTrendBadge)는 archived 달과 비교하면 왜곡되므로 isArchived일 때 숨긴다(archiveNotice==='full' 분기가 이미 쓰는 패턴, index.html:8937-8940 참고). 4) test/run.js에 openSpendAnalysis/openIncomeAnalysis 관련 기존 테스트 패턴을 찾아 isArchived 분기 회귀 테스트 2~4건 추가(아카이브된 달은 칭찬 문구 대신 안내가 나오고, 비아카이브 달은 기존 동작 그대로인지). 범위 제외: openCatHistory/openIncomeCatHistory(전체내역 경로) 건드리지 않음, 이 두 시트 외 다른 화면에 안내 추가하지 않음, archiveTxnsBefore/archivedThroughDate 자체 로직 변경 안 함, 지워진 지출/수입 금액을 추정·복원하지 않음(중립 안내만), 기존 ledArchiveNoticeHtml 호출부(가계부/빠른보기/연간리뷰)의 기존 동작은 그대로 보존, budgetForMonthWithCarry/budgetCarryFor(index.html:8686-8687)의 전월 아카이브 가드는 건드리지 않음."
+  },
   "history": [
-    {
-      "cycle": 401,
-      "phase": "critique",
-      "timestamp": "2026-11-25T09:15:00.000Z",
-      "summary": "세션 시작 시 또 로컬 HEAD가 detached였고(main 로컬 ref가 51c4fcd(cycle394 review)에 정체, origin/main은 이미 HEAD(8b99ea5, cycle401 review)까지 최신) git branch -f main HEAD && git checkout main으로 복구(원인 계속 불명, 데이터 손실 없음). general-purpose 서브에이전트에게 cycle340-401 전체 배제 목록(키보드/스크린리더/명암비 접근성 전체, 데이터 클램프, txMemo/rMemo/split메모 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, owner별 예산 오버라이드, 연간 결산 아카이브 겹침 인지, 문의하기 twGuard, toggleRecActive/toggleAdjustSurplus twGuard, confirmSheet 더블탭 가드, 모놀리식 구조개편/렌더성능/CSV완성도/가상화/통화·세무리포트·부채상환엔지니어링/클라우드 병합 재설계/esc() XSS/OS알림/할부기능 등 기각 항목)를 주고 전략적 재검토시킴. owner-aware budgetOver 홈알림(cycle398 critique가 이미 범위 제외로 명시), 반복거래 빈도 커버리지(yearly/weekly/biweekly/daily 전부 이미 지원 확인), mergeAssetInto/doRenameCat 캐스케이드(이미 txns/recurrences/goals/maturityTargetId/budgetHistory/ownerBudgets/tombstones/undo까지 포괄적으로 처리됨 확인) 세 후보를 검토 후 기각하고, openAssetQtyLog()(index.html:7576)/delAssetQtyLog()(index.html:7593)가 DB.assetQtyLog의 유일한 쓰기 경로인데 삭제만 있고 수정이 없어(grep으로 editAssetQtyLog 전무 확인) 오타가 생기면 realizedGain이 영구히 틀리거나(yearRealizedGain 집계 오염) 되돌릴 수 없는 이력 구멍이 되는 공백을 발견. pending_advance_plan에 editAssetQtyLog(id) 신설(date/addedAmount/saleProceeds만 수정 가능, prevQty/newQty/field는 읽기전용) + touchSave 기반 undo + realizedGain 보존 재계산 + 테스트 4건 계획 저장. node test/run.js 3982/3982 통과 확인(서브에이전트가 코드 변경 전 베이스라인으로 확인). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 401,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-26T04:00:00.000Z",
       "summary": "develop(cycle406) 커밋 6b250df(saveInquiryEdit에 undoToast 추가)를 검토. undoToast() 정의(index.html:13607, 6초 타이머+마우스hover/focus로 일시정지, 클릭 시 1회성 undoFn 실행)와 기존 \"수정 경로\" undo 패턴인 doRenameOwner/doRenameCat(단일 필드만 캡처해 그대로 되돌리는 가벼운 패턴)을 대조해, 이번 diff가 동일한 구조(prevText 캡처 -> touchSave -> closeSheet/openInquiryList -> undoToast 콜백에서 q.text=prevText;touchSave(q);openInquiryList())를 그대로 따르는지 확인. 되돌리기 콜백이 q 참조(find()로 찾은 동일 객체)를 그대로 재사용하는 점도 doRenameOwner와 동일한 전제(6초 내 해당 inquiry가 다른 경로로 삭제되는 경쟁 상황은 기존 패턴에도 이미 존재하는 공통 전제라 이번 diff가 새로 만든 문제는 아님)라 추가 수정 불필요로 판단. 저장이 막히는 경로(내용 비움)에서 undoToast가 호출되지 않는 케이스도 테스트로 커버됨을 확인. node test/run.js 4039/4039 전부 통과. node --check(sw.js/logic.js/test/run.js) 통과. index.html에서 HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script()로 파싱 통과. APP_VERSION 1.47.546/sw.js CACHE v813 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 406,
+      "phase": "critique",
+      "timestamp": "2026-11-26T05:00:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle340-406 전체 배제 목록(twGuard 감사 전체, confirmSheet 더블탭 가드, assetQtyLog edit, planTransfer/planSplitTransfer undo, auth_expired 분류, goal moveGoal, 부채 상환 debtAmortSuffix, 가계부 아카이브 인지(cycle404), 예산 CSV ownerBudgets 포함, 백업 복원 미리보기, 문의하기 메모수정 undo(cycle406), 접근성/데이터클램프/메모자동완성/전역에러배너/seenAt정체/연간결산아카이브/CSV import v1한계/공유계정인증재설계/렌더성능/CDN SRI/모놀리식구조개편/다중통화/세무리포트/부채엔지니어링/클라우드병합재설계/esc XSS/OS알림/할부기능/태그시스템/반복거래순서변경/카테고리일괄merge 등 기각 항목, 그리고 cycle404/405가 명시적으로 범위 제외하며 '아직 열려있는 후보'로 남긴 항목들: openSpendAnalysis/openIncomeAnalysis 아카이브 안내·캘린더셀 시각스타일링·월네비게이션 경계제한·archiveMonthPicked 문구변경·전체내역검색 날짜범위·반복거래 일괄순서변경·목표 다중선택 일괄순서변경·goal.order 백필·자동토큰갱신·인증아키텍처변경·카카오경로변경·클라우드merge화면·부분복원·구버전백업시각역산)를 주고 전략적 재검토시킴. 캘린더 셀 시각 스타일링(순수 코스메틱, 오해를 유발하지 않아 덜 급함), 반복거래/목표 일괄 순서변경(이미 단건 reorder 있어 편의 기능일 뿐 잘못된 데이터 표시 없음) 두 후보를 검토 후 기각하고, openSpendAnalysis(index.html:8943-8996)/openIncomeAnalysis(index.html:7780-7800)가 ST.ledger.y/m 기준으로 spendByCategory/incomeByCategory를 보여주는데, '오래된 데이터 정리'(archiveTxnsBefore)로 그 달 거래가 영구 삭제되면 그냥 빈 rows=[]를 반환해 화면이 칭찬성 빈 상태 문구('아직 쓴 게 없어요 👏 · 이대로만 가면 완벽해요', index.html:8980 / '아직 들어온 수입이 없어요', index.html:7793)를 보여줘 사용자가 실제로는 지워진 과거 달을 '그 달에 한 푼도 안 썼다/못 벌었다'로 오해하게 되는 공백을 최우선으로 선정 — 날짜별 빠른보기(index.html:6450-6451), 가계부 월별 화면 ledArchiveNoticeHtml(index.html:6467-6468, cycle404), 연간 리뷰 archiveNoticeHtml(index.html:8918-8940, cycle399) 세 곳에서 이미 해결한 것과 동일한 문제 클래스이며, cycle404/405가 명시적으로 범위 밖으로 미뤄둔 후보였다. pending_advance_plan에 monthIsArchived(logic.js:727, 기존 함수 재사용) 기반 안내 카드 삽입 + 칭찬 문구 억제 + 예산/트렌드 배지 숨김 + 테스트 2~4건 계획 저장(전체내역·다른 화면 확장·아카이브 로직 자체 변경·금액 추정은 범위 제외로 명시). node test/run.js 4039/4039 통과 확인(서브에이전트가 코드 변경 전 베이스라인으로 확인, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
