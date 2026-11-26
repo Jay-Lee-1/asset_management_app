@@ -1,22 +1,8 @@
 {
   "cycle": 408,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 403,
-      "phase": "develop",
-      "timestamp": "2026-11-25T15:12:38.000Z",
-      "summary": "general-purpose 서브에이전트에게 위임해 twGuard 감사를 예산(budget) 기능까지 확장. openSpendAnalysis → openBudgetPrompt(예산 설정 시트)는 다른 가드된 화면들(owner/category/goal/inquiry 등)과 마찬가지로 튜토리얼 중에도 그대로 열리는데, 정작 저장/삭제 경로인 saveBudget(idx)/delBudget(idx)에는 twGuard가 없어 튜토리얼 중 예산을 설정·삭제하면 DB.budgetHistory/DB.ownerBudgets에 실제로 영구 저장되던 공백을 발견(addOwner/delOwner/doRenameOwner(cycle308), addCat류(cycle309), saveGoal/delGoal(cycle307), sendInquiry/delInquiry/saveInquiryEdit(cycle400)과 동일한 버그 클래스). index.html의 saveBudget/delBudget 함수 시작부에 `if(twGuard())return;` 한 줄씩 추가(설명 주석 포함). test/run.js에 기존 undo 테스트 바로 뒤 twGuard 회귀 테스트 2건 추가(TWi=0으로 저장/삭제가 막히고 undoToast도 호출되지 않음을 확인 후 TWi=-1 복원). 오케스트레이터가 diff를 직접 리뷰하고 node test/run.js 재실행(4001->4003/4003 통과), node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과를 재확인한 뒤 커밋. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.539->1.47.540, sw.js CACHE v806->v807.",
-      "commit": null
-    },
-    {
-      "cycle": 403,
-      "phase": "review",
-      "timestamp": "2026-11-25T16:05:00.000Z",
-      "summary": "develop(cycle403) 커밋 804f636(saveBudget/delBudget에 누락된 twGuard 추가)를 검토. twGuard() 정의(index.html:9840, twActive()가 아니면 toast+true)와 호출 패턴을 addOwner/saveGoal/sendInquiry 등 기존 twGuard 감사 사이클들과 대조해 이번 diff도 동일하게 함수 맨 앞에서 early return해 DB.budgetHistory/DB.ownerBudgets 변경·undoToast 호출 전에 막는 위치임을 확인. saveBudget/delBudget 둘 다 existing/prevAmount 계산과 setBudgetFrom(Owner) 호출, undoToast 등록이 모두 twGuard 통과 이후에만 일어나 가드가 기존 되돌리기 로직과 충돌하지 않음을 확인. 추가된 테스트 2건(TWi=0으로 저장/삭제가 budgetForMonth 값을 바꾸지 못하고 lastUndo도 null로 남는지 확인 후 TWi=-1 복원)이 올바른 대상(budgetForMonth 결과)과 부작용(undoToast 미호출) 둘 다 검증하는지 확인. node test/run.js 재실행 4003/4003 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과, APP_VERSION 1.47.540/sw.js CACHE v807 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 403,
       "phase": "critique",
@@ -141,6 +127,20 @@
       "phase": "advance",
       "timestamp": "2026-11-26T10:11:57.472Z",
       "summary": "critique(cycle407)의 계획대로 지출/수입 분석 시트(openSpendAnalysis/openIncomeAnalysis)에 월 이동(◀/▶) 네비게이션을 추가해, 바로 옆 연간 결산(openYearReview)은 이미 연도 전환을 지원하는데 이 두 시트만 제목이 고정 텍스트라 다른 달을 보려면 시트를 닫고 가계부 탭에서 달을 넘긴 뒤 재진입해야 했던 비일관성을 해소했다. index.html에 공유 헬퍼 analysisMonthStep(kind,delta)/analysisMonthSwitcher(kind)를 신설(두 함수 사이, openIncomeAnalysis 바로 위) — analysisMonthStep은 monthStep('ledger',delta)와 동일하게 new Date(ST.ledger.y,ST.ledger.m-1+delta,1) 롤오버로 연말/연초를 넘기고 keepDayIn(y,m,ST.ledger.sel)로 ST.ledger.sel도 함께 보정한 뒤 kind==='spend'면 openSpendAnalysis(), 아니면 openIncomeAnalysis()를 다시 호출해 시트를 재오픈한다(spendOwnerSel/incomeOwnerSel과 동일한 '상태만 바꾸고 시트를 통째로 다시 연다' 패턴). analysisMonthSwitcher는 openYearReview의 연도 switcher와 동일 마크업(카드+◀/▶ act-btn+가운데 라벨)으로 '년 월' 월 switcher를 그리고, 인접 달 라벨(aria-label)도 연말/연초 롤오버를 반영해 계산한다. openSpendAnalysis/openIncomeAnalysis의 <h3> 바로 아래(ownerSegHtml 위)에 각각 analysisMonthSwitcher('spend')/analysisMonthSwitcher('income')을 삽입. 아카이브된 달(monthIsArchived)로 이동해도 기존 isArchived 분기가 그대로 동작해 별도 처리가 필요 없었다. test/run.js FUNCTIONS에 keepDayIn/analysisMonthStep/analysisMonthSwitcher 등록(기존엔 keepDayIn도 FUNCTIONS에 없었음) + 전용 격리 ctx(analysisMonthStepCtx, openSpendAnalysis/openIncomeAnalysis를 호출-기록 스파이로 교체)로 analysisMonthStep 자체의 월 롤오버(12월+1→익년1월, 1월-1→전년12월)·keepDayIn 일자 클램프(1월31일+1→2월28일)·kind별 호출 분리·ST.ledger 외 다른 상태(ST.hist/ST.spendOwner) 불변을 검증하는 테스트 3건, 기존 spendAnalysisCtx/incomeAnalysisCtx로 switcher 마크업의 onclick/aria-label/가운데 라벨(연말·연초 경계 포함)을 검증하는 실행형 테스트 1건, 총 4건 추가. node test/run.js 4050->4054/4054 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.547->1.47.548, sw.js CACHE v814->v815. 범위 제외(계획대로): 날짜 직접 선택(연/월 휠 피커), ST.ledger.sel과 가계부 탭 간 복잡한 동기화 규칙. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 408,
+      "phase": "develop",
+      "timestamp": "2026-11-26T11:19:37.000Z",
+      "summary": "(이전 develop 실행이 history append를 빠뜨려 이번 review 사이클에서 커밋 b306687 기준으로 사후 기록) toggleRecActive/doBulkRecActive(반복거래 단건/일괄 일시중지·재시작 토글)가 _autoDeactivatedByAssetDelete/_autoDeactivatedByCatDelete 플래그를 지운 적이 없던 버그를 발견해 수정. relinkDeletedAsset/restoreTrashAsset/restoreTrashCat/catsTrashBody는 모두 '수동으로 토글된 반복거래는 이 플래그가 없다'는 전제로 자산/카테고리 복구 시 자동 재활성화 여부를 판정하는데, 실제로는 플래그가 안 지워져 사용자가 자발적으로 멈춰둔 반복거래를 복구 시 조용히 다시 켜버렸다. 두 토글 함수에서 active를 바꾼 직후 두 플래그를 무조건 삭제하도록 수정, doBulkRecActive의 undo 콜백은 지워진 플래그까지 원래값으로 복원하도록 확장. 회귀 테스트 4건 추가. node test/run.js 4054->4058/4058 통과. APP_VERSION 1.47.548->1.47.549, sw.js CACHE v815->v816.",
+      "commit": "b306687"
+    },
+    {
+      "cycle": 408,
+      "phase": "review",
+      "timestamp": "2026-11-26T11:45:00.000Z",
+      "summary": "develop(cycle408) 커밋 b306687(toggleRecActive/doBulkRecActive에 누락된 _autoDeactivatedByAssetDelete/_autoDeactivatedByCatDelete 플래그 삭제 추가)를 검토. relinkDeletedAsset(index.html:5230-5250)·restoreTrashAsset(13985-13991)·catsTrashBody/restoreTrashCat(9339-9402, 14161-14213) 실제 호출부를 grep으로 모두 대조해, diff가 전제한 '이 복구 경로들은 두 플래그의 부재로 자동/수동 비활성화를 구분한다'는 가정이 정확함을 확인. toggleRecActive는 토글 방향과 무관하게 매번 두 플래그를 지우고, doBulkRecActive는 지우기 전 값(active+두 플래그)을 prev에 캡처해 undo 콜백이 플래그까지 원래대로 복원하는 것도 코드로 확인. 추가된 테스트 6건(단건 토글 2건: 재시작/재중지 모두 플래그 제거·평범한 레코드는 플래그 안 생김, 일괄 토글 3건: 재시작+재중지 플래그 제거/undo, 평범한 레코드 undo 회귀 1건)이 토글 방향·undo·플래그 없는 레코드 케이스를 모두 커버하는지 확인. node test/run.js 재실행 4058/4058 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과, APP_VERSION 1.47.549/sw.js CACHE v816 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
