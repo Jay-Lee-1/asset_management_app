@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.551';
+const APP_VERSION='1.47.552';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -3974,19 +3974,16 @@ function allocHistPeekEnd(){
  * 설정 전 기본 상태) 완전히 숨긴다(allocationHistoryCard의 owner!=='all'→'' 과 동일한 조기 반환 관례).
  * allocationHistoryCard와 같은 이유로 owner='all'일 때만 보여준다 — 목표 자체가 가구 전체 기준으로
  * 설정되는 단일 값이라 귀속별로 쪼갤 근거가 없다. */
-function targetAllocationCard(owner){
- owner=owner||'all';
- const targetMap=DB.settings.targetAllocation||{};
- if(owner!=='all'||!Object.keys(targetMap).length)return '';
- const items=DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt');
- const byType={};
- items.forEach(a=>{const v=assetEval(a);byType[a.type]=(byType[a.type]||0)+(v>0?v:0)});
+/* drift 한 유형당 한 행(지금%/목표%, rateUnknown이면 "미확인" 캡션, 아니면 매수/매도 안내)을 그리는
+ * 공유 헬퍼 — targetAllocationCard()와 openAllocationDriftSheet()(app-evolve cycle409 advance)가
+ * 똑같은 마크업을 쓴다. byType/targetMap/unknownTypes는 둘 다 자기 호출부(owner='all' 필터링,
+ * assetEval/rateUnknown 평가)에서 이미 계산해 넘긴다 — 여기선 allocationDrift(순수 함수) 결과를
+ * 보여주는 것만 맡는다. */
+function allocationDriftRowsHtml(byType,targetMap,unknownTypes){
  const total=Object.keys(byType).reduce((s,t)=>s+byType[t],0);
- const unknownTypes=[...new Set(items.filter(rateUnknown).map(a=>a.type))];
  const drift=allocationDrift(byType,targetMap,unknownTypes);
- if(!drift.length)return '';
  const THRESH=1; /* 1%p 미만 차이는 반올림 잡음과 구분 안 돼 '목표에 가까워요'로 묶는다(allocationCard trendCaption의 1%p 컷과 동일 기준) */
- const rows=drift.map(x=>{
+ return drift.map(x=>{
   const label=esc(ASSET_TYPES[x.type].label);
   const dot=`<span class="eb-dot" style="background:${TYPE_COLOR[x.type]}"></span>`;
   if(x.actualPct==null){
@@ -4001,8 +3998,38 @@ function targetAllocationCard(owner){
     <div style="font-size:12.5px;color:${near?'var(--text-3)':'var(--text-2)'};padding-left:18px;margin-top:1px">${actionText}</div>
   </div>`;
  }).join('');
+}
+function targetAllocationCard(owner){
+ owner=owner||'all';
+ const targetMap=DB.settings.targetAllocation||{};
+ if(owner!=='all'||!Object.keys(targetMap).length)return '';
+ const items=DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt');
+ const byType={};
+ items.forEach(a=>{const v=assetEval(a);byType[a.type]=(byType[a.type]||0)+(v>0?v:0)});
+ const unknownTypes=[...new Set(items.filter(rateUnknown).map(a=>a.type))];
+ if(!allocationDrift(byType,targetMap,unknownTypes).length)return '';
+ const rows=allocationDriftRowsHtml(byType,targetMap,unknownTypes);
  return `<div class="section-title">목표 자산배분 <span class="link" role="button" tabindex="0" aria-label="목표 비중 설정" onclick="openTargetAllocationForm()" onkeydown="rowKeydown(event,()=>openTargetAllocationForm())">설정 ${svg('chev')}</span></div>
    <div class="card eb-card"><div class="eb-list">${rows}</div></div>`;
+}
+/* 홈 알림 카드의 allocationDrift/allocationDriftMulti(homeAlertCard, 13600행대)가 그동안 드리프트
+ * 상세(지금%/목표%, 매수매도 금액) 없이 바로 %편집기(openTargetAllocationForm)로 연결되던 비대칭을
+ * 고친다(app-evolve cycle409 advance, cycle408이 goal/debt Multi 카드에서 고친 것과 같은 클래스이나
+ * 당시 감사 범위 밖이었던 자산배분 알림에서 cycle409 critique가 새로 발견). homeAlerts()(13246행대)와
+ * targetAllocationCard()와 똑같이 byType/unknownTypes를 다시 계산해 allocationDriftRowsHtml로 실제
+ * 상세를 먼저 보여주고, 목표% 수정은 버튼으로 한 단계 더 들어가게 한다(openSpendAnalysisThisMonth가
+ * 분석 화면을 먼저 보여주고 예산 수정은 별도 진입점인 것과 같은 "먼저 보기, 수정은 한 단계 더" 패턴). */
+function openAllocationDriftSheet(){
+ const targetMap=DB.settings.targetAllocation||{};
+ if(!Object.keys(targetMap).length){openTargetAllocationForm();return} /* 방어적 가드: 이 알림은 목표가 설정돼 있을 때만 뜨므로 실제로는 도달하지 않음 */
+ const items=DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt');
+ const byType={};
+ items.forEach(a=>{const v=assetEval(a);byType[a.type]=(byType[a.type]||0)+(v>0?v:0)});
+ const unknownTypes=[...new Set(items.filter(rateUnknown).map(a=>a.type))];
+ const rows=allocationDriftRowsHtml(byType,targetMap,unknownTypes);
+ openSheet(`<h3>목표 비중과 차이</h3><div class="desc">지금 비중과 목표 비중이 얼마나 차이 나는지, 맞추려면 얼마가 필요한지 보여드려요.</div>
+  <div class="card eb-card"><div class="eb-list">${rows||'<div class="mini" style="padding:4px 0">목표를 세운 유형이 없어요</div>'}</div></div>
+  <button class="btn btn-soft" style="margin-top:14px;width:100%" onclick="openTargetAllocationForm()">목표 비중 수정</button>`);
 }
 let targetAllocDraft=null;
 /* 목표 비중 설정 시트 — ASSET_TYPES(debt 제외) 각각에 % 입력 칸을 두고, splitHintUpdate(분할 거래 합계
@@ -13630,12 +13657,12 @@ function homeAlertCard(al){
    <div class="ha-b"><div class="ha-t">부채를 다 갚았어요 🎉 ${al.count}건</div>
      <div class="ha-s">눌러서 한 번에 확인</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
- if(al.kind==='allocationDrift')return `<button class="home-alert mat" onclick="openTargetAllocationForm()">
+ if(al.kind==='allocationDrift')return `<button class="home-alert mat" onclick="openAllocationDriftSheet()">
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b"><div class="ha-t">${esc(ASSET_TYPES[al.type].label)} 비중이 목표와 많이 달라요</div>
      <div class="ha-s">지금 ${al.actualPct.toFixed(1)}% · 목표 ${al.targetPct}% · 눌러서 확인하세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
- if(al.kind==='allocationDriftMulti')return `<button class="home-alert mat" onclick="openTargetAllocationForm()">
+ if(al.kind==='allocationDriftMulti')return `<button class="home-alert mat" onclick="openAllocationDriftSheet()">
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b"><div class="ha-t">목표 비중과 차이가 큰 유형 ${al.count}개</div>
      <div class="ha-s">눌러서 확인하세요</div></div>

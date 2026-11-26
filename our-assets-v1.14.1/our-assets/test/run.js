@@ -367,6 +367,11 @@ const FUNCTIONS = [
   // 항상 함께 참조하므로(allocationCard/investGainLossCard와 같은 이유) FUNCTIONS에 반드시 함께
   // 올라가야 한다. openTargetAllocationForm 이하는 그 설정 시트 전체(열기/렌더/입력/저장/끄기).
   'targetAllocationCard', 'refreshTargetAllocationCard', 'openTargetAllocationForm', 'renderTargetAllocationForm', 'targetAllocSumPct', 'taSumLabel', 'taHintUpdate', 'taPctInput', 'saveTargetAllocation', 'clearTargetAllocation',
+  // allocationDriftRowsHtml/openAllocationDriftSheet(app-evolve cycle409 advance)는 targetAllocationCard가
+  // 쓰던 drift 행 마크업을 공유 헬퍼로 분리하고, 홈 알림(allocationDrift/allocationDriftMulti)이 그걸로
+  // 상세 시트를 열게 한 것 — targetAllocationCard와 homeAlertCard 양쪽이 함께 참조하므로 그 둘과 같은
+  // sandbox에 반드시 함께 올라가야 한다.
+  'allocationDriftRowsHtml', 'openAllocationDriftSheet',
   'openOwnerMergePicker', 'confirmOwnerMerge', 'mergeOwnerInto',
   // ownerSegHtml(app-evolve cycle255 advance)은 spendOwnerSel/incomeOwnerSel/histOwnerSel/
   // yearOwnerSel/goalOwnerSel 5곳이 각자 베껴 쓰던 귀속 선택 세그먼트 마크업을 모은 공유 헬퍼 —
@@ -30987,11 +30992,55 @@ test('notifyAlertInfo: allocationDrift(Multi)는 월+5%p 단위로 반올림한 
   assert.ok(multi.key.includes('2026-06') && multi.key.includes('2'));
   assert.strictEqual(multi.group, 'alloc');
 });
-test('homeAlertCard: allocationDrift(Multi)는 openTargetAllocationForm()으로 연결된다', () => {
+test('homeAlertCard: allocationDrift(Multi)는 openAllocationDriftSheet()로 연결된다(app-evolve cycle409 — 드리프트 상세 없이 바로 %편집기로 가던 비대칭 수정)', () => {
   const single = sandbox.homeAlertCard({ kind: 'allocationDrift', type: 'stock', actualPct: 70, targetPct: 50, diffPct: 20 });
-  assert.ok(single.includes("onclick=\"openTargetAllocationForm()\""));
+  assert.ok(single.includes("onclick=\"openAllocationDriftSheet()\""));
   const multi = sandbox.homeAlertCard({ kind: 'allocationDriftMulti', count: 2 });
-  assert.ok(multi.includes("onclick=\"openTargetAllocationForm()\""));
+  assert.ok(multi.includes("onclick=\"openAllocationDriftSheet()\""));
+});
+/* ---------- allocationDriftRowsHtml/openAllocationDriftSheet(app-evolve cycle409 advance) ----------
+ * targetAllocationCard가 쓰던 drift 행 마크업을 공유 헬퍼로 분리하고, 홈 알림의 allocationDrift/
+ * allocationDriftMulti가 openTargetAllocationForm(순수 %편집기) 대신 이 시트로 먼저 연결되게 한다. ---------- */
+test('allocationDriftRowsHtml: targetAllocationCard와 동일한 행 마크업(지금%/목표%, 매수매도 금액, 미확인 캡션)을 돌려준다', () => {
+  const html = sandbox.allocationDriftRowsHtml({ cash: 30000, stock: 70000 }, { cash: 50, stock: 50 }, []);
+  assert.ok(html.includes('현금예금') && html.includes('주식'));
+  assert.ok(html.includes('매도'), 'stock(70%)은 목표(50%)보다 넘치므로 매도 문구가 있어야 함');
+  assert.ok(html.includes('매수'), 'cash(30%)는 목표보다 모자라므로 매수 문구가 있어야 함');
+});
+test('allocationDriftRowsHtml: rateUnknown인 유형은 숫자 대신 "미확인" 캡션을 보여준다(0으로 단정하지 않음)', () => {
+  const html = sandbox.allocationDriftRowsHtml({ cash: 50000, stock: 0 }, { cash: 50, stock: 50 }, ['stock']);
+  assert.ok(html.includes('시세 미확인'), 'stock은 unknownTypes에 있으므로 숫자 대신 미확인 캡션');
+  assert.ok(html.includes('현금예금') && html.includes('매도'), 'cash는 분모에서 stock의 0이 빠져 100%가 되어 목표(50%)보다 넘치므로 매도 문구가 있어야 함');
+});
+test('openAllocationDriftSheet: targetAllocation이 비어있으면(방어적 가드, 알림은 목표가 있을 때만 뜨므로 실제로는 도달하지 않음) 시트 대신 바로 %편집기를 연다', () => {
+  sandbox.DB = { settings: { targetAllocation: {} }, assets: [] };
+  sandbox.lastSheetHtml = null;
+  let openedForm = false;
+  const orig = sandbox.openTargetAllocationForm;
+  sandbox.openTargetAllocationForm = () => { openedForm = true; };
+  sandbox.openAllocationDriftSheet();
+  sandbox.openTargetAllocationForm = orig;
+  assert.strictEqual(openedForm, true);
+  assert.strictEqual(sandbox.lastSheetHtml, null, '시트를 열면 안 됨');
+});
+test('openAllocationDriftSheet: 목표가 설정돼 있으면 실제 지금%/목표%/매수매도 안내가 담긴 시트를 열고, 목표% 수정 버튼은 openTargetAllocationForm을 가리킨다', () => {
+  sandbox.DB = {
+    settings: { targetAllocation: { cash: 50, stock: 50 } },
+    assets: [
+      { id: 'a1', name: '통장', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 300000 },
+      { id: 'a2', name: '주식', owner: '나', type: 'stock', includeInTotal: true, stockQty: 1, stockCode: 'X' },
+    ],
+    rates: { stocks: { X: 700000 }, fx: {}, crypto: {} },
+    txns: [], recurrences: [],
+  };
+  sandbox._balCache.clear();
+  sandbox.lastSheetHtml = null;
+  sandbox.openAllocationDriftSheet();
+  assert.ok(sandbox.lastSheetHtml, '시트가 열려야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('목표 비중과 차이'));
+  assert.ok(sandbox.lastSheetHtml.includes('현금예금') && sandbox.lastSheetHtml.includes('주식'));
+  assert.ok(sandbox.lastSheetHtml.includes('매도') && sandbox.lastSheetHtml.includes('매수'), 'cash는 모자라고 stock은 넘치므로 매수/매도 안내가 둘 다 있어야 함');
+  assert.ok(sandbox.lastSheetHtml.includes("onclick=\"openTargetAllocationForm()\""), '목표% 수정은 %편집기로 한 단계 더 들어가야 함');
 });
 
 /* ---------- homeAlerts()/notifyAlertInfo()/homeAlertCard()의 settleDue(정산 알림) 통합 ----------
