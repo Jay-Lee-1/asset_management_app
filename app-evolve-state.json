@@ -1,19 +1,8 @@
 {
-  "cycle": 407,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "openSpendAnalysis/openIncomeAnalysis 시트에 월 이동(◀/▶) 네비게이션 추가",
-    "why": "지출/수입 분석 시트는 현재 ST.ledger.y/m을 그대로 읽어 그 달만 보여주고, 시트 안에서 달을 바꿀 방법이 없다(제목이 고정 텍스트). 사용자가 다른 달의 분석을 보려면 시트를 닫고 가계부 탭에서 달을 넘긴 뒤 다시 '지출 분석'/'수입 분석'을 눌러 재진입해야 한다. 바로 옆의 openYearReview(연간 결산)는 이미 ◀/▶ act-btn + openYearReview(y±1) 재호출로 연도 전환을 지원하는데(index.html:8886-8890), 지출/수입 분석만 같은 패턴이 빠져 있는 비일관성이자 실제 사용 흐름에서 매번 걸리는 불편이다.",
-    "approach": "index.html의 openSpendAnalysis()(약 8956번째 줄)와 openIncomeAnalysis()(약 7780번째 줄) 두 함수에, openYearReview의 연도 switcher 카드와 동일한 마크업 패턴(`<div class=\"card\" style=\"display:flex;align-items:center;justify-content:center;gap:18px;padding:10px;margin-bottom:12px\">`에 ◀/▶ act-btn + 가운데 라벨)을 가져와 '${y}년 ${m}월' 월 switcher를 제목 바로 아래에 추가한다. 버튼은 신설하는 작은 헬퍼 함수(예: spendAnalysisStep(delta)/incomeAnalysisStep(delta), 또는 monthStep과 동일하게 `new Date(y,m-1+delta,1)` 롤오버 계산을 공유하는 단일 헬퍼)를 호출해 ST.ledger.y/m을 갱신한 뒤(keepDayIn(y,m,ST.ledger.sel)로 ST.ledger.sel도 함께 보정해 월 네비 기존 관례(monthStep/ymApplyWheel)와 맞춘다) 같은 open*Analysis() 함수를 다시 호출해 시트를 재렌더한다 — spendOwnerSel/incomeOwnerSel이 이미 쓰는 '상태만 바꾸고 시트를 통째로 다시 연다' 패턴 그대로다. 아카이브된 달(monthIsArchived)로 넘어가도 기존 isArchived 분기가 그대로 동작하므로 별도 처리 불필요. 테스트는 test/run.js의 openYearReview 연도 전환 테스트들(13821번째 줄 부근)과 openSpendAnalysis/openIncomeAnalysis 기존 ctx 패턴(spendAnalysisCtx/incomeAnalysisCtx, ctx.ST={ledger:{y,m},spendOwner}, ctx.lastSheetHtml)을 그대로 따라 추가한다: (1) ◀/▶ 클릭 시 ST.ledger.y/m이 올바르게 ±1월 이동(연말/연초 롤오버 포함)하는지, (2) 재호출된 시트 HTML에 바뀐 월의 데이터(카테고리 합계)가 반영되는지, (3) ST.hist 등 다른 상태를 건드리지 않는지. 범위 제외: ST.ledger.sel 보정이 과도하게 복잡해지면(예: 가계부 탭과의 동기화 세부 규칙) 최소한으로만 맞추고, 날짜 직접 선택(연/월 휠 피커) 추가는 이번 cycle에서 하지 않는다 — ◀/▶ 1개월씩 이동만으로 충분히 가치 있고 범위가 작다; openYearReview의 연도 전환과 달리 수년 단위로 멀리 이동할 일이 적어 휠 피커까지는 불필요하다."
-  },
+  "cycle": 408,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 402,
-      "phase": "advance",
-      "timestamp": "2026-11-25T14:11:24.228Z",
-      "summary": "critique(cycle402)의 계획대로 Supabase 클라우드 동기화 에러 분류에 auth_expired(인증 만료)를 추가해, 세션이 만료/revoke된 사용자가 '인터넷 연결을 확인해 주세요'만 반복해서 보고 재로그인 경로를 못 찾던 공백을 메웠다. index.html:2143 isMissingTableError 바로 아래 isAuthExpiredError(e) 신설 — e.status===401 또는 e.code가 PGRST301/401/invalid_grant/refresh_token_not_found 중 하나, 또는 message+details+hint 합친 문자열에 jwt expired/invalid, invalid refresh token/grant, refresh_token_not_found, session expired/missing/not found, not authenticated, unauthorized 패턴 매칭(isRlsPolicyError/isMissingTableError와 동일한 null-safe 구조). CLOUD_SYNC_ERR_KIND에 'auth_expired' 추가, cloudSyncFailed()의 분류 순서를 isAuthExpiredError(e)?'auth_expired':isMissingTableError(e)?'missing_table':isRlsPolicyError(e)?'rls':'network'로 바꿔 auth_expired를 최우선 검사(죽은 세션이 RLS 메시지처럼 보여도 더 구체적인 쪽을 우선). toast 문구와 cloudSyncLabel()에 auth_expired 전용 문구('로그인이 만료됐어요 · 다시 로그인해 주세요' / '다시 로그인 필요') 추가, '인터넷 연결' 문구는 쓰지 않음. homeAlertCard()의 cloudSyncError 분기에 isAuthExpired 변수를 추가해 ha-s 안내 문구만 전용으로 바꾸고, onclick은 새 CTA를 만들지 않고 기존 openAccountSheet()를 그대로 재사용(이메일 클라우드 계정이면 이미 로그아웃 버튼이 있어 재로그인 경로로 충분, rls/missing_table과 달리 안내 SQL이 필요하지 않으므로 openHelpCloud()로는 보내지 않음). pushCloud/pullCloud 등 catch(e){cloudSyncFailed(e)} 호출부는 이미 에러 객체를 그대로 넘기고 있어 변경 불필요(계획대로). test/run.js에 isAuthExpiredError 순수 함수 테스트 1건(양성 6케이스+음성 3케이스+null/undefined), FUNCTIONS 목록에 isAuthExpiredError 등록, cloudSyncErrCtx에 extractFunction('isAuthExpiredError') 추가, 실행형 테스트 2건(auth_expired 분류+toast+label 전용 문구, 401이면서 RLS 메시지가 섞여도 auth_expired가 우선됨을 확인하는 분류 순서 가드), homeAlertCard 렌더 테스트 1건(auth_expired면 openAccountSheet()로 열리고 전용 문구가 보이며 '자동으로 다시 시도' 문구는 없음) 총 4건 추가. node test/run.js 3997->4001/4001 통과, node --check(sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. 범위 제외(계획대로): 자동 토큰 갱신 로직 추가 안 함, 인증 아키텍처 변경 안 함, 카카오 경로 안 건드림. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.538->1.47.539, sw.js CACHE v805->v806. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 403,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-26T10:00:00.000Z",
       "summary": "general-purpose 서브에이전트에게 위임해 openSpendAnalysis/openIncomeAnalysis의 월 네비게이션 부재, 전체내역 검색의 날짜범위 처리, archiveMonthPicked 문구, goal.order 백필, 구버전 백업 시각 역산, 부분/선택적 백업 복원·자동 토큰 갱신·인증 아키텍처 변경 등을 둘러보게 함. 전체내역 날짜범위(histPickDate)는 이미 from/to clamp가 잘 돼 있고, archiveMonthPicked 문구는 이미 명확하며, goal.order는 cycle407 develop 이전에 이미 moveGoal의 지연 부여 패턴으로 해결됐고, 구버전 백업 시각 역산은 backupSummary()가 '생성 시점 근사'라는 설계 의도를 주석으로 명시해둔 상태라 추가 작업 가치가 낮아 모두 기각. 백업 부분 복원·토큰 자동 갱신·인증 재설계는 한 cycle(advance)에서 안전하게 끝내기 힘든 과대 범위로 판단해 제외. 대신 선택한 것은 지출/수입 분석 시트의 월 이동 네비게이션 부재 — 바로 옆의 연간 결산 시트(openYearReview)는 이미 ◀/▶ 버튼으로 연도를 전환할 수 있는데(index.html:8886-8890), 지출/수입 분석 시트는 제목이 고정 텍스트일 뿐이라 다른 달을 보려면 시트를 닫고 가계부 탭에서 달을 넘긴 뒤 재진입해야 하는 비일관적이고 불편한 흐름이었음을 발견. openYearReview의 기존 switcher 마크업과 spendOwnerSel/incomeOwnerSel의 '상태 변경 후 시트 재오픈' 패턴을 그대로 재사용하면 안전하게 한 cycle 안에서 끝낼 수 있어 이번 advance 대상으로 선정(pending_advance_plan에 월 switcher 추가 + monthStep 공유 헬퍼 + ST.ledger.sel 보정 + 테스트 계획 저장, 날짜 직접 선택 휠 피커·ST.ledger.sel 복잡한 동기화는 범위 제외로 명시). node test/run.js 4050/4050 통과 확인(서브에이전트가 코드 변경 전 베이스라인으로 확인, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 407,
+      "phase": "advance",
+      "timestamp": "2026-11-26T10:11:57.472Z",
+      "summary": "critique(cycle407)의 계획대로 지출/수입 분석 시트(openSpendAnalysis/openIncomeAnalysis)에 월 이동(◀/▶) 네비게이션을 추가해, 바로 옆 연간 결산(openYearReview)은 이미 연도 전환을 지원하는데 이 두 시트만 제목이 고정 텍스트라 다른 달을 보려면 시트를 닫고 가계부 탭에서 달을 넘긴 뒤 재진입해야 했던 비일관성을 해소했다. index.html에 공유 헬퍼 analysisMonthStep(kind,delta)/analysisMonthSwitcher(kind)를 신설(두 함수 사이, openIncomeAnalysis 바로 위) — analysisMonthStep은 monthStep('ledger',delta)와 동일하게 new Date(ST.ledger.y,ST.ledger.m-1+delta,1) 롤오버로 연말/연초를 넘기고 keepDayIn(y,m,ST.ledger.sel)로 ST.ledger.sel도 함께 보정한 뒤 kind==='spend'면 openSpendAnalysis(), 아니면 openIncomeAnalysis()를 다시 호출해 시트를 재오픈한다(spendOwnerSel/incomeOwnerSel과 동일한 '상태만 바꾸고 시트를 통째로 다시 연다' 패턴). analysisMonthSwitcher는 openYearReview의 연도 switcher와 동일 마크업(카드+◀/▶ act-btn+가운데 라벨)으로 '년 월' 월 switcher를 그리고, 인접 달 라벨(aria-label)도 연말/연초 롤오버를 반영해 계산한다. openSpendAnalysis/openIncomeAnalysis의 <h3> 바로 아래(ownerSegHtml 위)에 각각 analysisMonthSwitcher('spend')/analysisMonthSwitcher('income')을 삽입. 아카이브된 달(monthIsArchived)로 이동해도 기존 isArchived 분기가 그대로 동작해 별도 처리가 필요 없었다. test/run.js FUNCTIONS에 keepDayIn/analysisMonthStep/analysisMonthSwitcher 등록(기존엔 keepDayIn도 FUNCTIONS에 없었음) + 전용 격리 ctx(analysisMonthStepCtx, openSpendAnalysis/openIncomeAnalysis를 호출-기록 스파이로 교체)로 analysisMonthStep 자체의 월 롤오버(12월+1→익년1월, 1월-1→전년12월)·keepDayIn 일자 클램프(1월31일+1→2월28일)·kind별 호출 분리·ST.ledger 외 다른 상태(ST.hist/ST.spendOwner) 불변을 검증하는 테스트 3건, 기존 spendAnalysisCtx/incomeAnalysisCtx로 switcher 마크업의 onclick/aria-label/가운데 라벨(연말·연초 경계 포함)을 검증하는 실행형 테스트 1건, 총 4건 추가. node test/run.js 4050->4054/4054 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.547->1.47.548, sw.js CACHE v814->v815. 범위 제외(계획대로): 날짜 직접 선택(연/월 휠 피커), ST.ledger.sel과 가계부 탭 간 복잡한 동기화 규칙. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

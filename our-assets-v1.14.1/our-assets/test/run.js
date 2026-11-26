@@ -369,6 +369,12 @@ const FUNCTIONS = [
   // 그 5곳을 부르는 openSpendAnalysis/openIncomeAnalysis/renderHistory/openYearReview/
   // renderGoalForm이 모두 이 함수를 호출하므로 FUNCTIONS에 반드시 함께 올라가야 한다.
   'ownerSegHtml',
+  // analysisMonthStep/analysisMonthSwitcher(app-evolve cycle407 advance)는 openSpendAnalysis/
+  // openIncomeAnalysis에 월 이동(◀/▶) 네비게이션을 추가하면서 신설한 공유 헬퍼 — 두 시트 중
+  // 하나를 extractFunction으로 단독 추출해도 analysisMonthSwitcher 호출부가 ReferenceError 없이
+  // 돌게 하려면 FUNCTIONS로 함께 올라가야 한다. keepDayIn은 monthStep('ledger',...)가 쓰는
+  // "달을 옮겨도 같은 일자 유지" 헬퍼를 그대로 재사용하므로 같이 올린다.
+  'keepDayIn', 'analysisMonthStep', 'analysisMonthSwitcher',
   // selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard는
   // app-evolve cycle219 develop(귀속 캐러셀이 자산 일괄선택 모드 중에도 계속 동작해, 전환 전
   // 선택해둔 id가 새 귀속에서 안 보이는 채로 ST.aSel.ids에 남는 버그) 검증용 — 넷 다
@@ -13813,6 +13819,75 @@ test('openSpendAnalysis/openIncomeAnalysis: archivedThroughDate가 없거나 안
   html = iCtx.lastSheetHtml;
   assert.ok(html.includes('class="trend"'), 'archivedThroughDate가 없으면 수입 분석도 트렌드 배지가 그대로 나와야 함');
   assert.ok(!html.includes('"오래된 데이터 정리"로 비워졌어요'), 'archivedThroughDate가 없으면 수입 분석도 아카이브 안내가 없어야 함');
+});
+
+/* ---------- analysisMonthStep/analysisMonthSwitcher: openYearReview의 ◀/▶ 연도 전환과 같은 목적으로
+ * openSpendAnalysis/openIncomeAnalysis에 월 이동 네비게이션을 추가(monthStep('ledger',delta)와 동일한
+ * new Date() 롤오버 + keepDayIn 일자 보정, app-evolve cycle407 critique/advance) ---------- */
+test('analysisMonthStep: delta=+1/-1이 연말/연초를 넘어 올바르게 롤오버되고, ST.ledger.sel은 keepDayIn으로 같은 일자(없으면 말일)를 유지한다', () => {
+  const ctx = analysisMonthStepCtx();
+  ctx.spendCalls = 0; ctx.incomeCalls = 0;
+  ctx.ST = { ledger: { y: 2026, m: 12, sel: '2026-12-31' } };
+  ctx.analysisMonthStep('spend', 1); // 12월 -> 다음해 1월(31일 그대로 유지, 1월도 31일까지 있음)
+  assert.strictEqual(ctx.ST.ledger.y, 2027, '12월에서 +1이면 연도가 넘어가야 함');
+  assert.strictEqual(ctx.ST.ledger.m, 1, '12월에서 +1이면 1월이어야 함');
+  assert.strictEqual(ctx.ST.ledger.sel, '2027-01-31', '1월도 31일까지 있어 일자가 그대로 유지돼야 함');
+
+  ctx.ST = { ledger: { y: 2026, m: 1, sel: '2026-01-31' } };
+  ctx.analysisMonthStep('income', -1); // 1월 -> 전년도 12월(31일 그대로 유지)
+  assert.strictEqual(ctx.ST.ledger.y, 2025, '1월에서 -1이면 연도가 내려가야 함');
+  assert.strictEqual(ctx.ST.ledger.m, 12, '1월에서 -1이면 12월이어야 함');
+  assert.strictEqual(ctx.ST.ledger.sel, '2025-12-31', '12월도 31일까지 있어 일자가 그대로 유지돼야 함');
+
+  ctx.ST = { ledger: { y: 2026, m: 1, sel: '2026-01-31' } };
+  ctx.analysisMonthStep('spend', 1); // 1월(31일) -> 2월(2026년은 평년, 28일까지) — 말일로 클램프
+  assert.strictEqual(ctx.ST.ledger.m, 2, '1월에서 +1이면 2월이어야 함');
+  assert.strictEqual(ctx.ST.ledger.sel, '2026-02-28', '2월엔 31일이 없어 그 달 말일(28일)로 클램프돼야 함');
+});
+test('analysisMonthStep: kind별로 openSpendAnalysis/openIncomeAnalysis 중 해당하는 쪽만 호출해 시트를 재오픈한다', () => {
+  const ctx = analysisMonthStepCtx();
+  ctx.spendCalls = 0; ctx.incomeCalls = 0;
+  ctx.ST = { ledger: { y: 2026, m: 6, sel: '2026-06-15' } };
+  ctx.analysisMonthStep('spend', 1);
+  assert.strictEqual(ctx.spendCalls, 1, "kind='spend'면 openSpendAnalysis가 호출돼야 함");
+  assert.strictEqual(ctx.incomeCalls, 0, "kind='spend'면 openIncomeAnalysis는 호출되면 안 됨");
+
+  ctx.spendCalls = 0; ctx.incomeCalls = 0;
+  ctx.ST = { ledger: { y: 2026, m: 6, sel: '2026-06-15' } };
+  ctx.analysisMonthStep('income', -1);
+  assert.strictEqual(ctx.incomeCalls, 1, "kind='income'이면 openIncomeAnalysis가 호출돼야 함");
+  assert.strictEqual(ctx.spendCalls, 0, "kind='income'이면 openSpendAnalysis는 호출되면 안 됨");
+});
+test('analysisMonthStep: ST.ledger 외의 다른 상태는 건드리지 않는다', () => {
+  const ctx = analysisMonthStepCtx();
+  const hist = { catExact: '식비', range: { from: '2026-01-01', to: '2026-01-31' } };
+  ctx.ST = { ledger: { y: 2026, m: 6, sel: '2026-06-15' }, hist, spendOwner: '엄마' };
+  ctx.analysisMonthStep('spend', 1);
+  assert.strictEqual(ctx.ST.hist, hist, 'ST.hist는 손대지 않고 그대로여야 함');
+  assert.strictEqual(ctx.ST.spendOwner, '엄마', 'ST.spendOwner(귀속 필터)는 손대지 않고 그대로여야 함');
+});
+test('openSpendAnalysis/openIncomeAnalysis: 제목 아래 월 switcher가 있고, ◀/▶가 analysisMonthStep을 호출하며 연말/연초 경계에서도 라벨이 올바른 인접 달을 보여준다', () => {
+  const sCtx = spendAnalysisCtx();
+  sCtx.DB = { owners: [], assets: [], recurrences: [], budgetHistory: {}, catBudgetRollover: {}, txns: [] };
+  sCtx.ST = { ledger: { y: 2026, m: 1 }, spendOwner: '전체' }; // 1월 경계 — 이전 달 라벨이 전년도 12월이어야 함
+  sCtx.lastSheetHtml = null;
+  sCtx.openSpendAnalysis();
+  let html = sCtx.lastSheetHtml;
+  assert.ok(html.includes('onclick="analysisMonthStep(\'spend\',-1)"'), '이전 달 버튼이 analysisMonthStep(\'spend\',-1)을 불러야 함');
+  assert.ok(html.includes('onclick="analysisMonthStep(\'spend\',1)"'), '다음 달 버튼이 analysisMonthStep(\'spend\',1)을 불러야 함');
+  assert.ok(html.includes('aria-label="2025년 12월 보기"'), '1월의 이전 달 라벨은 전년도 12월이어야 함(연초 롤오버)');
+  assert.ok(html.includes('aria-label="2026년 2월 보기"'), '1월의 다음 달 라벨은 2월이어야 함');
+  assert.ok(/<span[^>]*>2026년 1월<\/span>/.test(html), '가운데 라벨은 현재 보고 있는 2026년 1월이어야 함');
+
+  const iCtx = incomeAnalysisCtx();
+  iCtx.DB = { owners: [], assets: [], recurrences: [], txns: [] };
+  iCtx.ST = { ledger: { y: 2026, m: 12 }, spendOwner: '전체' }; // 12월 경계 — 다음 달 라벨이 다음해 1월이어야 함
+  iCtx.lastSheetHtml = null;
+  iCtx.openIncomeAnalysis();
+  html = iCtx.lastSheetHtml;
+  assert.ok(html.includes('onclick="analysisMonthStep(\'income\',-1)"'), '수입 분석의 이전 달 버튼은 analysisMonthStep(\'income\',-1)을 불러야 함');
+  assert.ok(html.includes('onclick="analysisMonthStep(\'income\',1)"'), '수입 분석의 다음 달 버튼은 analysisMonthStep(\'income\',1)을 불러야 함');
+  assert.ok(html.includes('aria-label="2027년 1월 보기"'), '12월의 다음 달 라벨은 다음해 1월이어야 함(연말 롤오버)');
 });
 
 /* ---------- openYearReview: openSpendAnalysis/openIncomeAnalysis보다 큰 1년 범위로 총수입/총지출/
@@ -33203,6 +33278,26 @@ test('openSpendAnalysis: 귀속(owner) 등록이 하나도 없으면(DB.owners=[
  * 계속 참조해 격리가 깨지므로 쓰지 않는다 — 전체를 이 컨텍스트 안에서 새로 컴파일해야 DB/ST가
  * 이 컨텍스트 자신의 것으로 일관되게 해석된다(app-evolve cycle195 critique/advance, 소스-매칭 →
  * 실행형 전환). */
+/* analysisMonthStep만 격리해서 돌리는 전용 컨텍스트 — openSpendAnalysis/openIncomeAnalysis는 DB.owners/
+ * 예산/트렌드 등을 광범위하게 읽는 무거운 렌더 함수라, "ST.ledger.y/m/sel이 올바르게 옮겨지고
+ * kind에 맞는 쪽만 재호출되는가"라는 analysisMonthStep 자신의 계약만 보려면 그 둘을 호출 여부만
+ * 기록하는 스파이로 바꿔치기하는 게(위 openSpendAnalysis 메인 sandbox 스텁과 동일한 이유) spendAnalysisCtx/
+ * incomeAnalysisCtx를 그대로 쓰는 것보다 fixture가 훨씬 가볍다(app-evolve cycle407 advance). */
+let _analysisMonthStepCtx = null;
+function analysisMonthStepCtx() {
+  if (_analysisMonthStepCtx) return _analysisMonthStepCtx;
+  const ctx = {
+    spendCalls: 0, incomeCalls: 0,
+    openSpendAnalysis: () => { ctx.spendCalls++; },
+    openIncomeAnalysis: () => { ctx.incomeCalls++; },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
+  vm.runInContext(extractFunction('keepDayIn'), ctx, { filename: 'keepDayIn-real' });
+  vm.runInContext(extractFunction('analysisMonthStep'), ctx, { filename: 'analysisMonthStep-real' });
+  _analysisMonthStepCtx = ctx;
+  return ctx;
+}
 let _spendAnalysisCtx = null;
 function spendAnalysisCtx() {
   if (_spendAnalysisCtx) return _spendAnalysisCtx;
