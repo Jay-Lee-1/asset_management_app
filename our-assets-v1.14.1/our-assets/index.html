@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.552';
+const APP_VERSION='1.47.553';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의

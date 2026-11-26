@@ -10597,6 +10597,12 @@ test("normalizeCsvDateCell: 점 뒤에 공백이 들어간 한국식 표기(\"20
   assert.strictEqual(sandbox.normalizeCsvDateCell('2026. 1. 5.'), '2026-01-05'); // 끝에 마침표가 붙는 표기도 허용
   assert.strictEqual(sandbox.normalizeCsvDateCell(' 2026.  1.  5 '), '2026-01-05'); // 양끝 공백/중복 공백도 견딘다
 });
+test("normalizeCsvDateCell: 점 뒤 공백 표기(cycle333)에 '이용일시'처럼 시간이 한 칸에 더 붙어도(cycle311) YYYY-MM-DD로 바꾼다 — 두 표기가 겹치면 공백split이 '2026.'에서 끊겨 error:'date'로 빠지던 공백(app-evolve cycle410 develop)", () => {
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026. 1. 5 13:25:33'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026. 01. 05 13:25'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026. 1. 5T13:25'), '2026-01-05'); // 'T' 구분자와도 겹침
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026.1.523'), '2026.1.523'); // 날짜 뒤에 공백/T/끝이 아니라 숫자가 더 붙으면(모호) 매치하지 않고 그대로 반환 — csvDateValid가 거른다
+});
 test("mapGenericCsvRow: 점/슬래시/구분자 없음 날짜 표기(은행 CSV 실무 포맷)도 정상적으로 가져온다(app-evolve cycle288 develop)", () => {
   const dot = sandbox.mapGenericCsvRow(['2026.1.5', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
   assert.strictEqual(dot.ok, true); assert.strictEqual(dot.txn.date, '2026-01-05');
