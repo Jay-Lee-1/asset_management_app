@@ -7753,6 +7753,43 @@ test('[실행형] ackDebtPayoff: 아직 안 갚았거나 이미 ack된 부채는
   assert.strictEqual(saveCallCount, 0, '둘 다 ack할 게 없으므로 save()가 호출되면 안 됨');
   sandbox.save = origSave;
 });
+/* confirmTransferNow/postponeTransfer(cycle398)와 동일한 twGuard 공백의 회귀 테스트: 목표 달성/부채
+ * 완납 홈 알림 카드도 #nav와 마찬가지로 twStage 오버레이 밖의 실제 화면이라 튜토리얼 중에도 늘 열 수
+ * 있는데, ackGoalAchieved/ackDebtPayoff만 이 twGuard 감사에서 빠져 있었다(app-evolve cycle409 develop). */
+test('[실행형] ackGoalAchieved: 튜토리얼 모드 중에는 twGuard가 막아서 achievedAckAt이 기록되지 않고 openGoalForm도 호출되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { owners: ['나'], assets: [], goals: [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 500000, targetDate: null, owner: 'all', achievedAckAt: null }], nwHistory: [{ date: '2026-06-15', nw: 1000000 }] };
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  let opened = false;
+  const origOpen = sandbox.openGoalForm;
+  sandbox.openGoalForm = () => { opened = true; };
+  sandbox.ackGoalAchieved('g1');
+  assert.strictEqual(sandbox.DB.goals[0].achievedAckAt, null, '튜토리얼 중에는 achievedAckAt이 기록되면 안 됨');
+  assert.ok(!saveCalled, '튜토리얼 중에는 save()가 호출되면 안 됨');
+  assert.ok(!opened, '튜토리얼 중에는 openGoalForm도 호출되면 안 됨(confirmTransferNow가 twGuard로 전체를 막는 것과 동일)');
+  sandbox.save = origSave;
+  sandbox.openGoalForm = origOpen;
+  sandbox.TWi = -1;
+});
+test('[실행형] ackDebtPayoff: 튜토리얼 모드 중에는 twGuard가 막아서 payoffAckAt이 기록되지 않고 openAssetHistory도 호출되지 않는다', () => {
+  sandbox.TWi = 0;
+  setupHistoryDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '다 갚은 빚', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 100000 }); // 완납
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.goCalls = [];
+  sandbox.ackDebtPayoff('d1');
+  assert.strictEqual(sandbox.DB.assets[0].payoffAckAt, null, '튜토리얼 중에는 payoffAckAt이 기록되면 안 됨');
+  assert.ok(!saveCalled, '튜토리얼 중에는 save()가 호출되면 안 됨');
+  assert.deepStrictEqual(sandbox.goCalls, [], '튜토리얼 중에는 openAssetHistory도 호출되면 안 됨');
+  sandbox.save = origSave;
+  sandbox.TWi = -1;
+});
 /* ---------- goalOrderedIds/moveGoal: 목표 목록 수동 순서 변경 (app-evolve cycle407 advance) ----------
  * openGoalSortSheet()의 '사용자 정의순' 옵션이 "등록한 순서 그대로예요"라는 죽은 옵션이었던 걸,
  * 자산 목록의 moveAsset()/movedAssetOrder()와 완전히 같은 패턴으로 실제로 동작하게 고친다.

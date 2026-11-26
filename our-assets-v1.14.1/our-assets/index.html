@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.550';
+const APP_VERSION='1.47.551';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -4419,7 +4419,14 @@ function saveGoal(editing){
  * homeAlerts()의 goalAchieved(Multi) 카드가 다시 사라진다(budgetOver처럼 다음 달에 자연 해소되지 않으므로
  * 명시적 ack이 필요, app-evolve cycle256 advance). 달성 전/이미 ack된 목표는 goalNewlyAchieved가 false라
  * openGoalForm만 호출하는 것과 동일하게 동작 — 안전하게 모든 호출부에서 재사용 가능. */
+/* confirmTransferNow/postponeTransfer/toggleRecActive/saveBudget 등(cycle308/345/398/401/403)과
+ * 동일한 twGuard 공백 — 목표 달성(goalAchieved) 홈 알림 카드는 하단 네비(#nav)와 마찬가지로
+ * twStage 오버레이 밖의 실제 화면이라 튜토리얼 중에도 그대로 열려 탭할 수 있는데, achievedAckAt을
+ * 영구 기록하는 이 함수에만 twGuard가 빠져 있었다 — "튜토리얼 중에는 실제로 저장되지 않아요"
+ * 약속이 깨져, 튜토리얼을 보여주다 실제 달성한 목표를 열면 ack이 조용히 영구 저장됐다
+ * (app-evolve cycle409 develop). */
 function ackGoalAchieved(id){
+ if(twGuard())return;
  const g=(DB.goals||[]).find(x=>x.id===id);
  if(g){
   const p=goalProgress(g,goalHistoryFor(g),TODAY);
@@ -4434,7 +4441,11 @@ function ackGoalAchieved(id){
  * debtsPaidOff()가 이미 돌려준 리스트를 재사용하지 않는 이유는 ackGoalAchieved도 goalProgress를
  * id 하나로 다시 계산하는 동일한 관례를 따르기 때문. 완납 전/이미 ack된 부채는 debtNewlyPaidOff가
  * false라 openAssetHistory만 호출하는 것과 동일하게 동작 — 안전하게 모든 호출부에서 재사용 가능. */
+/* ackGoalAchieved(바로 위)와 동일한 twGuard 공백 — 부채 완납(debtPaidOff) 홈 알림 카드도 같은
+ * 구조적 틈(#nav가 twStage 오버레이 밖)으로 튜토리얼 중에도 그대로 열리는데, payoffAckAt을
+ * 영구 기록하는 이 함수에만 twGuard가 빠져 있었다(app-evolve cycle409 develop). */
 function ackDebtPayoff(assetId){
+ if(twGuard())return;
  const a=DB.assets.find(x=>x.id===assetId);
  if(a){
   const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));

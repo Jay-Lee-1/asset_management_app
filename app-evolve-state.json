@@ -1,15 +1,8 @@
 {
   "cycle": 409,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 404,
-      "phase": "develop",
-      "timestamp": "2026-11-25T13:30:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 위임해 부채 상환 계획(multiDebtPlan/debtPlanBodyHTML, cycle355) 화면이 단일 부채 상세(debtWhatIfUpdate/assetBalCard)와 달리 이자율 반영 상환 개월수 보조 문구(debtAmortSuffix)를 전혀 보여주지 않던 비대칭을 발견 — 다건 계획은 아바란체/스노우볼 순서(plan.order)대로 추가 납입액 전액을 '아직 안 끝난 맨 앞 부채' 한 곳에만 몰아주는데, achieved가 extra 유무와 무관한 동일 판정이라 order.findIndex(r=>!r.achieved)가 그 전액을 받는 행과 정확히 일치함을 이용해 그 한 행에만 debtAmortSuffix({interestRate:r.interestRate},extra,r.balance)를 이어붙였다(다른 부채는 이자율이 있어도 전액을 못 받으므로 보조 문구 없음). debtAmortSuffix 자체는 interestRate<=0/extra<=0/bal<=0이면 빈 문자열을 돌려줘 안전. logic.js 변경 없음. test/run.js에 추가 납입액 있을 때 문구 일치/추가 납입액 0일 때 추측 안 함/부채 2개일 때 1순위에만 붙고 2순위엔 안 붙음 3건 추가. node test/run.js 4016->4019/4019 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과(오케스트레이터가 서브에이전트 결과와 별개로 재검증). index.html/sw.js를 수정했으므로 APP_VERSION 1.47.541->1.47.542, sw.js CACHE v808->v809.",
-      "commit": null
-    },
     {
       "cycle": 404,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-26T14:12:04.000Z",
       "summary": "critique(cycle407)의 계획대로 homeAlerts()의 goalBehind/goalAchieved와 debtBehind/debtPaidOff가 '정확히 대칭'이라 주석에 적혀 있으면서도 Multi 카드 동작만 어긋나 있던 비대칭을 없앴다. debtPayoffStatuses()/debtsBehind()/debtsPaidOff()와 같은 구조로 goalsBehind()/goalsAchieved() 공유 헬퍼를 homeAlerts() 바로 앞(openDebtPaidOffList() 다음)에 신설 — homeAlerts()의 기존 _gb/_ga 인라인 필터(목표일 존재·hist>=2·!achieved·투사 지연·시세 미확인 아님·연결자산 안 삭제됨 / goalNewlyAchieved·시세 미확인 아님·연결자산 안 삭제됨)를 그대로 옮겨 {id,name,targetDate,projectedDate}/{id,name,amount} 평평한 객체 배열로 반환하게 바꾸고, homeAlerts()의 _gb/_ga 계산을 이 두 함수 호출로 교체해 카드 count와 목록 항목 수가 항상 일치하게 만들었다(기존엔 로직이 두 곳에 따로 있어 어긋날 수 있었음). openDebtBehindList()/openDebtPaidOffList()와 동일한 패턴으로 openGoalBehindList()(0건: 토스트+closeSheet, 1건: closeSheet 후 openGoalForm(id), 여러건: openSheet 목록)와 openGoalAchievedList()(1건도 반드시 ackGoalAchieved(id)를 거쳐야 ack이 남아 카드가 다시 안 뜸)를 신설. homeAlertCard()의 goalBehindMulti/goalAchievedMulti onclick을 각각 openGoalsList()에서 openGoalBehindList()/openGoalAchievedList()로 교체(단일 건 카드는 이미 올바르게 연결돼 있어 손대지 않음). test/run.js FUNCTIONS 화이트리스트에 네 함수를 debt 쌍 바로 옆에 추가하고, openGoalBehindList/openGoalAchievedList의 0건/1건/여러건 분기 테스트 4개를 openDebtBehindList/openDebtPaidOffList 테스트를 본떠 추가. 기존 homeAlertCard 테스트 2개(goalBehindMulti→openGoalsList, goalAchievedMulti→openGoalsList로 연결된다는 옛 기대값)가 이번 변경과 정면으로 어긋나 FAIL했는데, 이게 바로 critique가 고치려던 비대칭이었으므로 새 동작(openGoalBehindList/openGoalAchievedList)에 맞게 기대값을 수정했다. index.html inline <script> 블록 2개(logic.js 포함/미포함) 전부 node --check 통과, node test/run.js 4062/4062 통과(신규 4건 포함, 회귀 없음) 확인 후 커밋. index.html을 수정했으므로 APP_VERSION 1.47.549->1.47.550, sw.js CACHE v816->v817. pending_advance_plan null로 비움. 범위 제외(계획대로): goal/debt 통합 단일 헬퍼로 묶는 성능 최적화, 단일 건 카드 동작 변경, 목표 리스트 시트 디자인/정렬 변경, 새 홈 알림 종류나 OS 푸시 로직 변경.",
+      "commit": null
+    },
+    {
+      "cycle": 409,
+      "phase": "develop",
+      "timestamp": "2026-11-26T16:00:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 조사. twGuard(튜토리얼 중 '실제로 저장되지 않아요') 감사 시리즈(cycle308/345/398/401/403 — confirmTransferNow/postponeTransfer/toggleRecActive/saveBudget 등)가 반복적으로 메운 동일한 구조적 틈(홈 알림 카드는 #nav처럼 twStage 스포트라이트 오버레이 밖의 실제 화면이라 튜토리얼 중에도 그대로 탭 가능)이 ackGoalAchieved(id)/ackDebtPayoff(assetId)에는 아직 빠져 있던 것을 발견 — 목표 달성/부채 완납 홈 알림 카드의 onclick이 이 두 함수를 직접 호출하는데, 각각 g.achievedAckAt/a.payoffAckAt을 확인 없이 바로 기록하고 save()를 호출해, 튜토리얼을 보여주는 중에 실제 달성/완납 데이터가 있으면 ack이 조용히 영구 저장되는 실제 데이터 오염 버그였다. 두 함수 시작에 if(twGuard())return; 추가(confirmTransferNow와 동일하게 함수 전체를 막아 openGoalForm/openAssetHistory 호출도 같이 차단). saveTx/delTx/saveAsset/delAsset/saveRec/doSettle*/doMaturity/toggleRecActive/doBulkRecActive/restoreTrash* 등 다른 변경 함수들은 이미 twGuard가 있거나 가드된 undo 경로를 거침을 재확인(추가 공백 없음, 전체 재감사는 범위 제외). test/run.js에 TWi=0(튜토리얼 활성) 상태에서 achievedAckAt/payoffAckAt이 안 바뀌고 save()/openGoalForm/openAssetHistory도 안 불리는지 확인하는 confirmTransferNow 패턴의 테스트 2건 추가. 오케스트레이터가 diff를 직접 리뷰(twGuard() 정의, ackGoalAchieved/ackDebtPayoff 변경 확인)하고 node test/run.js 재실행 4062->4064/4064 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과를 재검증한 뒤 커밋. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.550->1.47.551, sw.js CACHE v817->v818. 범위 제외: twGuard 전체 재감사, ack 전 확인 다이얼로그 추가 등 새 UX 패턴 도입.",
       "commit": null
     }
   ]
