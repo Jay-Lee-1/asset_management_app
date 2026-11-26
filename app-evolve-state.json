@@ -1,15 +1,8 @@
 {
   "cycle": 410,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 405,
-      "phase": "review",
-      "timestamp": "2026-11-26T00:07:46.914Z",
-      "summary": "develop(cycle405) 커밋 52c93e0(예산 CSV 내보내기 budgetHistoryToCSV에 귀속별 오버라이드 DB.ownerBudgets를 '귀속' 컬럼으로 포함)를 검토. DB.ownerBudgets 실제 shape(index.html:2919 등 — owner→cat→[{from,amount}], budgetHistory와 동일 shape)를 grep으로 재확인해 diff의 가정과 정확히 일치함을 확인. 새 flat 배열 조립(household는 owner='전체', ownerBudgets는 owner=실제 귀속명)과 정렬 비교자(카테고리 오름차순→owner는 '전체' 먼저 그다음 오름차순→from 오름차순)를 직접 따라가며 household와 귀속별 오버라이드가 뒤섞이지 않고 명세대로 정렬되는지 확인. catBudgetRollover 조회가 catKey('expense',e.cat) 하나로 owner와 무관하게 공유되는 것도 saveBudget/setBudgetFromOwner 저장 경로와 일치함을 확인. 귀속명에도 guard()+esc() CSV 인젝션 가드가 카테고리와 동일하게 적용된 것을 goalsToCSV의 귀속 컬럼 처리와 대조해 확인. doExport의 budgetCsv 분기에 DB.ownerBudgets 세 번째 인자 배선과 안내 문구 갱신도 확인. 테스트 스위트를 직접 재실행해 4030/4030 전부 통과 확인(기존 4건 갱신 + 신규 4건: household+오버라이드 혼합/household 없이 오버라이드만/여러 귀속 정렬/귀속명 CSV 인젝션). 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 405,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-26T19:13:46.402Z",
       "summary": "general-purpose 서브에이전트에게 위임해 CSV 가져오기(mapGenericCsvRow)의 날짜 정규화 normalizeCsvDateCell 조사. \"점 뒤 공백\" 한국식 날짜(\"2026. 1. 5\", cycle333)와 \"날짜+시간이 한 칸에\" 표기(\"2026-01-05 13:25:33\", cycle311)는 각각 지원됐지만 두 표기가 겹친 \"2026. 1. 5 13:25:33\"(은행 \"이용일시\" 열에 흔한 형태)은 지원하지 않던 공백을 발견 — 점 뒤 공백 정규식이 문자열 끝($)에 고정돼 뒤에 시간이 붙으면 매치 실패, 공백split 폴백은 \"2026.\"에서 끊겨 날짜를 잃고 결국 error:'date'로 행이 조용히 드롭됨. 정규식을 날짜 뒤에 공백/T/문자열끝이 와야 매치하는 lookahead로 바꿔 날짜전용/날짜+시간 두 경우를 한 패턴으로 커버(\"2026.1.523\"처럼 날짜 뒤 숫자가 더 붙는 모호한 입력은 여전히 거부). test/run.js에 공백구분자/T구분자/모호한입력거부 회귀 테스트 추가. node test/run.js 4069/4069 통과, node --check(logic.js/sw.js/test/run.js/index.html 4개 inline script 블록) 통과. index.html/sw.js 수정했으므로 APP_VERSION 1.47.552->1.47.553, sw.js CACHE v819->v820.",
       "commit": "8d2119a13d7d063a29c93ac6897a6b33c619cee8"
+    },
+    {
+      "cycle": 410,
+      "phase": "review",
+      "timestamp": "2026-11-26T20:08:10.746Z",
+      "summary": "develop(cycle410) 커밋 8d2119a(normalizeCsvDateCell이 점 뒤 공백 날짜에 시간이 한 칸 더 붙은 표기도 처리하도록 lookahead로 수정)를 검토. 변경된 정규식 ^(\\d{4})\\.\\s*(\\d{1,2})\\.\\s*(\\d{1,2})\\.?(?=\\s|T|$)을 직접 따라가며 '2026. 1. 5 13:25:33'(공백 구분자)·'2026. 1. 5T13:25'(T 구분자)는 매치하고, '2026.1.523'(날짜 뒤 숫자가 더 붙는 모호한 입력)은 greedy 1~2자리 day 매칭이 백트래킹해도 lookahead를 못 통과해 전체 매치가 실패함을 수식으로 재확인 — 이 경우 함수가 원본 문자열을 그대로 반환하는데, 유일한 호출부인 mapGenericCsvRow(logic.js:1830)가 바로 뒤에서 csvDateValid()로 ^\\d{4}-\\d{2}-\\d{2}$ 형식을 강제하므로 모양이 안 맞는 원본 문자열은 자동으로 거부됨을 확인(별도의 방어 코드가 필요 없는 설계가 맞음). normalizeCsvDateCell의 유일한 호출부가 mapGenericCsvRow 하나뿐임을 grep으로 재확인해 이번 변경이 다른 경로(백업/CSV 다른 날짜 필드)에 영향을 주지 않음도 확인. 기존 '점 뒤 공백만' 케이스(시간 없음)가 lookahead의 $ 분기로 여전히 매치해 회귀가 없음도 확인. 추가된 테스트 4건(공백 구분자, 0패딩, T 구분자, 모호한 입력 거부)이 각 분기를 정확히 짚고 있음을 확인. node test/run.js 재실행 4069/4069 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html에서 HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/974281/1770자) 전부 new vm.Script() 파싱 통과, APP_VERSION 1.47.553/sw.js CACHE v820 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
     }
   ]
 }
