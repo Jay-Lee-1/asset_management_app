@@ -1,15 +1,12 @@
 {
   "cycle": 407,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "openSpendAnalysis/openIncomeAnalysis 시트에 월 이동(◀/▶) 네비게이션 추가",
+    "why": "지출/수입 분석 시트는 현재 ST.ledger.y/m을 그대로 읽어 그 달만 보여주고, 시트 안에서 달을 바꿀 방법이 없다(제목이 고정 텍스트). 사용자가 다른 달의 분석을 보려면 시트를 닫고 가계부 탭에서 달을 넘긴 뒤 다시 '지출 분석'/'수입 분석'을 눌러 재진입해야 한다. 바로 옆의 openYearReview(연간 결산)는 이미 ◀/▶ act-btn + openYearReview(y±1) 재호출로 연도 전환을 지원하는데(index.html:8886-8890), 지출/수입 분석만 같은 패턴이 빠져 있는 비일관성이자 실제 사용 흐름에서 매번 걸리는 불편이다.",
+    "approach": "index.html의 openSpendAnalysis()(약 8956번째 줄)와 openIncomeAnalysis()(약 7780번째 줄) 두 함수에, openYearReview의 연도 switcher 카드와 동일한 마크업 패턴(`<div class=\"card\" style=\"display:flex;align-items:center;justify-content:center;gap:18px;padding:10px;margin-bottom:12px\">`에 ◀/▶ act-btn + 가운데 라벨)을 가져와 '${y}년 ${m}월' 월 switcher를 제목 바로 아래에 추가한다. 버튼은 신설하는 작은 헬퍼 함수(예: spendAnalysisStep(delta)/incomeAnalysisStep(delta), 또는 monthStep과 동일하게 `new Date(y,m-1+delta,1)` 롤오버 계산을 공유하는 단일 헬퍼)를 호출해 ST.ledger.y/m을 갱신한 뒤(keepDayIn(y,m,ST.ledger.sel)로 ST.ledger.sel도 함께 보정해 월 네비 기존 관례(monthStep/ymApplyWheel)와 맞춘다) 같은 open*Analysis() 함수를 다시 호출해 시트를 재렌더한다 — spendOwnerSel/incomeOwnerSel이 이미 쓰는 '상태만 바꾸고 시트를 통째로 다시 연다' 패턴 그대로다. 아카이브된 달(monthIsArchived)로 넘어가도 기존 isArchived 분기가 그대로 동작하므로 별도 처리 불필요. 테스트는 test/run.js의 openYearReview 연도 전환 테스트들(13821번째 줄 부근)과 openSpendAnalysis/openIncomeAnalysis 기존 ctx 패턴(spendAnalysisCtx/incomeAnalysisCtx, ctx.ST={ledger:{y,m},spendOwner}, ctx.lastSheetHtml)을 그대로 따라 추가한다: (1) ◀/▶ 클릭 시 ST.ledger.y/m이 올바르게 ±1월 이동(연말/연초 롤오버 포함)하는지, (2) 재호출된 시트 HTML에 바뀐 월의 데이터(카테고리 합계)가 반영되는지, (3) ST.hist 등 다른 상태를 건드리지 않는지. 범위 제외: ST.ledger.sel 보정이 과도하게 복잡해지면(예: 가계부 탭과의 동기화 세부 규칙) 최소한으로만 맞추고, 날짜 직접 선택(연/월 휠 피커) 추가는 이번 cycle에서 하지 않는다 — ◀/▶ 1개월씩 이동만으로 충분히 가치 있고 범위가 작다; openYearReview의 연도 전환과 달리 수년 단위로 멀리 이동할 일이 적어 휠 피커까지는 불필요하다."
+  },
   "history": [
-    {
-      "cycle": 402,
-      "phase": "critique",
-      "timestamp": "2026-11-25T13:00:00.000Z",
-      "summary": "세션 시작 시 또 로컬 HEAD가 detached였고(main 로컬 ref가 51c4fcd(cycle394 review)에 정체, origin/main은 이미 HEAD(54632e6, cycle402 review)까지 최신) git branch -f main HEAD && git checkout main으로 복구(원인 계속 불명, 데이터 손실 없음). general-purpose 서브에이전트에게 cycle340-402 전체 배제 목록(키보드/스크린리더/명암비 접근성 전체, 데이터 클램프, txMemo/rMemo/split메모 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, owner별 예산 오버라이드, 연간 결산 아카이브 겹침 인지, 문의하기·toggleRecActive/toggleAdjustSurplus twGuard, confirmSheet 더블탭 가드, assetQtyLog edit, planTransfer/planSplitTransfer undo, CSV import 미지원/split 재가져오기 v1 한계(둘 다 코드 내 설계 의도 주석으로 명문화된 기각)/공유계정 멀티유저 인증 재설계/성능(캐시로 이미 충분)/CDN SRI(네트워크 egress 없어 불가능)/모놀리식 구조개편/세무리포트/부채상환엔지니어링/클라우드 병합 재설계/esc() XSS/할부기능 등 기각 항목)를 주고 전략적 재검토시킴. CSV import 지원 확장과 split 재가져오기 평탄화 v1 한계는 index.html 자체의 설계 의도 주석(각각 ~10064-10097행, 9982-9984행)으로 이미 의도적 보류임이 명문화돼 있어 기각, assetQtyLog 재계산 캐스케이드는 바로 직전 cycle401 advance가 '범위 밖'으로 명시한 것과 같은 항목이라 기각, 공유계정 인증 재설계는 클라우드 병합 재설계와 같은 체급의 범위초과라 기각, 렌더 성능은 _recCache/txnsByDateInRange/invalidateBalances로 이미 충분히 완화됐음을 확인 후 기각, CDN SRI는 이 샌드박스 환경에 네트워크 egress가 없어 실제 해시를 계산할 수 없어 불가능으로 기각. isRlsPolicyError(index.html:2138)/isMissingTableError(2143)가 Supabase 동기화 에러를 'rls'/'missing_table'/'network' 세 갈래로만 분류하는데, test/run.js:42589·42599에 이미 {code:'PGRST301',message:'JWT expired'}를 RLS/missing_table로 오판하지 않는지 확인하는 음성 가드 테스트가 있다는 것 자체가 '인증 만료'라는 별개 에러 종류를 이전 사이클이 이미 인지하고 있었으면서도 양성 분류기(다른 두 에러 종류가 cycle350/358에서 받은 것과 같은 전용 토스트/CTA)는 끝내 추가하지 않았음을 발견 — 지금은 세션이 만료/revoke돼도 '인터넷 연결을 확인해 주세요'로 뭉개져 재시도로는 절대 해결 안 되는데도 재로그인 경로를 안내받지 못하는 실사용 공백(PWA를 오래 안 열거나 다른 기기에서 비밀번호를 바꾼 사용자가 흔히 만날 시나리오). pending_advance_plan에 isAuthExpiredError(e) 신설 + CLOUD_SYNC_ERR_KIND에 'auth_expired' 추가 + cloudSyncFailed()/cloudSyncLabel() 분기 + 재로그인 CTA + 테스트 계획 저장(자동 토큰 갱신 로직 추가·인증 아키텍처 변경·카카오 경로 변경은 범위 제외로 명시). node test/run.js 3997/3997 통과 확인(서브에이전트가 코드 변경 전 베이스라인으로 확인). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 402,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-26T09:00:00.000Z",
       "summary": "develop(cycle407) 커밋 4ff955e(budgetHistoryValueAt/setBudgetHistoryAt에 배열을 직접 받는 단위 테스트 7건 추가, logic.js 자체는 변경 없음)를 검토. logic.js:1090-1107의 두 함수 실제 정의를 직접 읽고 diff의 핵심 가정(budgetHistoryValueAt이 h를 from 오름차순으로 전제하고 for+break로 선형스캔하며, setBudgetHistoryAt이 findIndex로 같은 달이면 덮어쓰고 아니면 push 후 매번 전체를 from 문자열 비교로 재정렬함)을 한 줄씩 확인 — 테스트가 검증하는 동작과 정확히 일치. 빈/undefined/null h, 가장 이른 from 이전 조회, 여러 항목 중 조회 달 이하 최신 from 선택, 같은 달 재기록시 덮어쓰기(길이 불변), from 비순차 삽입 후 오름차순 재정렬 불변식까지 각 테스트가 실제로 그 분기/불변식을 짚고 있는지 확인. vm 샌드박스 cross-realm 이슈로 deepStrictEqual 대신 필드별 strictEqual을 쓴 것도 qtyCaretAfterFilter 등 기존 패턴과 일치. logic.js/index.html/sw.js 코드 변경이 전혀 없는 테스트 전용 커밋이라 APP_VERSION/CACHE 버전 변경 불필요함도 확인. node test/run.js 재실행 4050/4050 통과, node --check(logic.js/sw.js/test/run.js) 통과. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 407,
+      "phase": "critique",
+      "timestamp": "2026-11-26T10:00:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 openSpendAnalysis/openIncomeAnalysis의 월 네비게이션 부재, 전체내역 검색의 날짜범위 처리, archiveMonthPicked 문구, goal.order 백필, 구버전 백업 시각 역산, 부분/선택적 백업 복원·자동 토큰 갱신·인증 아키텍처 변경 등을 둘러보게 함. 전체내역 날짜범위(histPickDate)는 이미 from/to clamp가 잘 돼 있고, archiveMonthPicked 문구는 이미 명확하며, goal.order는 cycle407 develop 이전에 이미 moveGoal의 지연 부여 패턴으로 해결됐고, 구버전 백업 시각 역산은 backupSummary()가 '생성 시점 근사'라는 설계 의도를 주석으로 명시해둔 상태라 추가 작업 가치가 낮아 모두 기각. 백업 부분 복원·토큰 자동 갱신·인증 재설계는 한 cycle(advance)에서 안전하게 끝내기 힘든 과대 범위로 판단해 제외. 대신 선택한 것은 지출/수입 분석 시트의 월 이동 네비게이션 부재 — 바로 옆의 연간 결산 시트(openYearReview)는 이미 ◀/▶ 버튼으로 연도를 전환할 수 있는데(index.html:8886-8890), 지출/수입 분석 시트는 제목이 고정 텍스트일 뿐이라 다른 달을 보려면 시트를 닫고 가계부 탭에서 달을 넘긴 뒤 재진입해야 하는 비일관적이고 불편한 흐름이었음을 발견. openYearReview의 기존 switcher 마크업과 spendOwnerSel/incomeOwnerSel의 '상태 변경 후 시트 재오픈' 패턴을 그대로 재사용하면 안전하게 한 cycle 안에서 끝낼 수 있어 이번 advance 대상으로 선정(pending_advance_plan에 월 switcher 추가 + monthStep 공유 헬퍼 + ST.ledger.sel 보정 + 테스트 계획 저장, 날짜 직접 선택 휠 피커·ST.ledger.sel 복잡한 동기화는 범위 제외로 명시). node test/run.js 4050/4050 통과 확인(서브에이전트가 코드 변경 전 베이스라인으로 확인, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
