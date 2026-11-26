@@ -1,15 +1,8 @@
 {
   "cycle": 410,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 405,
-      "phase": "develop",
-      "timestamp": "2026-11-25T23:12:28.000Z",
-      "summary": "예산 설정 CSV 내보내기(budgetHistoryToCSV)가 cycle398에서 추가된 귀속별 예산 오버라이드(DB.ownerBudgets)를 전혀 포함하지 않고 가구 전체(DB.budgetHistory)만 내보내던 공백을 발견 — 화면(카테고리별 예산 설정)에는 보이는 귀속별 한도가 백업/내보내기 CSV에는 조용히 누락돼, 엄마/아빠 등 귀속별 오버라이드를 쓰는 가구가 CSV만 보고 예산을 복기하면 가구 전체 한도만 있는 것으로 오인하게 되는 실제 데이터 손실성 내보내기 공백. budgetHistoryToCSV(budgetHistory,catBudgetRollover,ownerBudgets)에 3번째 인자와 '귀속' 컬럼을 추가해 가구 전체 행은 '전체', 귀속별 오버라이드 행은 해당 귀속명으로 한 CSV에 함께 담음(정렬: 카테고리 오름차순 → 전체 먼저·귀속명 오름차순 → 적용 시작월 오름차순). 이월 여부(catBudgetRollover)는 귀속과 무관하게 카테고리 단위로만 저장되므로 귀속별 행에도 그대로 적용. doExport() 호출부에 DB.ownerBudgets 전달, 내보내기 시트의 budgetCsv 설명 문구도 갱신. test/run.js의 기존 budgetHistoryToCSV 테스트 전부를 컬럼 추가에 맞게 갱신하고 4건 추가(귀속별 오버라이드 행 추가+정렬, ownerBudgets에만 있는 카테고리도 내보내짐, 여러 귀속 이름 정렬, 귀속명에도 CSV-injection 가드 적용). node test/run.js 4026->4030/4030 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과(오케스트레이터가 서브에이전트 결과와 별개로 재검증). index.html/sw.js를 수정했으므로 APP_VERSION 1.47.543->1.47.544, sw.js CACHE v810->v811.",
-      "commit": null
-    },
     {
       "cycle": 405,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-26T18:11:00.377Z",
       "summary": "critique(cycle409)의 계획대로 홈 알림 카드 allocationDrift/allocationDriftMulti(homeAlertCard, index.html:13660/13665)가 드리프트 상세 없이 바로 %편집기(openTargetAllocationForm)로 연결되던 비대칭을 고쳤다 — cycle408이 goal/debt Multi 카드에서 고친 것과 같은 클래스이나 당시 감사 범위 밖이었던 자산배분 알림에서 cycle409 critique가 새로 발견. targetAllocationCard()(index.html:3977-4006)의 drift 행 마크업(지금%/목표%, rateUnknown이면 \"미확인\" 캡션, 아니면 매수/매도 금액)을 공유 헬퍼 allocationDriftRowsHtml(byType,targetMap,unknownTypes)로 추출(targetAllocationCard는 출력 변경 없이 이 헬퍼를 호출하도록만 교체)하고, openAllocationDriftSheet() 신설 — homeAlerts()(13246행대)와 동일하게 byType/unknownTypes를 재계산해 공유 헬퍼로 실제 드리프트 상세를 보여주는 시트를 열고, 목표% 수정은 버튼으로 openTargetAllocationForm()에 한 단계 더 들어가게 연결(openSpendAnalysisThisMonth의 \"먼저 보기, 수정은 한 단계 더\" 패턴). homeAlertCard()의 allocationDrift/allocationDriftMulti onclick을 openTargetAllocationForm()에서 openAllocationDriftSheet()로 교체. targetAllocation이 비어있는 방어적 케이스(알림은 목표가 있을 때만 뜨므로 실제로는 도달 안 함)는 시트 대신 바로 %편집기로 폴백. test/run.js FUNCTIONS 화이트리스트에 allocationDriftRowsHtml/openAllocationDriftSheet 등록, 기존 homeAlertCard 테스트를 openAllocationDriftSheet 기대값으로 갱신, 신규 테스트 4건 추가(allocationDriftRowsHtml 정상/미확인 케이스, openAllocationDriftSheet 방어적 폴백, 시트가 실제 매수매도 안내와 수정 버튼을 담는지). 범위 제외(계획대로): allocationDrift()/rebalanceAmount() 등 logic.js 순수 함수, %입력 편집기 UX 자체, targetAllocationCard의 노출 규칙, 새 알림 종류나 OS 푸시 문구, 다른 알림 카드 라우팅 전체 재감사. node test/run.js 4064->4068/4068 통과, node --check(logic.js/sw.js/test/run.js) 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.551->1.47.552, sw.js CACHE v818->v819. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 410,
+      "phase": "develop",
+      "timestamp": "2026-11-26T19:13:46.402Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 CSV 가져오기(mapGenericCsvRow)의 날짜 정규화 normalizeCsvDateCell 조사. \"점 뒤 공백\" 한국식 날짜(\"2026. 1. 5\", cycle333)와 \"날짜+시간이 한 칸에\" 표기(\"2026-01-05 13:25:33\", cycle311)는 각각 지원됐지만 두 표기가 겹친 \"2026. 1. 5 13:25:33\"(은행 \"이용일시\" 열에 흔한 형태)은 지원하지 않던 공백을 발견 — 점 뒤 공백 정규식이 문자열 끝($)에 고정돼 뒤에 시간이 붙으면 매치 실패, 공백split 폴백은 \"2026.\"에서 끊겨 날짜를 잃고 결국 error:'date'로 행이 조용히 드롭됨. 정규식을 날짜 뒤에 공백/T/문자열끝이 와야 매치하는 lookahead로 바꿔 날짜전용/날짜+시간 두 경우를 한 패턴으로 커버(\"2026.1.523\"처럼 날짜 뒤 숫자가 더 붙는 모호한 입력은 여전히 거부). test/run.js에 공백구분자/T구분자/모호한입력거부 회귀 테스트 추가. node test/run.js 4069/4069 통과, node --check(logic.js/sw.js/test/run.js/index.html 4개 inline script 블록) 통과. index.html/sw.js 수정했으므로 APP_VERSION 1.47.552->1.47.553, sw.js CACHE v819->v820.",
+      "commit": "8d2119a13d7d063a29c93ac6897a6b33c619cee8"
     }
   ]
 }
