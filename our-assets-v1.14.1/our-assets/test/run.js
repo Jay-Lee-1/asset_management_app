@@ -15641,6 +15641,40 @@ test('doBulkRecActive: bulkRecActiveTargets이 실패(빈 선택)로 판정하�
   sandbox.doBulkRecActive(new Set(['없는id']), false);
   assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
 });
+/* doBulkRecActive: relinkDeletedAsset/restoreTrashAsset/restoreTrashCat/catsTrashBody는 모두
+ * "사용자가 직접 켜거나 끈(toggleRecActive/doBulkRecActive) 반복거래는 _autoDeactivatedByAssetDelete/
+ * _autoDeactivatedByCatDelete 플래그가 없다"고 주석으로 명시하며 그 가정에 의존해 "자동
+ * 비활성화"와 "사용자가 일부러 멈춤"을 구분하는데, 실제로는 이 함수가 그 플래그를 지운 적이
+ * 없었다(app-evolve cycle408 develop) — 자산/카테고리 삭제로 자동 비활성화된 반복거래를
+ * 아직 그 자산/카테고리를 복구하지 않은 채로 일괄 재시작한 뒤 다시 일괄 중지하면, 플래그가
+ * 그대로 남아 있어 나중에 자산/카테고리를 복구할 때 "자동 비활성화였으니 같이 되살린다"는
+ * 판정에 걸려 사용자가 방금 자발적으로 멈춰둔 상태를 조용히 덮어써 다시 켜버렸다. */
+test('doBulkRecActive: 켜거나 끄거나 두 자동 비활성화 플래그를 모두 지운다(복구 로직이 되살리지 못하게)', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', active: false, updatedAt: 1, _autoDeactivatedByAssetDelete: true };
+  const r2 = { id: 'r2', active: false, updatedAt: 1, _autoDeactivatedByCatDelete: true };
+  sandbox.DB = { recurrences: [r1, r2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecActive(new Set(['r1', 'r2']), true); // 일괄 재시작
+  assert.strictEqual(r1._autoDeactivatedByAssetDelete, undefined, '일괄 재시작이 자산삭제 자동비활성화 플래그를 지워야 함');
+  assert.strictEqual(r2._autoDeactivatedByCatDelete, undefined, '일괄 재시작이 카테고리삭제 자동비활성화 플래그를 지워야 함');
+  sandbox.doBulkRecActive(new Set(['r1', 'r2']), false); // 다시 일괄 중지(이제는 순수 사용자 의도)
+  assert.strictEqual(r1._autoDeactivatedByAssetDelete, undefined, '일괄 중지도 플래그를 다시 심지 않아야 함');
+  assert.strictEqual(r2._autoDeactivatedByCatDelete, undefined, '일괄 중지도 플래그를 다시 심지 않아야 함');
+});
+test('doBulkRecActive: undo 콜백을 부르면 지워졌던 두 자동 비활성화 플래그도 원래대로 복원된다', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', active: false, updatedAt: 1, _autoDeactivatedByAssetDelete: true };
+  const r2 = { id: 'r2', active: true, updatedAt: 1 }; // 플래그 없던 반복(일반 사용자 작동 중)
+  sandbox.DB = { recurrences: [r1, r2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecActive(new Set(['r1', 'r2']), true);
+  assert.strictEqual(r1._autoDeactivatedByAssetDelete, undefined, '우선 지워져야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r1.active, false, 'undo가 원래 active(false)로 되돌려야 함');
+  assert.strictEqual(r1._autoDeactivatedByAssetDelete, true, 'undo는 지웠던 플래그도 원래대로(true) 복원해야 함');
+  assert.strictEqual(r2._autoDeactivatedByCatDelete, undefined, '원래 플래그가 없던 반복엔 undo 후에도 플래그가 생기면 안 됨');
+});
 
 /* ---------- bulkCatVarTargets/doBulkCatVarToggle: 카테고리 관리 선택모드(ST.catSel)의 '변동'/'고정'
  * 일괄 전환 — assetInclTargets/doBulkInclToggle(자산 선택모드의 포함/제외 일괄 전환)과 동일한
@@ -29360,6 +29394,35 @@ test('toggleRecActive: 반복거래 일시중지/재시작 토글에도 touch()�
   sandbox.toggleRecActive('r1');
   assert.strictEqual(rec.active, true, '다시 토글하면 재시작돼야 함');
   assert.strictEqual(rec.updatedAt, 'test-updatedAt', '재시작 토글에도 touch()가 호출되어야 함');
+});
+/* toggleRecActive: relinkDeletedAsset/restoreTrashAsset/restoreTrashCat/catsTrashBody는 모두
+ * "사용자가 toggleRecActive로 직접 멈추거나 다시 켠 반복거래는 _autoDeactivatedByAssetDelete/
+ * _autoDeactivatedByCatDelete 플래그가 없다"고 주석으로 명시하며 그 가정으로 "자동 비활성화"와
+ * "사용자가 일부러 멈춤"을 구분하는데, 실제로는 이 함수가 그 플래그를 지운 적이 없었다
+ * (app-evolve cycle408 develop) — 자산/카테고리 삭제로 자동 비활성화된 반복거래를 아직 그
+ * 자산/카테고리를 복구하지 않은 채로 수동으로 다시 켠 뒤 다시 한 번 눌러 수동으로 멈추면,
+ * 플래그가 그대로 남아 있어 나중에 자산/카테고리를 복구할 때(restoreTrashAsset/restoreTrashCat)
+ * "자동 비활성화였으니 같이 되살린다"는 판정에 걸려 사용자가 방금 자발적으로 멈춰둔 상태를
+ * 조용히 덮어써 다시 켜버렸다. */
+test('toggleRecActive: 자산삭제/카테고리삭제 자동 비활성화 플래그를 토글 방향과 무관하게 모두 지운다', () => {
+  const rec = { id: 'r1', active: false, _autoDeactivatedByAssetDelete: true, _autoDeactivatedByCatDelete: true };
+  sandbox.DB = { settings: {}, recurrences: [rec] };
+  sandbox.toggleRecActive('r1'); // 수동으로 다시 켬
+  assert.strictEqual(rec.active, true);
+  assert.strictEqual(rec._autoDeactivatedByAssetDelete, undefined, '수동 재시작은 자산삭제 자동비활성화 플래그를 지워야 함');
+  assert.strictEqual(rec._autoDeactivatedByCatDelete, undefined, '수동 재시작은 카테고리삭제 자동비활성화 플래그를 지워야 함');
+  sandbox.toggleRecActive('r1'); // 다시 수동으로 멈춤(이제는 순수 사용자 의도)
+  assert.strictEqual(rec.active, false);
+  assert.strictEqual(rec._autoDeactivatedByAssetDelete, undefined, '수동 중지가 플래그를 다시 심으면 안 됨(복구 로직이 되살리면 안 되므로)');
+  assert.strictEqual(rec._autoDeactivatedByCatDelete, undefined, '수동 중지가 플래그를 다시 심으면 안 됨(복구 로직이 되살리면 안 되므로)');
+});
+test('toggleRecActive: 두 플래그 모두 없던 평범한 반복거래는 토글해도 플래그가 새로 생기지 않는다', () => {
+  const rec = { id: 'r1', active: true };
+  sandbox.DB = { settings: {}, recurrences: [rec] };
+  sandbox.toggleRecActive('r1');
+  assert.strictEqual(rec.active, false);
+  assert.strictEqual(rec._autoDeactivatedByAssetDelete, undefined);
+  assert.strictEqual(rec._autoDeactivatedByCatDelete, undefined);
 });
 test('toggleAdjustSurplus: 조정 내역의 "수지에 포함" 토글에도 touch()가 호출된다', () => {
   const t = { id: 't1', inSurplus: false };

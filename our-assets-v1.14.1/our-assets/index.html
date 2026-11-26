@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.548';
+const APP_VERSION='1.47.549';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -9661,8 +9661,19 @@ function recManageBody(qRaw){
 }
 /* 이 토글의 일괄판인 doBulkRecActive는 twGuard로 튜토리얼 중 실저장을 막는데, 반복 내역 관리
  * 목록의 건별 일시중지/재시작 토글(이 함수)만 같은 보호 없이 바로 touchSave했다 — toggleAdjustSurplus와
- * 동일한 공백 클래스(단건 토글이 이미 가드된 일괄 경로의 보호를 못 받음, app-evolve cycle401 develop). */
-function toggleRecActive(id){if(twGuard())return;const r=DB.recurrences.find(x=>x.id===id);if(!r)return;r.active=!r.active;touchSave(r);renderCurrent();
+ * 동일한 공백 클래스(단건 토글이 이미 가드된 일괄 경로의 보호를 못 받음, app-evolve cycle401 develop).
+ * relinkDeletedAsset(4682행 부근)·restoreTrashAsset·restoreTrashCat/catsTrashBody(아래)는 모두
+ * "사용자가 toggleRecActive로 직접 멈춘(또는 다시 켠) 반복거래는 _autoDeactivatedByAssetDelete/
+ * _autoDeactivatedByCatDelete 플래그가 없다"고 주석으로 명시하며 그 가정에 의존해 "자동 비활성화"와
+ * "사용자가 일부러 멈춤"을 구분하는데, 실제로는 이 함수가 그 플래그를 지운 적이 없었다(app-evolve
+ * cycle408 develop) — 자산/카테고리 삭제로 자동 비활성화된 반복거래를 사용자가 여기서 수동으로
+ * 다시 켠 뒤(아직 그 자산/카테고리를 복구하지 않은 채) 다시 한 번 눌러 수동으로 멈추면, 플래그가
+ * 그대로 남아 있어 나중에 자산/카테고리를 복구할 때(restoreTrashAsset/restoreTrashCat) "자동
+ * 비활성화였으니 같이 되살린다"는 판정에 걸려 사용자가 방금 자발적으로 멈춰둔 상태를 조용히
+ * 덮어써 다시 켜버린다. 토글 방향과 무관하게(켜든 끄든) 수동 개입이 있었다는 사실 자체가 두 복구
+ * 경로의 "자동" 분류를 더는 믿을 수 없게 하므로, 매번 두 플래그를 모두 지워 위 주석들이 실제로
+ * 보장하는 모양으로 되돌린다. */
+function toggleRecActive(id){if(twGuard())return;const r=DB.recurrences.find(x=>x.id===id);if(!r)return;r.active=!r.active;delete r._autoDeactivatedByAssetDelete;delete r._autoDeactivatedByCatDelete;touchSave(r);renderCurrent();
  /* 전체를 openRecManage()로 다시 열면 검색창(recQ)에 입력해둔 검색어와 스크롤 위치가 날아간다 —
     recQ가 화면에 있으면(=반복 내역 관리 시트가 열려 있으면) recBody만 그 값으로 다시 그려
     검색 상태를 지키고, 없으면(다른 진입 경로) 기존처럼 전체를 새로 연다. */
@@ -13868,11 +13879,16 @@ function doBulkOwnerMove(ids,newOwner){if(twGuard())return;
  * 번에 touch+save한 뒤 undoToast로 되돌릴 수 있게 한다(app-evolve cycle301 critique → advance). */
 function doBulkRecActive(ids,next){if(twGuard())return;
  const r=bulkRecActiveTargets(DB.recurrences,ids);if(!r.ok)return;
- const items=r.items,prev=items.map(x=>!!x.active);
- items.forEach(x=>{x.active=next});
+ /* toggleRecActive(건별 토글, 위 cycle408 develop 주석 참고)와 동일한 이유로 일괄 토글도 두
+  * 자동 비활성화 플래그(_autoDeactivatedByAssetDelete/_autoDeactivatedByCatDelete)를 지운다 —
+  * 이 일괄 액션도 toggleRecActive와 똑같이 "사용자가 직접 켜거나 끔"이라는 수동 개입이므로 같은
+  * 자격을 가진다. undo로 되돌릴 때는 지운 플래그도 원래 값대로 함께 복원해, "되돌리기"가 글자
+  * 그대로 이 액션이 없었던 것처럼 되게 한다. */
+ const items=r.items,prev=items.map(x=>({active:!!x.active,autoAsset:!!x._autoDeactivatedByAssetDelete,autoCat:!!x._autoDeactivatedByCatDelete}));
+ items.forEach(x=>{x.active=next;delete x._autoDeactivatedByAssetDelete;delete x._autoDeactivatedByCatDelete});
  touchSave(...items);renderCurrent();
  undoToast(`${items.length}개 반복을 ${next?'다시 시작':'일시중지'}했어요`,()=>{
-  items.forEach((x,i)=>{x.active=prev[i]});
+  items.forEach((x,i)=>{x.active=prev[i].active;if(prev[i].autoAsset)x._autoDeactivatedByAssetDelete=true;if(prev[i].autoCat)x._autoDeactivatedByCatDelete=true;});
   touchSave(...items);renderCurrent();toast('되돌렸어요')})}
 /* 반복 내역 관리 선택모드(ST.recSel)의 '카테고리' 바닥바 버튼이 피커에서 고른 카테고리를 실제로
  * 적용하는 지점(app-evolve cycle378 critique → advance). bulkRecCatPickFor()가 이미
