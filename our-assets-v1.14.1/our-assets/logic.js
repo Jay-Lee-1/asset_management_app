@@ -563,13 +563,26 @@ function mergeNameList(localArr,remoteArr,normalize){
  * 그 이름을 참조하던 기존 내역·자산은 그대로 남는 걸 doDeleteCat/goalOwnerEff/ST.assetOwner 등이
  * 이미 지원하므로 — 최악의 경우도 "그 이름으로 더는 못 고름"이지 데이터 손상이 아니다). 재추가하면
  * addOwner/addCat이 해당 키의 톰스톤을 지워 다음 병합부터 다시 살아나게 한다. 툼스톤을 전부 적용한
- * 결과가 비면(카테고리/귀속이 0개가 되는 불변식 위반) mergeNameList의 순수 union으로 폴백한다. */
-function mergeNameListWithTombstones(localArr,remoteArr,deletedIds,tombstoneKeyFn,normalize){
+ * 결과가 비면(카테고리/귀속이 0개가 되는 불변식 위반) mergeNameList의 순수 union으로 폴백한다.
+ * localOrderAt/remoteOrderAt(둘 다 선택, ms epoch)는 moveOwner()(index.html)가 DB.ownersOrderAt에
+ * 찍는 "마지막으로 순서만 바꾼 시각" — 이 둘을 안 넘기면(카테고리 호출부처럼 아직 순서변경 시각을
+ * 안 들고 있는 경우) 기존처럼 항상 localArr의 순서를 기준으로 삼아 동작이 전혀 바뀌지 않는다.
+ * 순서(상대적 배열) 자체엔 레코드처럼 항목별 updatedAt이 없어, 멤버십(추가/삭제)은 기존처럼
+ * union+톰스톤으로 다루면서도 "누구 순서를 기준으로 삼을지"만 더 최근에 moveOwner를 실행한 쪽으로
+ * 고르는 LWW를 더한다 — 이게 없으면 기기A가 moveOwner로 귀속 순서를 바꿔 push해도, 아직 순서를
+ * 안 건드린 기기B가 나중에 그 사본을 당겨받을 때 local(B)과 remote(A)가 멤버십은 완전히 같은
+ * 집합이라 union에 새로 추가될 이름이 하나도 없어, union이 그대로 B의 옛 순서를 돌려주며 A의
+ * 순서변경을 조용히 무시해버렸다(app-evolve cycle411 develop — moveOwner가 cycle410에 추가되며
+ * 처음으로 "멤버십은 안 바뀌고 순서만 바뀌는" 편집이 가능해졌는데, 이 함수는 그 케이스를
+ * 전혀 몰랐다). */
+function mergeNameListWithTombstones(localArr,remoteArr,deletedIds,tombstoneKeyFn,normalize,localOrderAt,remoteOrderAt){
  localArr=localArr||[];remoteArr=remoteArr||[];deletedIds=deletedIds||{};
  const isTombstoned=name=>tombstoneKeyFn(name) in deletedIds;
- const out=localArr.filter(name=>!isTombstoned(name));
+ const useRemoteOrder=remoteOrderAt!=null&&(localOrderAt==null||remoteOrderAt>localOrderAt);
+ const baseArr=useRemoteOrder?remoteArr:localArr,otherArr=useRemoteOrder?localArr:remoteArr;
+ const out=baseArr.filter(name=>!isTombstoned(name));
  const seen=new Set(out.map(normalize));
- remoteArr.forEach(name=>{
+ otherArr.forEach(name=>{
   const key=normalize(name);
   if(seen.has(key)||isTombstoned(name))return;
   seen.add(key);out.push(name);

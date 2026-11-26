@@ -4772,6 +4772,22 @@ test('moveOwner: 중간 귀속을 위로 이동하면 바로 앞 귀속과 자�
   assert.strictEqual(saveCalled, true, 'moveCat과 동일하게 순서를 바꾼 뒤 save()를 호출해야 함');
   sandbox.save = origSave;
 });
+test('moveOwner: 순서를 바꾸면 DB.ownersOrderAt(멤버십 변화 없는 순서변경 LWW 기준, cycle411)을 현재 시각으로 찍는다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '공용'], ownersOrderAt: 1000 };
+  const origSave = sandbox.save;
+  sandbox.save = () => {};
+  try {
+    sandbox.moveOwner(1, -1);
+  } finally {
+    sandbox.save = origSave;
+  }
+  assert.ok(sandbox.DB.ownersOrderAt > 1000, 'moveOwner는 mergeRemoteDataIntoLocal의 순서 LWW가 쓸 수 있도록 ownersOrderAt을 갱신해야 함');
+});
+test('moveOwner: 경계 가드로 아무것도 안 바뀌면 DB.ownersOrderAt도 그대로 둔다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '공용'], ownersOrderAt: 1000 };
+  sandbox.moveOwner(0, -1);
+  assert.strictEqual(sandbox.DB.ownersOrderAt, 1000, '실제로 순서가 안 바뀌면 순서변경 시각도 갱신되면 안 됨');
+});
 test('moveOwner: 맨 위 귀속을 위로, 맨 아래 귀속을 아래로 이동하려 하면(경계) 아무것도 바꾸지 않고 save()도 부르지 않는다', () => {
   sandbox.DB = { owners: ['나', '배우자', '공용'] };
   const origSave = sandbox.save;
@@ -24872,6 +24888,38 @@ test('mergeNameListWithTombstones: localArr/remoteArr/deletedIds가 없어도(un
   assert.deepStrictEqual(j(sandbox.mergeNameListWithTombstones(['A'], undefined, undefined, tk, sandbox.normName)), ['A']);
 });
 
+/* ---------- mergeNameListWithTombstones 순서 LWW(localOrderAt/remoteOrderAt): moveOwner()가
+ * cycle410에 추가되며 처음으로 "멤버십은 안 바뀌고 순서만 바뀌는" 편집이 가능해졌는데, 멤버십
+ * 기준 union만 보던 기존 로직은 그 변경을 전혀 반영하지 못했다(app-evolve cycle411 develop). ---------- */
+test('mergeNameListWithTombstones: orderAt을 안 넘기면(카테고리 호출부 등) 항상 local 순서가 기준이다(기존 동작 그대로)', () => {
+  const tk = (n) => 'k:' + n;
+  const out = sandbox.mergeNameListWithTombstones(['나', '배우자', '공용'], ['배우자', '나', '공용'], {}, tk, sandbox.normName);
+  assert.deepStrictEqual(j(out), ['나', '배우자', '공용'], 'orderAt 없으면 remote가 순서만 다르더라도 local 순서를 그대로 유지해야 함(하위호환)');
+});
+test('mergeNameListWithTombstones: remoteOrderAt이 더 최신이면(다른 기기의 moveOwner) 멤버십이 같아도 remote 순서를 따른다', () => {
+  const tk = (n) => 'k:' + n;
+  // 기기A: moveOwner로 배우자를 맨 앞으로 옮기고 push(remoteOrderAt=2000). 기기B: 순서를 안 건드린 채(localOrderAt=1000) 그 사본을 당겨받아 병합
+  const out = sandbox.mergeNameListWithTombstones(['나', '배우자', '공용'], ['배우자', '나', '공용'], {}, tk, sandbox.normName, 1000, 2000);
+  assert.deepStrictEqual(j(out), ['배우자', '나', '공용'], 'remote가 더 최근에 순서를 바꿨으면 그 순서가 이겨야 함 — 안 그러면 moveOwner 결과가 동기화 후 조용히 되돌아감');
+});
+test('mergeNameListWithTombstones: localOrderAt이 더 최신이면 remote가 순서를 바꿨어도 local 순서를 지킨다', () => {
+  const tk = (n) => 'k:' + n;
+  const out = sandbox.mergeNameListWithTombstones(['나', '배우자', '공용'], ['배우자', '나', '공용'], {}, tk, sandbox.normName, 5000, 2000);
+  assert.deepStrictEqual(j(out), ['나', '배우자', '공용'], 'local이 더 최근에 moveOwner를 했으면 remote의 옛 순서에 덮이면 안 됨');
+});
+test('mergeNameListWithTombstones: 순서 LWW와 멤버십 추가가 함께 있어도 둘 다 반영된다(remote 순서 기준 + local에만 있는 새 귀속을 끝에 추가)', () => {
+  const tk = (n) => 'k:' + n;
+  // 기기B가 로컬에서 새 귀속('아이')을 추가한 뒤 아직 push하지 않은 사이, 기기A가 순서를 바꿔 push한 걸 당겨받는 상황
+  const out = sandbox.mergeNameListWithTombstones(['나', '배우자', '공용', '아이'], ['배우자', '나', '공용'], {}, tk, sandbox.normName, 1000, 2000);
+  assert.deepStrictEqual(j(out), ['배우자', '나', '공용', '아이'], 'remote 순서가 기준이 되면서도 local에만 있던 새 이름은 끝에 그대로 합쳐져야 함');
+});
+test('mergeNameListWithTombstones: 순서 LWW가 적용돼도 톰스톤 판정은 그대로 동작한다(remote 기준이어도 삭제된 이름은 되살아나지 않음)', () => {
+  const tk = (n) => 'k:' + n;
+  // remote가 이미 지운 '아빠'를 아직 지우지 않은 local이 더 오래된 순서변경(localOrderAt)으로 들고 있는 상황
+  const out = sandbox.mergeNameListWithTombstones(['나', '아빠'], ['아빠', '나'], { 'k:아빠': 1 }, tk, sandbox.normName, 1000, 2000);
+  assert.deepStrictEqual(j(out), ['나'], 'remote 순서가 기준이어도 톰스톤된 이름은 그 쪽 배열에 남아있는 그대로 제외돼야 함');
+});
+
 test('mergeBudgetHistory: remote에만 있는 카테고리는 그대로 포함된다', () => {
   const out = sandbox.mergeBudgetHistory({}, { 문화: [{ from: '2026-01', amount: 50000 }] });
   assert.deepStrictEqual(j(out), { 문화: [{ from: '2026-01', amount: 50000 }] });
@@ -25136,6 +25184,27 @@ test('mergeRemoteDataIntoLocal: 귀속 자체가 톰스톤되면 그 귀속의 o
     deletedIds: {},
   });
   assert.strictEqual('아빠' in sandbox.DB.ownerBudgets, false, '삭제된 귀속의 오버라이드 전체가 되살아나면 안 됨');
+});
+test('mergeRemoteDataIntoLocal: 다른 기기가 moveOwner로 바꾼 귀속 순서가 동기화 후 조용히 되돌아가지 않는다(cycle411)', () => {
+  // 기기B(local): 순서를 안 건드림(ownersOrderAt=0). 기기A(remote): moveOwner로 '배우자'를 맨 앞으로 옮기고 push(ownersOrderAt=더 최신)
+  sandbox.DB = minimalMergeDB({ owners: ['나', '배우자', '공용'], ownersOrderAt: 0 });
+  sandbox.mergeRemoteDataIntoLocal({
+    owners: ['배우자', '나', '공용'],
+    ownersOrderAt: 5000,
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(sandbox.DB.owners, ['배우자', '나', '공용'], '멤버십이 같아도(union에 새로 추가될 이름이 없어도) 더 최근에 바뀐 remote 순서를 따라야 함');
+  assert.strictEqual(sandbox.DB.ownersOrderAt, 5000, '병합 후에도 "이긴" 순서변경 시각을 들고 있어야 다음 병합에서도 기준으로 쓸 수 있음');
+});
+test('mergeRemoteDataIntoLocal: 아직 순서를 안 바꾼 기기가 보낸 옛 순서는 이미 moveOwner를 한 local 순서를 덮지 않는다', () => {
+  sandbox.DB = minimalMergeDB({ owners: ['배우자', '나', '공용'], ownersOrderAt: 5000 });
+  sandbox.mergeRemoteDataIntoLocal({
+    owners: ['나', '배우자', '공용'],
+    ownersOrderAt: 0,
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(sandbox.DB.owners, ['배우자', '나', '공용'], 'local이 더 최근에 moveOwner를 했으면 remote의 옛 순서로 덮이면 안 됨');
+  assert.strictEqual(sandbox.DB.ownersOrderAt, 5000);
 });
 test('mergeRemoteDataIntoLocal: DB.ownerBudgets가 비어도(양쪽 모두 없음) 예외 없이 빈 객체로 남는다', () => {
   sandbox.DB = minimalMergeDB({ owners: [] });

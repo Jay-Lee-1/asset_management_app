@@ -1,8 +1,15 @@
 {
   "cycle": 411,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 411,
+      "phase": "develop",
+      "timestamp": "2026-11-26T23:50:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 cycle410 develop이 추가한 moveOwner(i,dir)가 클라우드 동기화와 어떻게 상호작용하는지 조사. DB.categories[k]/DB.owners 둘 다 '배열 순서=순서'를 공유 병합 함수 mergeNameListWithTombstones(logic.js)로 멤버십만 union+톰스톤 처리하는데, 이 함수엔 순서 개념이 전혀 없다는 걸 발견 — cycle410 전까지는 멤버십을 안 바꾸고 순서만 바꾸는 편집이 없어 문제가 안 됐지만, moveOwner는 정확히 그런 편집이라 실제 동기화 버그가 됨: 기기A가 moveOwner로 귀속 순서를 바꿔 push해도, 아직 순서를 안 건드린 기기B가 나중에 당겨받으면 멤버십이 완전히 같은 집합이라 union에 새로 추가될 이름이 없어 그대로 B의 옛 순서를 돌려주며 A의 순서변경이 조용히 사라짐(심지어 그 뒤 B가 다시 push하면 클라우드의 올바른 순서까지 덮어씀). mergeNameListWithTombstones에 선택적 localOrderAt/remoteOrderAt 파라미터 추가(둘 다 안 넘기면 기존 동작과 100% 동일, categories 호출부는 그대로 안 바꿔 영향 없음) — remoteOrderAt이 더 최신이면 remoteArr를 순서의 기준(base)으로 쓰고 localArr를 otherArr로 union, 아니면 기존처럼 localArr가 기준. migrate()에 DB.ownersOrderAt=DB.ownersOrderAt||0 기본값 추가, moveOwner()가 실제로 순서를 바꿀 때(경계 no-op 제외) DB.ownersOrderAt=Date.now() 스탬프, mergeRemoteDataIntoLocal()의 owners 병합 호출에 DB.ownersOrderAt/remoteData.ownersOrderAt을 넘기고 병합 후 둘 중 더 큰 값으로 DB.ownersOrderAt을 갱신(다음 병합의 기준이 되도록). 같은 사유로 DB.categories[k](moveCat, cycle248)도 구조적으로 동일한 공백이 있음을 확인했으나 이번엔 owners만 범위로 좁혀 처리(가장 최근에 생긴, 가장 직접적인 회귀만 고쳐 diff를 작게 유지, categories는 future cycle 후보로 기록). 오케스트레이터가 diff(logic.js의 mergeNameListWithTombstones 변경, index.html의 migrate/moveOwner/mergeRemoteDataIntoLocal 변경)를 직접 읽고 로직을 재확인. test/run.js에 9건 추가: mergeNameListWithTombstones 단위 테스트 5건(파라미터 없을 때 하위호환, remote가 더 최신, local이 더 최신, 순서LWW+실제 멤버십 추가 동시 발생, 순서LWW+톰스톤 동시 발생), moveOwner가 DB.ownersOrderAt을 스탬프하는지 2건(실제 변경 시/경계 no-op 시 안 찍힘), mergeRemoteDataIntoLocal 종단 테스트 2건(remote가 최신이면 remote 순서가 이김, local이 최신이면 안 덮어씀). node test/run.js 4074->4083/4083 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/975850/1770자) 전부 new vm.Script() 파싱 통과(오케스트레이터가 서브에이전트 결과와 별개로 전부 재실행·재확인). index.html/sw.js를 수정했으므로 APP_VERSION 1.47.554->1.47.555, sw.js CACHE v821->v822. 범위 제외(서브에이전트가 발견했으나 손대지 않음): DB.categories[k] 순서의 동일한 동기화 공백(future cycle 후보), CSV import에 자산/목표/반복거래 경로 없음(의도된 범위일 가능성), share_target manifest가 photo 슬롯 1개뿐이라 다중 사진 공유 시 나머지 drop, duplicateRec()이 비활성 반복거래 복제 시에도 항상 active=true로 강제(UI가 유효 자산 선택을 강제해 실제 위험은 없음).",
+      "commit": null
+    },
     {
       "cycle": 406,
       "phase": "develop",
