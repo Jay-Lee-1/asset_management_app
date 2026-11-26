@@ -1,6 +1,6 @@
 {
   "cycle": 409,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-11-26T16:00:00.000Z",
       "summary": "general-purpose 서브에이전트에게 위임해 조사. twGuard(튜토리얼 중 '실제로 저장되지 않아요') 감사 시리즈(cycle308/345/398/401/403 — confirmTransferNow/postponeTransfer/toggleRecActive/saveBudget 등)가 반복적으로 메운 동일한 구조적 틈(홈 알림 카드는 #nav처럼 twStage 스포트라이트 오버레이 밖의 실제 화면이라 튜토리얼 중에도 그대로 탭 가능)이 ackGoalAchieved(id)/ackDebtPayoff(assetId)에는 아직 빠져 있던 것을 발견 — 목표 달성/부채 완납 홈 알림 카드의 onclick이 이 두 함수를 직접 호출하는데, 각각 g.achievedAckAt/a.payoffAckAt을 확인 없이 바로 기록하고 save()를 호출해, 튜토리얼을 보여주는 중에 실제 달성/완납 데이터가 있으면 ack이 조용히 영구 저장되는 실제 데이터 오염 버그였다. 두 함수 시작에 if(twGuard())return; 추가(confirmTransferNow와 동일하게 함수 전체를 막아 openGoalForm/openAssetHistory 호출도 같이 차단). saveTx/delTx/saveAsset/delAsset/saveRec/doSettle*/doMaturity/toggleRecActive/doBulkRecActive/restoreTrash* 등 다른 변경 함수들은 이미 twGuard가 있거나 가드된 undo 경로를 거침을 재확인(추가 공백 없음, 전체 재감사는 범위 제외). test/run.js에 TWi=0(튜토리얼 활성) 상태에서 achievedAckAt/payoffAckAt이 안 바뀌고 save()/openGoalForm/openAssetHistory도 안 불리는지 확인하는 confirmTransferNow 패턴의 테스트 2건 추가. 오케스트레이터가 diff를 직접 리뷰(twGuard() 정의, ackGoalAchieved/ackDebtPayoff 변경 확인)하고 node test/run.js 재실행 4062->4064/4064 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과를 재검증한 뒤 커밋. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.550->1.47.551, sw.js CACHE v817->v818. 범위 제외: twGuard 전체 재감사, ack 전 확인 다이얼로그 추가 등 새 UX 패턴 도입.",
+      "commit": null
+    },
+    {
+      "cycle": 409,
+      "phase": "review",
+      "timestamp": "2026-11-26T17:10:00.000Z",
+      "summary": "develop(cycle409) 커밋 230fa31(ackGoalAchieved/ackDebtPayoff에 누락된 twGuard 추가)를 검토. twActive()/twGuard() 정의(index.html:9964-9965 — TWi>=0이면 toast 띄우고 true 반환)를 직접 읽고, delGoal·confirmTransferNow 등 기존 '전체 함수를 막는' twGuard 관례와 diff가 정확히 같은 모양(if(twGuard())return; 을 함수 맨 앞에 추가해 achievedAckAt/payoffAckAt 기록뿐 아니라 뒤따르는 openGoalForm/openAssetHistory 호출까지 같이 막음)인지 ackGoalAchieved/ackDebtPayoff 실제 정의(index.html:4428-4458)를 대조해 확인. saveTx/delTx/saveAsset/toggleRecActive/doBulkRecActive 등 이미 twGuard가 있거나 가드된 undo 경로를 쓰는 변경 함수들과 비교해 이번 두 함수가 유일한 공백이었다는 전제도 grep으로 재확인(추가 공백 없음). 추가된 테스트 2건(TWi=0 상태에서 achievedAckAt/payoffAckAt 불변 + save()/openGoalForm/openAssetHistory 미호출)이 실제로 그 분기를 커버하는지 확인. node test/run.js 재실행 4064/4064 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과, APP_VERSION 1.47.551/sw.js CACHE v818 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
