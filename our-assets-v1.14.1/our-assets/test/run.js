@@ -3145,6 +3145,61 @@ test('setBudgetFrom: 과거 달을 보면서 저장해도(예: 6월을 보다가
   assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000, '이후 달 값은 영향받지 않아야 함');
 });
 
+/* ---------- budgetHistoryValueAt/setBudgetHistoryAt(logic.js): budgetForMonth/setBudgetFrom과
+ * budgetForMonthOwner/setBudgetFromOwner가 공유하는 순수 핵심 로직(app-evolve cycle398
+ * critique/advance가 뽑아냄) — 위의 budgetForMonth/setBudgetFrom 테스트들은 모두 index.html
+ * 래퍼(DB.budgetHistory 전역 경유)를 통해서만 이 두 함수를 간접적으로 검증했고, 같은 섹션의
+ * 다른 순수 함수들(budgetCarry/budgetForMonthEffective/projectedMonthSpend)과 달리 h(이력 배열)를
+ * 직접 받는 이 두 함수 자체에는 한 번도 직접 호출하는 테스트가 없었다(app-evolve cycle407
+ * develop) — DB 전역이나 index.html 래퍼 없이 배열 하나만으로 바로 터지는지/정렬이 깨지는지를
+ * 이 레벨에서 바로 잡아낼 수 있어야 한다. */
+test('budgetHistoryValueAt: h가 없거나 비어 있으면(undefined/null/[]) 0을 반환한다', () => {
+  assert.strictEqual(sandbox.budgetHistoryValueAt(undefined, 2026, 6), 0);
+  assert.strictEqual(sandbox.budgetHistoryValueAt(null, 2026, 6), 0);
+  assert.strictEqual(sandbox.budgetHistoryValueAt([], 2026, 6), 0);
+});
+test('budgetHistoryValueAt: 가장 이른 from보다 이전 달을 조회하면 아직 적용되지 않아 0이다', () => {
+  const h = [{ from: '2026-06', amount: 300000 }];
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2026, 5), 0);
+});
+test('budgetHistoryValueAt: from 달 자체 및 그 이후 달엔 해당 금액이 적용된다', () => {
+  const h = [{ from: '2026-06', amount: 300000 }];
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2026, 6), 300000);
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2026, 7), 300000);
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2027, 1), 300000);
+});
+test('budgetHistoryValueAt: 여러 항목 중 조회 달보다 작거나 같은 from 중 가장 최근(from이 가장 큰) 값을 쓴다', () => {
+  const h = [{ from: '2026-03', amount: 200000 }, { from: '2026-06', amount: 300000 }, { from: '2026-09', amount: 350000 }];
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2026, 5), 200000, '인상 이전 달은 옛 금액');
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2026, 6), 300000);
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2026, 8), 300000, '다음 인상 전까지는 유지');
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2026, 9), 350000);
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2027, 1), 350000);
+});
+test('setBudgetHistoryAt: 빈 배열에 새 항목을 추가한다', () => {
+  // vm 샌드박스 안에서 push되는 {from,amount} 객체는 Node 메인 realm과 Object 프로토타입이 달라
+  // deepStrictEqual이 오탐하므로(qtyCaretAfterFilter 테스트와 동일한 이유), 필드별로 비교한다.
+  const h = [];
+  sandbox.setBudgetHistoryAt(h, 2026, 6, 300000);
+  assert.strictEqual(h.length, 1);
+  assert.strictEqual(h[0].from, '2026-06');
+  assert.strictEqual(h[0].amount, 300000);
+});
+test('setBudgetHistoryAt: 같은 달(from)에 다시 쓰면 새 항목을 추가하지 않고 그 자리에서 덮어쓴다', () => {
+  const h = [{ from: '2026-06', amount: 300000 }];
+  sandbox.setBudgetHistoryAt(h, 2026, 6, 350000);
+  assert.strictEqual(h.length, 1);
+  assert.strictEqual(h[0].amount, 350000);
+});
+test('setBudgetHistoryAt: from 오름차순이 아니게(과거 달을 나중에) 삽입해도 결과 배열을 from 오름차순으로 다시 정렬한다', () => {
+  const h = [];
+  sandbox.setBudgetHistoryAt(h, 2026, 6, 300000);
+  sandbox.setBudgetHistoryAt(h, 2026, 3, 100000); // from이 더 이른 항목을 나중에 삽입
+  assert.deepStrictEqual(h.map(e => e.from), ['2026-03', '2026-06'], 'budgetHistoryValueAt이 전제하는 오름차순 불변식을 유지해야 함');
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2026, 4), 100000);
+  assert.strictEqual(sandbox.budgetHistoryValueAt(h, 2026, 6), 300000);
+});
+
 /* ---------- budgetForMonthOwner/setBudgetFromOwner: 귀속별 예산 오버라이드(app-evolve cycle398
  * critique/advance) — DB.ownerBudgets[owner][cat]가 household budgetHistory와 동일한
  * {from,amount} 이력 shape을 쓰면서, 귀속이 이 카테고리에 한 번도 오버라이드를 설정한 적이
