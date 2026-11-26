@@ -361,7 +361,7 @@ const FUNCTIONS = [
   // 스파이로 대체한다(migrateLegacy/startApp 등과 같은 패턴).
   'heldCurrencies', 'heldStockCodes', 'heldCryptoCodes', 'needFx', 'needStock', 'needCrypto', 'hasRateAssets', 'autoSyncRates',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
-  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'allocPresetSegHTML', 'allocationHistoryCard', 'allocHistPeekLabel', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
+  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'allocPresetSegHTML', 'allocationHistoryCard', 'allocHistPeekLabel', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass', 'moveOwner',
   // targetAllocationCard/refreshTargetAllocationCard(목표 자산배분, app-evolve cycle313 advance)는
   // allocationHistoryCard 바로 아래 자리에 꽂는 새 카드 — assetBodyHTML/renderAssets/selectNwOwner가
   // 항상 함께 참조하므로(allocationCard/investGainLossCard와 같은 이유) FUNCTIONS에 반드시 함께
@@ -4756,6 +4756,47 @@ test('ownerChipClass: doRenameOwner로 기본 이름을 완전히 다른 이름�
 test('ownerChipClass: DB.owners에 없는(삭제된) 귀속 이름은 own-0으로 안전하게 폴백한다', () => {
   sandbox.DB = { owners: ['나', '배우자'] };
   assert.strictEqual(sandbox.ownerChipClass('이미삭제된귀속'), 'own-0');
+});
+
+/* ---------- moveOwner: 자산(moveAsset)·카테고리(moveCat)·목표(moveGoal)는 모두 위/아래 이동이
+ * 있었는데, 같은 '배열 순서 자체가 순서'인 구조인 DB.owners만 addOwner()가 끝에 push만 해서
+ * 한번 정해진 순서가 영구 고정이던 공백을 메운다(moveCat과 동일하게 movedCatOrder를 그대로
+ * 재사용, app-evolve cycle410 advance). ---------- */
+test('moveOwner: 중간 귀속을 위로 이동하면 바로 앞 귀속과 자리를 바꾸고 save()를 호출한다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '공용'] };
+  const origSave = sandbox.save;
+  let saveCalled = false;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.moveOwner(1, -1);
+  assert.deepStrictEqual(sandbox.DB.owners, ['배우자', '나', '공용']);
+  assert.strictEqual(saveCalled, true, 'moveCat과 동일하게 순서를 바꾼 뒤 save()를 호출해야 함');
+  sandbox.save = origSave;
+});
+test('moveOwner: 맨 위 귀속을 위로, 맨 아래 귀속을 아래로 이동하려 하면(경계) 아무것도 바꾸지 않고 save()도 부르지 않는다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '공용'] };
+  const origSave = sandbox.save;
+  let saveCalled = false;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.moveOwner(0, -1);
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '배우자', '공용'], '경계에서는 순서가 바뀌면 안 됨');
+  sandbox.moveOwner(2, 1);
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '배우자', '공용'], '경계에서는 순서가 바뀌면 안 됨');
+  assert.strictEqual(saveCalled, false, '경계 가드로 아무것도 안 바뀌면 save()를 부르면 안 됨');
+  sandbox.save = origSave;
+});
+test('moveOwner: 귀속이 2개뿐이어도 인접교환만 가능하다(경계=교환 대상이 곧 서로)', () => {
+  sandbox.DB = { owners: ['나', '배우자'] };
+  sandbox.moveOwner(0, 1);
+  assert.deepStrictEqual(sandbox.DB.owners, ['배우자', '나']);
+  sandbox.moveOwner(0, -1); // 다시 맨 위를 위로 이동 — 경계라 불변
+  assert.deepStrictEqual(sandbox.DB.owners, ['배우자', '나'], '경계에서는 순서가 바뀌면 안 됨');
+});
+test('moveOwner: 순서를 바꾼 뒤 ownerSegHtml이 바뀐 DB.owners 순서를 그대로 반영한다(회귀 — 별도 동기화 코드 없이 공유 배열을 그대로 읽음)', () => {
+  sandbox.DB = { owners: ['나', '배우자', '공용'] };
+  sandbox.moveOwner(1, -1); // 배우자를 나보다 앞으로
+  const html = sandbox.ownerSegHtml('전체', (i) => `spendOwnerSel(${i})`);
+  const order = [...html.matchAll(/onclick="spendOwnerSel\(\d+\)">([^<]+)</g)].map(m => m[1]);
+  assert.deepStrictEqual(order, ['전체', '배우자', '나', '공용'], 'ownerSegHtml은 DB.owners를 그대로 순서대로 읽으므로 moveOwner 결과가 바로 반영돼야 함');
 });
 
 /* ---------- ownerSegHtml: spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel
@@ -33909,6 +33950,20 @@ test('[실행형] openOwnerManage: 자산이 하나도 없는 귀속은 "0개 �
   ctx.DB = { owners: ['나'], assets: [] };
   ctx.openOwnerManage();
   assert.ok(ctx.lastSheetHtml.includes('<div class="msub">0개 자산</div>'), '자산 없는 귀속은 0개 자산으로 떠야 함');
+});
+/* [실행형] openOwnerManage: moveCat(9340)의 grp-move-btn 마크업과 동일한 모양으로 위/아래 이동
+ * 버튼을 각 행에 보여준다(app-evolve cycle410 advance — moveOwner 신설과 함께 추가). */
+test('[실행형] openOwnerManage: 각 행에 moveOwner(i,-1)/moveOwner(i,1)로 연결된 위/아래 이동 버튼이 있고, 맨 위/맨 아래는 해당 방향이 disabled된다', () => {
+  const ctx = ownerManageCtx();
+  ctx.DB = { owners: ['나', '배우자', '공용'], assets: [] };
+  ctx.openOwnerManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('<button type="button" class="grp-move-btn" aria-label="나 위로 이동" onclick="moveOwner(0,-1)" disabled>arrowUp</button>'), '맨 위(인덱스 0)는 위로 이동이 disabled여야 함');
+  assert.ok(html.includes('<button type="button" class="grp-move-btn" aria-label="나 아래로 이동" onclick="moveOwner(0,1)">arrowDn</button>'), '맨 위라도 아래로 이동은 가능해야 함');
+  assert.ok(html.includes('<button type="button" class="grp-move-btn" aria-label="배우자 위로 이동" onclick="moveOwner(1,-1)">arrowUp</button>'), '중간(인덱스 1)은 위/아래 모두 가능해야 함');
+  assert.ok(html.includes('<button type="button" class="grp-move-btn" aria-label="배우자 아래로 이동" onclick="moveOwner(1,1)">arrowDn</button>'));
+  assert.ok(html.includes('<button type="button" class="grp-move-btn" aria-label="공용 위로 이동" onclick="moveOwner(2,-1)">arrowUp</button>'), '맨 아래라도 위로 이동은 가능해야 함');
+  assert.ok(html.includes('<button type="button" class="grp-move-btn" aria-label="공용 아래로 이동" onclick="moveOwner(2,1)" disabled>arrowDn</button>'), '맨 아래(인덱스 2)는 아래로 이동이 disabled여야 함');
 });
 test('[실행형] openOwnerManage: newOwner(귀속 추가 입력)도 다른 이름 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
   const ctx = ownerManageCtx();

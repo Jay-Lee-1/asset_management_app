@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.553';
+const APP_VERSION='1.47.554';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -5850,11 +5850,23 @@ function num(el,allowNeg){if(!el)return 0;const s=el.value||'0';const neg=allowN
 function openOwnerManage(){
  openSheet(`<h3>귀속 관리</h3><div class="desc">자산 소유 구분이에요. 이름을 바꾸면 그 귀속의 자산도 함께 바뀌어요. (같은 로그인 계정 안에서만 쓰는 이름표라, 배우자가 실제로 따로 로그인해 각자 입력하면 서로의 기록이 보이지 않아요 — 계정 화면의 '이메일 로그인·클라우드 동기화 설정' 안내를 확인하세요.)</div>
   <div>${DB.owners.map((o,i)=>{const used=DB.assets.filter(a=>a.owner===o).length;
+   const moveBtns=`<div class="grp-move"><button type="button" class="grp-move-btn" aria-label="${esc(o)} 위로 이동" onclick="moveOwner(${i},-1)"${i===0?' disabled':''}>${svg('arrowUp')}</button><button type="button" class="grp-move-btn" aria-label="${esc(o)} 아래로 이동" onclick="moveOwner(${i},1)"${i===DB.owners.length-1?' disabled':''}>${svg('arrowDn')}</button></div>`;
    return `<div class="manage-row"><div class="avatar" style="width:36px;height:36px;border-radius:11px;background:var(--sunken);color:var(--text-2)">${svg('users',18)}</div>
     <div style="flex:1"><div class="mn">${esc(o)}</div><div class="msub">${used}개 자산</div></div>
-    <div class="row-acts">${DB.owners.length>1?`<button class="act-btn" aria-label="${esc(o)} 다른 귀속으로 합치기" onclick="openOwnerMergePicker(${i})">${svg('merge')}</button>`:''}<button class="act-btn" aria-label="${esc(o)} 수정" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(o)} 삭제" onclick="delOwner(${i})">${svg('trash')}</button></div></div>`}).join('')}</div>
+    ${moveBtns}<div class="row-acts">${DB.owners.length>1?`<button class="act-btn" aria-label="${esc(o)} 다른 귀속으로 합치기" onclick="openOwnerMergePicker(${i})">${svg('merge')}</button>`:''}<button class="act-btn" aria-label="${esc(o)} 수정" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(o)} 삭제" onclick="delOwner(${i})">${svg('trash')}</button></div></div>`}).join('')}</div>
   <div class="add-inline"><div class="field-clear"><input id="newOwner" maxlength="${NAME_MAX}" placeholder="새 귀속 (예: 아이)" onkeydown="if(event.key==='Enter'&&!event.isComposing)addOwner()"><button type="button" class="fc-x" aria-label="귀속 이름 지우기" onclick="clrInput('newOwner')">✕</button></div><button onclick="addOwner()" aria-label="귀속 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
+}
+/* moveCat(9340)과 동일 패턴 — movedCatOrder(5523)는 arr/i/dir만 받는 범용 헬퍼라 그대로
+ * 재사용한다(DB.owners도 DB.categories[k]와 같은 '배열 순서 자체가 순서'인 문자열 목록이라
+ * 새 헬퍼가 필요 없음). 자산(moveAsset)·카테고리(moveCat)·목표(moveGoal)는 모두 위/아래 이동이
+ * 있었는데 귀속만 addOwner()가 끝에 push만 해 한번 정해지면 영구 고정이던 공백을 메운다
+ * (app-evolve cycle410 advance). */
+function moveOwner(i,dir){
+ const arr=movedCatOrder(DB.owners,i,dir);
+ if(!arr)return;
+ DB.owners=arr;
+ save();openOwnerManage();
 }
 function openOwnerSheet(){openOwnerManage()}
 /* 귀속 삭제 톰스톤 키(mergeNameListWithTombstones가 DB.deletedIds에서 찾는 합성 키, app-evolve
