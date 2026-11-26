@@ -1,15 +1,8 @@
 {
   "cycle": 406,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 401,
-      "phase": "review",
-      "timestamp": "2026-11-25T08:05:00.000Z",
-      "summary": "develop(cycle401) 커밋 f1d168e(toggleRecActive/toggleAdjustSurplus에 twGuard 추가)를 검토. twGuard() 정의(index.html:9769, twActive()가 아니면 toast+true를 돌려주는 표준 가드)와 호출 패턴을 doBulkRecActive/doBulkInclToggle(13603/13636, if(twGuard())return; 함수 최상단)과 대조해 이번 diff의 두 함수도 동일한 위치·형태로 가드를 넣었음을 확인. 가드가 함수 맨 앞에서 반환하므로 el.classList.toggle 등 어떤 DOM/DB 부수효과도 twGuard 통과 전에는 실행되지 않아 기존 비가드 호출부와의 충돌 가능성 없음. 추가된 회귀 테스트 2건(TWi=0으로 막힘 확인 후 TWi=-1 복원)의 격리 여부도 재확인 — 두 테스트 모두 테스트 끝에 TWi를 원복해 뒤따르는 테스트의 전역 상태를 오염시키지 않음. node test/run.js 재실행 3982/3982 전부 통과. node --check(sw.js/logic.js) 통과. index.html에서 HTML 주석을 제거한 뒤 추출한 inline <script> 블록 4개 전부 new Function()으로 파싱 통과(주석 제거 없이 돌리면 주석 속 코드 설명문 때문에 거짓 실패가 나는 것도 함께 재확인). APP_VERSION 1.47.536/sw.js CACHE v803 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 401,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-26T03:14:55.817Z",
       "summary": "문의하기(메모) 수정(editInquiry/saveInquiryEdit)이 같은 화면의 삭제(delInquiry, cycle327)와 달리 undoToast 없이 plain toast로 끝나, 메모 내용을 잘못 고쳐도 되돌릴 방법이 없던 비대칭을 발견(doRenameOwner/doRenameCat이 cycle345에 메운 것과 같은 수정-경로 undo 공백 클래스, 문의하기만 아직 비어 있었음). saveInquiryEdit()에서 저장 전 q.text를 prevText로 캡처해두고, touchSave(q);closeSheet();openInquiryList() 뒤 undoToast('메모를 수정했어요',()=>{q.text=prevText;touchSave(q);openInquiryList();toast('되돌렸어요')})를 추가(doRenameOwner와 동일한 가벼운 단일 필드 캡처-복원 패턴, delInquiry의 undo 콜백 구조와도 동일). test/run.js에 저장 후 undoToast 호출+되돌리면 text/date/updatedAt(touch 재적용)이 올바르게 복원되는지, 그리고 내용을 비워 저장이 막히는 경로에서는 undoToast가 호출되지 않는지 2건 추가. node test/run.js 4037->4039/4039 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.545->1.47.546, sw.js CACHE v812->v813. logic.js 자체는 변경 없음(순수 로직 함수 신설 없이 index.html UI 함수만 수정).",
+      "commit": null
+    },
+    {
+      "cycle": 406,
+      "phase": "review",
+      "timestamp": "2026-11-26T04:00:00.000Z",
+      "summary": "develop(cycle406) 커밋 6b250df(saveInquiryEdit에 undoToast 추가)를 검토. undoToast() 정의(index.html:13607, 6초 타이머+마우스hover/focus로 일시정지, 클릭 시 1회성 undoFn 실행)와 기존 \"수정 경로\" undo 패턴인 doRenameOwner/doRenameCat(단일 필드만 캡처해 그대로 되돌리는 가벼운 패턴)을 대조해, 이번 diff가 동일한 구조(prevText 캡처 -> touchSave -> closeSheet/openInquiryList -> undoToast 콜백에서 q.text=prevText;touchSave(q);openInquiryList())를 그대로 따르는지 확인. 되돌리기 콜백이 q 참조(find()로 찾은 동일 객체)를 그대로 재사용하는 점도 doRenameOwner와 동일한 전제(6초 내 해당 inquiry가 다른 경로로 삭제되는 경쟁 상황은 기존 패턴에도 이미 존재하는 공통 전제라 이번 diff가 새로 만든 문제는 아님)라 추가 수정 불필요로 판단. 저장이 막히는 경로(내용 비움)에서 undoToast가 호출되지 않는 케이스도 테스트로 커버됨을 확인. node test/run.js 4039/4039 전부 통과. node --check(sw.js/logic.js/test/run.js) 통과. index.html에서 HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script()로 파싱 통과. APP_VERSION 1.47.546/sw.js CACHE v813 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
