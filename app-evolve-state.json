@@ -1,15 +1,14 @@
 {
   "cycle": 410,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "귀속(Owner) 관리에 수동 순서 변경(moveOwner) 추가 — moveCat과 동일 패턴",
+    "why": "자산(moveAsset)·카테고리(moveCat)·목표(moveGoal)는 이미 '위/아래로 직접 재배열' 기능을 갖췄는데, 같은 '배열 순서 자체가 순서'인 DB.owners에는 이 기능이 빠져 있다. addOwner()가 항상 끝에 push만 해서, 한 번 정해진 귀속 순서는 삭제 후 재생성(자산 0개일 때만 가능) 외엔 영구히 고정된다. 이 순서는 ownerSegHtml(가계부/지출·수입분석/목표/연간결산이 공유하는 귀속 선택 세그먼트)과 ownerChipClass(귀속 칩 색)에 그대로 노출된다.",
+    "approach": "1) index.html에 moveOwner(i,dir) 신설(moveCat, index.html:9340-9344과 동일 모양): movedCatOrder(DB.owners,i,dir)로 인접교환, null이면 return, 아니면 DB.owners=arr; save(); openOwnerManage(). movedCatOrder(index.html:5523)는 arr/i/dir만 받는 범용 헬퍼라 새 함수 불필요, 재사용 이유를 주석으로 남긴다. 2) openOwnerManage()(index.html:5850-5857)의 각 귀속 row-acts에 moveCat 행(index.html:9326)과 동일한 grp-move-btn 마크업(arrowUp/arrowDn, i===0/i===DB.owners.length-1일 때 disabled, aria-label '${esc(o)} 위로 이동'/'아래로 이동')을 merge/edit/delete 버튼 앞에 추가. 3) test/run.js FUNCTIONS 화이트리스트(364행 부근, doRenameOwner/addOwner/ownerChipClass 옆)에 'moveOwner' 추가. 4) undoToast는 추가하지 않음 — moveAsset/moveCat/moveGoal과 동일하게 인접교환은 버튼을 다시 누르면 즉시 원복되므로 기존 관례를 따른다.",
+    "scope_excluded": "DB.owners 재정렬의 클라우드 동기화 병합 방식(mergeNameListWithTombstones) 변경 없음(카테고리도 동일 특성, 이 기능과 무관). 정산(Settlement) 참가자 순서 로직 변경 없음. ownerChipClass의 index%5 색상 로직 재설계 없음(순서 변경 시 칩 색이 따라 바뀌는 건 의도된 부수효과로 둠). 다중선택 일괄 재정렬은 만들지 않음(1건씩 위/아래 이동만, 이미 기각된 '목표 다중선택 일괄 순서변경'과 동일 사유). addOwner/delOwner/doRenameOwner/merge 로직 변경 없음.",
+    "test_plan": "test/run.js openOwnerManage 섹션(364행 근처)에 추가: (1) 첫 항목 위로 이동→null/불변(경계가드), (2) 마지막 항목 아래로 이동→null/불변(경계가드), (3) 가운데 항목 이동 시 인접 두 이름이 정확히 자리교환, (4) moveOwner 호출 후 save()가 불려 DB 영속화 확인(실행형, test/run.js:33869 openOwnerManage 추출 예시 재사용), (5) 순서 변경 후 ownerSegHtml이 바뀐 배열 순서를 자연히 반영하는지 회귀 확인, (6) owners가 2개뿐일 때 경계 동작(인접교환만 가능)."
+  },
   "history": [
-    {
-      "cycle": 405,
-      "phase": "critique",
-      "timestamp": "2026-11-26T01:00:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-405 전체 배제 목록(twGuard 감사 전체, confirmSheet 더블탭 가드, assetQtyLog edit, planTransfer/planSplitTransfer undo, auth_expired 분류, goal moveGoal, 부채 상환 debtAmortSuffix, 가계부 아카이브 인지, 예산 CSV ownerBudgets 포함, 접근성/데이터클램프/메모자동완성/전역에러배너/seenAt정체/연간결산아카이브/CSV import v1한계/공유계정인증재설계/렌더성능/CDN SRI/모놀리식구조개편/다중통화/세무리포트/부채엔지니어링/클라우드병합재설계/esc XSS/OS알림/할부기능/태그시스템/반복거래순서변경/카테고리일괄merge 등 기각 항목)를 주고 전략적 재검토시킴. 분할+반복거래 동시편집 제한(cycle198 설계상 의도적 트레이드오프, openRecManage 경유 우회로 이미 존재해 기각), 만기된 예적금 자산이 방치되는 문제(emptyAssets/openTidyAsset이 이미 같은 케이스를 정리 후보로 지목해 기각) 두 후보를 검토 후 기각하고, importData()->proceedWithBackupObj(index.html:11450-11474, 평문/PIN암호화 백업 공통 단일 관문)의 복원 확인 메시지가 '현재 데이터를 백업 파일로 교체할까요?'라는 일반 문구뿐이고 어떤 백업 파일을 복원하는지(생성 시점·거래/자산 건수) 전혀 보여주지 않는 공백을 발견 — sanitizeBackup()의 fixedCount/droppedCount/rangeCount는 복원 '완료 후' undo 토스트에만 나타나고 복원 전엔 전혀 안 보임. CSV 거래 가져오기(buildImportPreview/openCsvImportPreview, index.html:10287)는 훨씬 덜 파괴적인 append 작업인데도 이미 '몇 건이 들어갈지' 미리보기를 제공하는 것과 비대칭 — 여러 백업 파일(기기별/월별)을 쓰는 가구가 오래된 백업을 잘못 복원해도 6초 undo 토스트 외에는 알 방법이 없음. pending_advance_plan에 doExport() 전체백업 분기에 _exportedAt 타임스탬프 추가 + logic.js backupSummary(obj)(txnCount/assetCount/exportedAt/latestDate 산출 순수함수) 신설 + proceedWithBackupObj에서 sanitizeBackup 호출 전에 backupSummary로 confirmSheet 안내문 앞에 생성시점·건수 미리보기 한 줄 추가(exportedAt 없는 구버전 백업은 txns 최신 날짜로 근사, 둘 다 없으면 기존 일반 문구 유지) + 테스트 계획(backupSummary 순수 테스트 4건 + proceedWithBackupObj 실행형 테스트 2-3건) 저장. 범위 제외(계획대로): 클라우드 동기화 충돌/병합 화면, CSV 가져오기 미리보기(이미 있음), 부분/선택적 복원, 구버전 백업의 정확한 시각 역산, 내보내기 화면 자체 변경. node test/run.js 4030/4030 통과 확인(서브에이전트가 코드 변경 전 베이스라인으로 확인, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 405,
       "phase": "advance",
@@ -141,6 +140,13 @@
       "phase": "review",
       "timestamp": "2026-11-26T20:08:10.746Z",
       "summary": "develop(cycle410) 커밋 8d2119a(normalizeCsvDateCell이 점 뒤 공백 날짜에 시간이 한 칸 더 붙은 표기도 처리하도록 lookahead로 수정)를 검토. 변경된 정규식 ^(\\d{4})\\.\\s*(\\d{1,2})\\.\\s*(\\d{1,2})\\.?(?=\\s|T|$)을 직접 따라가며 '2026. 1. 5 13:25:33'(공백 구분자)·'2026. 1. 5T13:25'(T 구분자)는 매치하고, '2026.1.523'(날짜 뒤 숫자가 더 붙는 모호한 입력)은 greedy 1~2자리 day 매칭이 백트래킹해도 lookahead를 못 통과해 전체 매치가 실패함을 수식으로 재확인 — 이 경우 함수가 원본 문자열을 그대로 반환하는데, 유일한 호출부인 mapGenericCsvRow(logic.js:1830)가 바로 뒤에서 csvDateValid()로 ^\\d{4}-\\d{2}-\\d{2}$ 형식을 강제하므로 모양이 안 맞는 원본 문자열은 자동으로 거부됨을 확인(별도의 방어 코드가 필요 없는 설계가 맞음). normalizeCsvDateCell의 유일한 호출부가 mapGenericCsvRow 하나뿐임을 grep으로 재확인해 이번 변경이 다른 경로(백업/CSV 다른 날짜 필드)에 영향을 주지 않음도 확인. 기존 '점 뒤 공백만' 케이스(시간 없음)가 lookahead의 $ 분기로 여전히 매치해 회귀가 없음도 확인. 추가된 테스트 4건(공백 구분자, 0패딩, T 구분자, 모호한 입력 거부)이 각 분기를 정확히 짚고 있음을 확인. node test/run.js 재실행 4069/4069 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html에서 HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/974281/1770자) 전부 new vm.Script() 파싱 통과, APP_VERSION 1.47.553/sw.js CACHE v820 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 410,
+      "phase": "critique",
+      "timestamp": "2026-11-26T22:00:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 cycle405-410 완료 목록(백업복원미리보기, 지출/수입분석 아카이브안내+월네비게이션, 문의하기undo, budgetHistoryValueAt테스트, toggleRecActive플래그버그, goalsBehind/debtBehind Multi카드 대칭, ackGoalAchieved/ackDebtPayoff twGuard, allocationDrift상세시트, CSV import 날짜+시간혼합)와 cycle340-409 전체 기각 목록(twGuard 전체재감사·confirmSheet더블탭가드·assetQtyLog edit·planTransfer/planSplitTransfer undo·auth_expired분류·부채상환debtAmortSuffix·접근성/데이터클램프/메모자동완성/전역에러배너/seenAt정체/CSV import v1한계/공유계정인증재설계/렌더성능/CDN SRI/모놀리식구조개편/다중통화/세무리포트/부채엔지니어링/클라우드병합재설계/esc XSS/OS알림/할부기능/태그시스템/반복거래순서변경/카테고리일괄merge/분할+반복거래동시편집제한/만기예적금방치/캘린더셀스타일링/목표다중선택일괄순서변경/전체내역날짜범위/archiveMonthPicked문구/goal.order백필/자동토큰갱신/인증아키텍처변경/카카오경로변경/클라우드merge화면/백업부분복원/구버전백업시각역산/budgetOverMulti·budgetPaceWarnMulti드릴다운/matMulti→openMaturity/assetQtyLog realizedGain재계산검증)를 배제 목록으로 주고 재검토시킴. 단건 즉시토글(toggleRecActive 등)에 undoToast 없는 것(bulk만 있음, 의도된 설계 — 같은 버튼이 그대로 남아 재탭으로 즉시 원복 가능해 기각), budgetOver/budgetPaceWarn 단건 카드가 al.cat 필터 없이 이번달 전체 지출분석으로만 연결(이미 기각된 Multi 드릴다운과 동일 클래스로 재기각) 두 후보를 검토 후 기각하고, 자산(moveAsset,5505)·카테고리(moveCat,9340)·목표(moveGoal,4357)는 모두 위/아래 이동 버튼을 갖췄는데 같은 'id 없는 문자열 배열=순서 그 자체' 구조인 귀속(DB.owners, openOwnerManage 5850)만 추가·수정·합치기·삭제뿐이고 순서 이동이 전혀 없는 공백을 발견(addOwner가 항상 끝에 push만 해 한번 정해진 순서는 영구 고정, ownerSegHtml/ownerChipClass에 그대로 노출). 오케스트레이터가 movedCatOrder(5523)/moveCat(9340-9344)/moveAsset(5505)/moveGoal(4357)/openOwnerManage(5850-5857)/moveCat의 grp-move-btn 마크업(9326) 전부 직접 읽고 서브에이전트 주장과 일치함을 재확인. pending_advance_plan에 moveOwner(i,dir)(movedCatOrder 재사용, 새 헬퍼 불필요) + openOwnerManage row-acts에 moveCat과 동일한 grp-move-btn 마크업 추가 + FUNCTIONS 화이트리스트 등록 + 테스트 6건 계획(경계가드 2건, 교환 1건, save 영속화 1건, ownerSegHtml 반영 회귀 1건, 2개뿐일 때 경계 1건) 저장(undoToast 미추가는 move류 기존 관례 그대로, 클라우드병합/정산참가자순서/ownerChipClass색상재설계/다중선택일괄재정렬은 범위 제외로 명시). node test/run.js 4069/4069 통과 확인(서브에이전트가 코드 변경 전 베이스라인으로 확인, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
