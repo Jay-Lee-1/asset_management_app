@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.549';
+const APP_VERSION='1.47.550';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -13061,6 +13061,47 @@ function openDebtPaidOffList(){ /* openDebtBehindList()와 동일 패턴 — 1�
     <div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub">${comma(a.amount)}원을 다 갚았어요</div></div>
     <div class="pc">${svg('chevR')}</div></button>`).join('')}</div>`);
 }
+/* 목표일보다 늦어지는 목표 목록 — homeAlerts()의 _gb(바로 아래)가 쓰던 필터(목표일 있음, hist>=2,
+ * achieved 아님, 추세투사가 목표일을 못 맞추거나 없음, 시세 미확인 아님, 연결자산 안 삭제됨)를
+ * openGoalBehindList()와 공유하는 헬퍼로 분리한다 — debtsBehind()/openDebtBehindList()(바로 위)와
+ * 똑같이 debtBehindMulti는 영향받은 자산만 걸러 보여주는데 goalBehindMulti는 openGoalsList()(전체
+ * 목표 관리 목록, 필터 없음)를 그냥 열어 여러 목표 중 어떤 게 늦어지는지 알아서 찾아야 했던
+ * 비대칭을 없앤다(app-evolve cycle408 advance, cycle407 critique가 짚음) */
+function goalsBehind(){
+ return (DB.goals||[]).filter(g=>g.targetDate).map(g=>{const hist=goalHistoryFor(g).filter(h=>h.date<=TODAY);return {g,p:goalProgress(g,hist,TODAY),hist};})
+   .filter(({g,p,hist})=>hist.length>=2&&!p.achieved&&(!p.projectedDate||p.projectedDate>g.targetDate)&&!goalHasUnknown(g)&&!goalLinkedAssetGone(g))
+   .sort((a,b)=>a.g.targetDate<b.g.targetDate?-1:1)
+   .map(({g,p})=>({id:g.id,name:g.name,targetDate:g.targetDate,projectedDate:p.projectedDate}));
+}
+function openGoalBehindList(){ /* openDebtBehindList()와 동일 패턴 — 1건이면 바로 그 목표로, 여러 건이면 시트에서 고른다 */
+ const list=goalsBehind();
+ if(!list.length){toast('늦어지고 있는 목표가 없어요');closeSheet();return}
+ if(list.length===1){closeSheet();openGoalForm(list[0].id);return}
+ openSheet(`<h3>목표 지연</h3><div class="desc">목표일보다 늦어지고 있는 목표 ${list.length}건이에요. 눌러서 확인하세요.</div>
+  <div style="display:flex;flex-direction:column;gap:8px">${list.map(g=>`<button class="pick" onclick="closeSheet();openGoalForm('${g.id}')">
+    <div class="pav a-save">${svg('target')}</div>
+    <div class="pbody"><div class="pn">${esc(g.name)}</div><div class="psub">목표일 ${shortDate2(g.targetDate)}${g.projectedDate?` · 이대로면 ${shortDate2(g.projectedDate)}쯤 달성 예상`:' · 최근 추세로는 달성이 어려워요'}</div></div>
+    <div class="pc">${svg('chevR')}</div></button>`).join('')}</div>`);
+}
+/* 목표 달성 목록 — goalsBehind()(바로 위)와 정확히 대칭되는 긍정적 사건. homeAlerts()의 _ga가 쓰던
+ * 필터(goalNewlyAchieved, 시세 미확인 아님, 연결자산 안 삭제됨)를 openGoalAchievedList()와 공유한다
+ * (debtsPaidOff()/openDebtPaidOffList()와 동일한 공유 구조, app-evolve cycle408 advance) */
+function goalsAchieved(){
+ return (DB.goals||[]).map(g=>({g,p:goalProgress(g,goalHistoryFor(g).filter(h=>h.date<=TODAY),TODAY)}))
+   .filter(({g,p})=>goalNewlyAchieved(g,p)&&!goalHasUnknown(g)&&!goalLinkedAssetGone(g))
+   .sort((a,b)=>a.g.name<b.g.name?-1:1)
+   .map(({g,p})=>({id:g.id,name:g.name,amount:p.cur}));
+}
+function openGoalAchievedList(){ /* openDebtPaidOffList()와 동일 패턴 — 1건이면 바로 ack, 여러 건이면 시트에서 고른다 */
+ const list=goalsAchieved();
+ if(!list.length){toast('달성 축하 알림이 없어요');closeSheet();return}
+ if(list.length===1){closeSheet();ackGoalAchieved(list[0].id);return}
+ openSheet(`<h3>목표 달성 🎉</h3><div class="desc">달성한 목표 ${list.length}건이에요. 눌러서 확인하세요.</div>
+  <div style="display:flex;flex-direction:column;gap:8px">${list.map(g=>`<button class="pick" onclick="closeSheet();ackGoalAchieved('${g.id}')">
+    <div class="pav a-save">${svg('target')}</div>
+    <div class="pbody"><div class="pn">${esc(g.name)}</div><div class="psub">${comma(g.amount)}원을 달성했어요</div></div>
+    <div class="pc">${svg('chevR')}</div></button>`).join('')}</div>`);
+}
 function homeAlerts(neg){
  const arr=[];
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict')arr.push({kind:'cloudConflict'});
@@ -13153,10 +13194,8 @@ function homeAlerts(neg){
   * 실제보다 나쁘게 나올 수 있으므로, 그 귀속의 시세가 다 확인될 때까지는 behind 알림을 억제한다
   * (goalRowHTML/openGoalsList의 "일부 미확인" 캡션으로 이미 원인을 안내하므로 중복 경보가 아님,
   * app-evolve cycle186 advance) */
- const _gb=(DB.goals||[]).filter(g=>g.targetDate).map(g=>{const hist=goalHistoryFor(g).filter(h=>h.date<=TODAY);return {g,p:goalProgress(g,hist,TODAY),hist};})
-   .filter(({g,p,hist})=>hist.length>=2&&!p.achieved&&(!p.projectedDate||p.projectedDate>g.targetDate)&&!goalHasUnknown(g)&&!goalLinkedAssetGone(g))
-   .sort((a,b)=>a.g.targetDate<b.g.targetDate?-1:1);
- if(_gb.length===1){const{g,p}=_gb[0];arr.push({kind:'goalBehind',goalId:g.id,name:g.name,targetDate:g.targetDate,projectedDate:p.projectedDate});}
+ const _gb=goalsBehind(); /* homeAlerts()/openGoalBehindList() 공유 헬퍼(바로 위) — debtsBehind()와 동일한 구조 */
+ if(_gb.length===1){const g=_gb[0];arr.push({kind:'goalBehind',goalId:g.id,name:g.name,targetDate:g.targetDate,projectedDate:g.projectedDate});}
  else if(_gb.length>1)arr.push({kind:'goalBehindMulti',count:_gb.length});
  /* 목표 달성: goalBehind(늦어짐)와 정확히 대칭되는 긍정적 사건 — 목표가 achieved인데 아직 ack(achievedAckAt)
   * 안 됐으면 포함한다(goalNewlyAchieved). achieved는 추세가 아니라 현재 snapshot만으로 판정되므로 goalBehind의
@@ -13164,10 +13203,8 @@ function homeAlerts(neg){
   * (goalLinkedAssetGone)는 똑같이 적용해 미확인 시세로 오탐 달성되는 걸 막는다(app-evolve cycle256 advance).
   * budgetOver/goalBehind와 동일한 단일/복수 collapsing 패턴. 한 번 뜬 뒤엔 ackGoalAchieved(목표 상세 진입)가
   * achievedAckAt을 남겨야 사라지므로, budgetOver처럼 다음 달에 자연 해소되지 않는다. */
- const _ga=(DB.goals||[]).map(g=>({g,p:goalProgress(g,goalHistoryFor(g).filter(h=>h.date<=TODAY),TODAY)}))
-   .filter(({g,p})=>goalNewlyAchieved(g,p)&&!goalHasUnknown(g)&&!goalLinkedAssetGone(g))
-   .sort((a,b)=>a.g.name<b.g.name?-1:1);
- if(_ga.length===1){const{g,p}=_ga[0];arr.push({kind:'goalAchieved',goalId:g.id,name:g.name,amount:p.cur});}
+ const _ga=goalsAchieved(); /* homeAlerts()/openGoalAchievedList() 공유 헬퍼(goalsBehind 바로 아래) — debtsPaidOff()와 동일한 구조 */
+ if(_ga.length===1){const g=_ga[0];arr.push({kind:'goalAchieved',goalId:g.id,name:g.name,amount:g.amount});}
  else if(_ga.length>1)arr.push({kind:'goalAchievedMulti',count:_ga.length});
  /* 상환 추세가 정체/악화된 부채와 완납: debtsBehind()/debtsPaidOff()(homeAlerts 바로 앞) 참고.
   * 이 둘은 각자 독립적으로 전체 거래 스캔+자산별 잔액 추이를 재계산해 homeAlerts()(저장/탭 전환
@@ -13547,7 +13584,7 @@ function homeAlertCard(al){
    <div class="ha-b"><div class="ha-t">목표가 늦어지고 있어요 · ${esc(al.name)}</div>
      <div class="ha-s">목표일 ${shortDate2(al.targetDate)}${al.projectedDate?` · 이대로면 ${shortDate2(al.projectedDate)}쯤 달성 예상`:' · 최근 추세로는 달성이 어려워요'}</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
- if(al.kind==='goalBehindMulti')return `<button class="home-alert mat" onclick="openGoalsList()">
+ if(al.kind==='goalBehindMulti')return `<button class="home-alert mat" onclick="openGoalBehindList()">
    <div class="ha-ic">${svg('target')}</div>
    <div class="ha-b"><div class="ha-t">목표가 늦어지고 있어요 ${al.count}건</div>
      <div class="ha-s">눌러서 한 번에 확인</div></div>
@@ -13557,7 +13594,7 @@ function homeAlertCard(al){
    <div class="ha-b"><div class="ha-t">목표를 달성했어요 🎉 · ${esc(al.name)}</div>
      <div class="ha-s">${comma(al.amount)}원 · 눌러서 확인하세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
- if(al.kind==='goalAchievedMulti')return `<button class="home-alert" onclick="openGoalsList()">
+ if(al.kind==='goalAchievedMulti')return `<button class="home-alert" onclick="openGoalAchievedList()">
    <div class="ha-ic">${svg('target')}</div>
    <div class="ha-b"><div class="ha-t">목표를 달성했어요 🎉 ${al.count}건</div>
      <div class="ha-s">눌러서 한 번에 확인</div></div>

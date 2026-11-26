@@ -267,6 +267,10 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtPayoffStatuses', 'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
+  // goalsBehind/goalsAchieved·openGoalBehindList/openGoalAchievedList(app-evolve cycle408 advance)는
+  // homeAlerts()의 goalBehind(Multi)/goalAchieved(Multi) 판정을 debtsBehind/debtsPaidOff와 동일한
+  // 구조로 분리한 공유 헬퍼라, homeAlerts를 올리는 이 sandbox에 바로 위 debt 쌍과 함께 올려야 한다.
+  'goalsBehind', 'openGoalBehindList', 'goalsAchieved', 'openGoalAchievedList',
   // debtPayoffPtsFor/debtWhatIfText/debtWhatIfUpdate는 부채 상환 추가 납입 시뮬레이터(what-if,
   // app-evolve cycle262 advance) 구현 — assetBalCard가 debtPayoffPtsFor/debtWhatIfText를 직접
   // 호출하므로(debt 분기) 그 둘은 assetBalCard를 쓰는 어떤 sandbox에도 함께 올라가야 한다.
@@ -35626,13 +35630,13 @@ test('notifyAlertInfo: goalBehindMulti도 confirmMulti/matMulti처럼 같은 달
   const gb2Again = sandbox.notifyAlertInfo({ kind: 'goalBehindMulti', count: 2 });
   assert.strictEqual(gb2Again.key, gb2.key, '건수가 그대로면(같은 달) 같은 키로 여전히 dedupe돼야 함');
 });
-test('homeAlertCard: goalBehind/goalBehindMulti가 각각 openGoalForm/openGoalsList로 연결된다', () => {
+test('homeAlertCard: goalBehind/goalBehindMulti가 각각 openGoalForm/openGoalBehindList로 연결된다(app-evolve cycle408 advance — debtBehindMulti/openDebtBehindList와 동일하게 영향받은 목표만 걸러 보여줌)', () => {
   const html1 = sandbox.homeAlertCard({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01', projectedDate: null });
   assert.ok(html1.includes("openGoalForm('g1')"));
   assert.ok(html1.includes('내 집 마련'));
 
   const html2 = sandbox.homeAlertCard({ kind: 'goalBehindMulti', count: 2 });
-  assert.ok(html2.includes('openGoalsList()'));
+  assert.ok(html2.includes('openGoalBehindList()'));
   assert.ok(html2.includes('2건'));
 });
 test('homeAlertCard: goalBehind의 목표일/예상 달성일은 올해를 넘기면 연도까지 보여준다(shortDate2, notifyAlertInfo의 fmtDateFull과 동일한 정보량 — app-evolve cycle357)', () => {
@@ -35713,13 +35717,13 @@ test('notifyAlertInfo: goalAchieved/goalAchievedMulti는 월 키 없이 goalId/c
   assert.ok(info2.title && info2.body, 'OS 알림 제목/본문이 있어야 함');
   assert.ok(info2.body.includes('2건'));
 });
-test('homeAlertCard: goalAchieved는 ackGoalAchieved(openGoalForm 아님)로, goalAchievedMulti는 openGoalsList로 연결된다', () => {
+test('homeAlertCard: goalAchieved는 ackGoalAchieved(openGoalForm 아님)로, goalAchievedMulti는 openGoalAchievedList로 연결된다(app-evolve cycle408 advance — debtPaidOffMulti/openDebtPaidOffList와 동일하게 영향받은 목표만 걸러 보여줌)', () => {
   const html1 = sandbox.homeAlertCard({ kind: 'goalAchieved', goalId: 'g1', name: '비상금', amount: 2000000 });
   assert.ok(html1.includes("ackGoalAchieved('g1')"), '단순 openGoalForm이 아니라 ack까지 겸하는 ackGoalAchieved로 연결돼야 카드가 사라짐');
   assert.ok(html1.includes('비상금'));
 
   const html2 = sandbox.homeAlertCard({ kind: 'goalAchievedMulti', count: 3 });
-  assert.ok(html2.includes('openGoalsList()'));
+  assert.ok(html2.includes('openGoalAchievedList()'));
   assert.ok(html2.includes('3건'));
 });
 /* 상환 추세가 정체/악화된 부채(debtBehind/debtBehindMulti) — goalBehind/goalBehindMulti와 동일한 1건/N건
@@ -36144,6 +36148,68 @@ test('openDebtPaidOffList: 완납된 부채가 여러 건이면 시트에서 각
   sandbox.openDebtPaidOffList();
   assert.ok(sandbox.lastSheetHtml && sandbox.lastSheetHtml.includes('다 갚은 빚') && sandbox.lastSheetHtml.includes('또 다 갚은 빚'), '2건이면 시트에서 둘 다 고를 수 있어야 함');
   assert.ok(sandbox.lastSheetHtml.includes("ackDebtPayoff('d1')") && sandbox.lastSheetHtml.includes("ackDebtPayoff('d2')"), '각 행이 (단순 openAssetHistory가 아니라) ackDebtPayoff로 연결돼야 함');
+});
+/* openGoalBehindList/openGoalAchievedList(app-evolve cycle408 advance) — openDebtBehindList/
+ * openDebtPaidOffList(바로 위)와 정확히 같은 구조로 goalsBehind()/goalsAchieved() 공유 헬퍼를 쓴다.
+ * 1건이면 openGoalForm/ackGoalAchieved로 바로, 여러 건이면 시트에서 고르게 한다. */
+test('openGoalBehindList: 늦어지는 목표가 0건이면 안내 토스트를 띄우고 시트를 닫는다', () => {
+  setupHomeAlertsDB();
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastToast = null;
+  sandbox.openGoalBehindList();
+  assert.strictEqual(sandbox.lastToast, '늦어지고 있는 목표가 없어요');
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+});
+test('openGoalBehindList: 늦어지는 목표가 1건이면 closeSheet 후 바로 openGoalForm으로, 여러 건이면 시트에서 고르게 한다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-01', nw: 1000000 },
+    { date: '2026-06-15', nw: 1000000 }, // 추세 0 → projectedDate:null → behind
+  ];
+  sandbox.DB.goals = [
+    { id: 'g1', name: '내 집 마련', type: 'networth', targetAmount: 2000000, targetDate: '2026-07-01', owner: 'all' },
+  ];
+  sandbox.closeSheetCalls = 0;
+  let openedId = null;
+  const origOpen = sandbox.openGoalForm;
+  sandbox.openGoalForm = (id) => { openedId = id; };
+  sandbox.openGoalBehindList();
+  assert.strictEqual(openedId, 'g1', '1건이면 바로 openGoalForm으로 그 목표를 열어야 함');
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '시트 위에 폼이 깔리지 않도록 먼저 닫아야 함');
+
+  sandbox.DB.goals.push({ id: 'g2', name: '비상금', type: 'networth', targetAmount: 3000000, targetDate: '2026-08-01', owner: 'all' });
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalBehindList();
+  assert.ok(sandbox.lastSheetHtml && sandbox.lastSheetHtml.includes('내 집 마련') && sandbox.lastSheetHtml.includes('비상금'), '2건이면 시트에서 둘 다 고를 수 있어야 함');
+  assert.ok(sandbox.lastSheetHtml.includes("openGoalForm('g1')") && sandbox.lastSheetHtml.includes("openGoalForm('g2')"), '각 행이 openGoalForm으로 연결돼야 함');
+  sandbox.openGoalForm = origOpen;
+});
+test('openGoalAchievedList: 달성 축하 알림이 0건이면 안내 토스트를 띄우고 시트를 닫는다', () => {
+  setupHomeAlertsDB();
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastToast = null;
+  sandbox.openGoalAchievedList();
+  assert.strictEqual(sandbox.lastToast, '달성 축하 알림이 없어요');
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+});
+test('openGoalAchievedList: 달성한 목표가 1건이면 closeSheet 후 바로 ackGoalAchieved로, 여러 건이면 시트에서 각각 고를 수 있다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.nwHistory = [{ date: '2026-06-15', nw: 2000000 }];
+  sandbox.DB.goals = [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 1500000, targetDate: null, owner: 'all' }];
+  sandbox.closeSheetCalls = 0;
+  let ackedId = null;
+  const origAck = sandbox.ackGoalAchieved;
+  sandbox.ackGoalAchieved = (id) => { ackedId = id; };
+  sandbox.openGoalAchievedList();
+  assert.strictEqual(ackedId, 'g1', '1건이어도 ack까지 겸하는 ackGoalAchieved로 연결돼야 함(openGoalForm만 호출하면 안 됨)');
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+
+  sandbox.DB.goals.push({ id: 'g2', name: '차 바꾸기', type: 'networth', targetAmount: 500000, targetDate: null, owner: 'all' });
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalAchievedList();
+  assert.ok(sandbox.lastSheetHtml && sandbox.lastSheetHtml.includes('비상금') && sandbox.lastSheetHtml.includes('차 바꾸기'), '2건이면 시트에서 둘 다 고를 수 있어야 함');
+  assert.ok(sandbox.lastSheetHtml.includes("ackGoalAchieved('g1')") && sandbox.lastSheetHtml.includes("ackGoalAchieved('g2')"), '각 행이 ackGoalAchieved로 연결돼야 함');
+  sandbox.ackGoalAchieved = origAck;
 });
 /* 미확인 이체(confirm)도 quick/quickMulti·budgetOver/budgetOverMulti와 동일한 1건/N건 묶음 패턴을 쓴다
  * (app-evolve cycle156 critique: 반복 이체를 방치하면 홈 알림이 confirm 카드로 도배되던 비대칭을 해소) */
