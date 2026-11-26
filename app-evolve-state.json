@@ -1,22 +1,12 @@
 {
   "cycle": 409,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "홈 알림 카드 allocationDrift/allocationDriftMulti가 드리프트 상세가 아니라 %편집기(openTargetAllocationForm)로 연결되는 버그 수정",
+    "why": "homeAlertCard()의 다른 모든 알림(budgetOver/budgetPaceWarn*→openSpendAnalysisThisMonth, settleDue*→openSettlement, debtBehind→openAssetHistory, goalBehind/goalAchieved/debtBehind/debtPaidOff→각 openXxxList)는 전부 '실제 상세 보기'로 연결되는데, allocationDrift/allocationDriftMulti(index.html:13633/13638)만 openTargetAllocationForm()(순수 %입력 편집기, renderTargetAllocationForm:4031-4043, 현재/드리프트 수치나 매수/매도 안내 전혀 없음)으로 연결됨. 카드 문구 자체가 '지금 X% · 목표 Y% · 눌러서 확인하세요'인데 눌러도 그 수치를 못 봄. 실제 드리프트 상세(actual%/target%, rebalanceAmount 매수/매도 안내)는 targetAllocationCard()(index.html:3977-4006)에만 존재하고 Assets 탭 owner==='all'에서만 보이며 알림 클릭으로는 전혀 도달 불가능 — cycle408이 goal/debt Multi 카드에서 고친 것과 같은 클래스의 비대칭이나, 그때 감사 범위 밖이었던 자산배분 알림에서 발견됨.",
+    "approach": "1) targetAllocationCard()의 drift 행 마크업 생성 부분(index.html:3989-4003, drift.map(...))을 공유 헬퍼 allocationDriftRowsHtml(byType,targetMap,unknownTypes)로 추출(targetAllocationCard는 출력/위치 변경 없이 이 헬퍼를 호출하도록만 교체). 2) openAllocationDriftSheet() 신설 — homeAlerts()(index.html:13248-13251)와 동일한 방식으로 byType/unknownTypes를 재계산하고 공유 헬퍼로 드리프트 행을 그린 뒤 openSheet(...)로 actual%/target%/매수매도 안내를 보여주는 시트를 열고, 목표% 수정은 openTargetAllocationForm()으로 한 탭 더 들어가게 연결(openSpendAnalysis의 '먼저 보기, 수정은 한 단계 더' 패턴과 동일). 3) homeAlertCard()의 allocationDrift/allocationDriftMulti onclick(index.html:13633/13638)을 openTargetAllocationForm()에서 openAllocationDriftSheet()로 교체. 4) test/run.js FUNCTIONS 화이트리스트(269-273 패턴)에 openAllocationDriftSheet(및 노출한다면 allocationDriftRowsHtml) 등록. 5) 테스트 추가: openAllocationDriftSheet가 드리프트된 타입의 actual/target%와 매수/매도 문구를 포함해 렌더하는지(기존 targetAllocationCard 테스트 픽스처 재사용), homeAlertCard의 allocationDrift/allocationDriftMulti onclick이 openAllocationDriftSheet로 바뀌었는지, targetAllocation이 비어있어도 시트 함수가 안전하게 방어적으로 동작하는지(알림이 드리프트 있을 때만 뜨므로 실제 도달은 안 되지만 방어 확인). 범위 제외: allocationDrift()/rebalanceAmount() 등 logic.js 순수 함수 변경, %입력 편집기 UX 자체 변경, targetAllocationCard의 Assets탭 위치/노출 규칙 변경, 새 알림 종류나 OS 푸시(notifyAlertInfo) 문구 변경, 다른 알림 카드 라우팅 전체 재감사(matMulti/budgetOverMulti는 이미 확인해 공백 없음)."
+  },
   "history": [
-    {
-      "cycle": 404,
-      "phase": "review",
-      "timestamp": "2026-11-25T19:40:00.000Z",
-      "summary": "develop(cycle404) 커밋 0cf02c6(부채 상환 계획 multiDebtPlan/debtPlanBodyHTML에 이자율 반영 상환 개월수 보조 문구 debtAmortSuffix 추가)를 검토. logic.js의 debtPayoffProjection/debtPayoffWhatIf를 직접 대조해 achieved 필드가 두 함수 모두 last.bal<=0 판정으로만 결정되고 extraPerMonth 유무와는 무관함을 확인 — diff의 핵심 가정(\"baseline과 giveExtra 둘 다 achieved는 같은 현재 잔액 판정\")이 정확함을 재검증했고, 이에 따라 multiDebtPlan의 giveExtra=!assigned&&!baseline.achieved 할당 로직과 debtPlanBodyHTML의 order.findIndex(r=>!r.achieved)가 항상 같은 행을 가리킴을 확인. debtWhatIfUpdate(단일 부채 상세)가 bal=pfPts[pfPts.length-1].bal을 debtAmortSuffix에 넘기는 것과 동일하게, debtPlanDebts()의 balance 필드도 pts[pts.length-1].bal로 계산돼 두 화면이 같은 bal 정의를 쓰는 것을 확인. 부채가 전부 완납(allDone)이면 findIndex가 -1을 돌려줘 모든 행의 i===extraIdx가 거짓이 되므로 안전하게 보조 문구 없이 렌더됨을 확인(에러 아님, 테스트로 직접 커버되진 않지만 로직상 자명). 추가된 테스트 3건이 실제 값 일치/extra=0일 때 추측 안 함/부채 2개일 때 1순위에만 붙고 2순위엔 안 붙음을 각각 검증하는지 확인. node test/run.js 재실행 4019/4019 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과, APP_VERSION 1.47.542/sw.js CACHE v809 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 404,
-      "phase": "critique",
-      "timestamp": "2026-11-25T06:00:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 위임해 git log 전체([app-evolve:develop|advance|critique] 전부)와 state.json history를 훑어 cycle340-404 기각/완료 항목(twGuard 감사 전체, 반복거래 수동 순서변경, 키보드/스크린리더/명암비 접근성, 데이터 클램프, 메모 자동완성, 전역 에러 배너, seenAt 정체 감지, owner별 예산 오버라이드, 연간 결산 아카이브 겹침 인지(yearArchiveOverlap, cycle399), 모놀리식 구조개편, 다중통화, 세무리포트, 할부, 공유계정 인증 재설계, 클라우드 병합 재설계 등)를 배제하고 전략적으로 재검토시킴. trackingTx 태그 시스템(과대한 신규 데이터모델), 반복거래 순서변경(목표와 달리 '거짓 약속' UI가 없어 덜 급함), openSpendAnalysis/openIncomeAnalysis까지 아카이브 안내 확장(가계부와 한 사이클에 같이 하면 과대) 세 후보를 검토 후 기각하고, cycle399가 openYearReview()/yearSummary()에만 적용한 아카이브 인지(archiveNotice)가 가계부(renderLedger/ledgerRowsHtml, index.html:6451/6444)에는 전혀 전파되지 않아, '오래된 데이터 정리'(archiveTxnsBefore)로 지워진 달/일을 사용자가 뒤로 돌아가 보면 진짜로 비어있던 날과 똑같은 '이 날은 조용하네요 🌱 · 내역 추가하기' 빈 상태로 보여 데이터 손실처럼 보이고, 심지어 CTA가 이미 의도적으로 지운 내역을 다시 입력하라고 유도하는 공백을 최우선 과제로 선정 — cycle399와 같은 결의 버그지만 가계부 화면 자체는 그때 범위 밖이었다. pending_advance_plan에 logic.js monthIsArchived(y,m,archivedThroughDate) 순수 헬퍼 신설(아카이브는 항상 월 전체 단위라 partial 불필요) + renderLedger()에 월 전체 아카이브 시 안내 카드 + ledgerRowsHtml()에 아카이브된 날짜 전용 빈 상태(내역 추가하기 CTA 제거) 배선 + monthIsArchived/renderLedger/ledgerRowsHtml 회귀 테스트(archiveNotice 관련 기존 테스트 패턴 재사용) 추가 계획 저장(openSpendAnalysis/openIncomeAnalysis 안내 카드, 캘린더 셀 시각 스타일링, 월 네비게이션 경계 제한, archiveMonthPicked 문구 변경, 전체내역 검색 날짜범위는 범위 제외로 명시). node test/run.js 4019/4019 통과 확인(서브에이전트가 베이스라인으로 실행, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 404,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-26T17:10:00.000Z",
       "summary": "develop(cycle409) 커밋 230fa31(ackGoalAchieved/ackDebtPayoff에 누락된 twGuard 추가)를 검토. twActive()/twGuard() 정의(index.html:9964-9965 — TWi>=0이면 toast 띄우고 true 반환)를 직접 읽고, delGoal·confirmTransferNow 등 기존 '전체 함수를 막는' twGuard 관례와 diff가 정확히 같은 모양(if(twGuard())return; 을 함수 맨 앞에 추가해 achievedAckAt/payoffAckAt 기록뿐 아니라 뒤따르는 openGoalForm/openAssetHistory 호출까지 같이 막음)인지 ackGoalAchieved/ackDebtPayoff 실제 정의(index.html:4428-4458)를 대조해 확인. saveTx/delTx/saveAsset/toggleRecActive/doBulkRecActive 등 이미 twGuard가 있거나 가드된 undo 경로를 쓰는 변경 함수들과 비교해 이번 두 함수가 유일한 공백이었다는 전제도 grep으로 재확인(추가 공백 없음). 추가된 테스트 2건(TWi=0 상태에서 achievedAckAt/payoffAckAt 불변 + save()/openGoalForm/openAssetHistory 미호출)이 실제로 그 분기를 커버하는지 확인. node test/run.js 재실행 4064/4064 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과, APP_VERSION 1.47.551/sw.js CACHE v818 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 409,
+      "phase": "critique",
+      "timestamp": "2026-11-26T18:00:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 cycle308-409 전체 twGuard 감사 완료 항목·cycle404-408의 기각/완료 항목(ledger 아카이브 인지, 예산CSV ownerBudgets, 백업복원미리보기, 문의하기undo, 지출수입분석 아카이브안내+월네비, budgetHistoryValueAt 테스트, toggleRecActive 플래그버그, goalsBehind/debtBehind Multi카드 대칭 등)을 배제 목록으로 주고 재검토시킴. budgetOverMulti/budgetPaceWarnMulti 드릴다운(cycle408에서 이미 marginal로 기각), matMulti→openMaturity (이미 실제 상세뷰로 연결돼 공백 없음 확인), assetQtyLog realizedGain 재계산 검증(데이터클램프 영역, 기각범위와 겹침) 세 후보를 검토 후 기각하고, homeAlertCard()의 allocationDrift/allocationDriftMulti(index.html:13633/13638, 카드 문구 자체가 '지금 X% · 목표 Y% · 눌러서 확인하세요')가 다른 모든 홈알림(budgetOver→openSpendAnalysisThisMonth, settleDue→openSettlement, debtBehind→openAssetHistory, goalBehind/goalAchieved/debtBehind/debtPaidOff→각 openXxxList 등)과 달리 실제 드리프트 상세(actual%/target%, rebalanceAmount 매수매도 안내 — targetAllocationCard():3977-4006에만 존재하고 Assets탭 owner==='all'에서만 보임, 알림으로는 도달 불가)가 아니라 순수 %입력 편집기 openTargetAllocationForm()(:4012, renderTargetAllocationForm:4031-4043, 수치/안내 없음)으로 연결되는 비대칭을 발견 — cycle408이 goal/debt Multi 카드에서 고친 것과 같은 클래스이나 당시 감사 범위 밖이었던 자산배분 알림에서 새로 발견. pending_advance_plan에 targetAllocationCard의 drift 행 마크업을 공유 헬퍼 allocationDriftRowsHtml로 추출 + openAllocationDriftSheet() 신설(homeAlerts()와 동일 계산 재사용, '먼저 보기, 수정은 한 단계 더' 패턴) + homeAlertCard의 allocationDrift/allocationDriftMulti onclick 교체 + FUNCTIONS 화이트리스트 등록 + 테스트 3건 계획 저장(allocationDrift()/rebalanceAmount() 등 순수함수 변경, %편집기 UX 자체 변경, targetAllocationCard 노출규칙 변경, 다른 알림 라우팅 전체 재감사는 범위 제외로 명시). node test/run.js 4064/4064 통과 확인(서브에이전트가 베이스라인으로 실행, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
