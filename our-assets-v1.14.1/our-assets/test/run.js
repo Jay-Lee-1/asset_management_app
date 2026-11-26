@@ -8554,6 +8554,28 @@ test('saveInquiryEdit: 존재하지 않는 id를 넘기면 아무 일도 하지 
   assert.strictEqual(sandbox.DB.inquiries[0].text, '원래 내용');
   assert.strictEqual(sandbox.lastToast, null);
 });
+/* ---------- saveInquiryEdit: delInquiry(삭제)는 이미 undoToast가 있는데 수정만 plain toast로
+ * 끝나 고친 내용을 되돌릴 방법이 없던 비대칭을 메운다(doRenameOwner/doRenameCat과 동일한 '수정 경로
+ * undoToast' 패턴, app-evolve cycle406 develop). ---------- */
+test('saveInquiryEdit: 저장 후 undoToast를 띄우고, 되돌리면 text가 수정 전으로 복원되며 touchSave로 updatedAt이 다시 찍힌다', () => {
+  sandbox.lastUndo = null;
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '원래 내용', date: '2026-01-01', updatedAt: 1 }] };
+  sandbox.inqEditTextValue = '고친 내용';
+  sandbox.saveInquiryEdit('q1');
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '고친 내용');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '원래 내용', '되돌리면 수정 전 내용으로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.inquiries[0].date, '2026-01-01', '작성일은 되돌려도 그대로 유지돼야 함');
+  assert.strictEqual(sandbox.DB.inquiries[0].updatedAt, 'test-updatedAt', '되돌린 뒤에도 touch()로 updatedAt이 다시 찍혀야 mergeCollection 병합 시 보존됨');
+});
+test('saveInquiryEdit: 내용을 비워 저장이 막히면(기존 내용 그대로) undoToast도 호출되지 않는다', () => {
+  sandbox.lastUndo = null;
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '원래 내용', updatedAt: 1 }] };
+  sandbox.inqEditTextValue = '   ';
+  sandbox.saveInquiryEdit('q1');
+  assert.strictEqual(sandbox.lastUndo, null, '저장 자체가 안 됐으니 undoToast도 없어야 함');
+});
 test('openInquiryList: 각 메모 행에 수정(editInquiry) 버튼이 삭제 버튼과 함께 있다', () => {
   sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }] };
   sandbox.openInquiryList();

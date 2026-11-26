@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.545';
+const APP_VERSION='1.47.546';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -9730,13 +9730,20 @@ function editInquiry(id){
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openInquiryList()">취소</button><button class="btn btn-primary" onclick="saveInquiryEdit('${id}')">저장</button></div>`);
  setTimeout(()=>{const t=$('inqEditText');t&&t.focus()},300);
 }
+/* doRenameOwner/doRenameCat은 이름을 잘못 고쳤을 때 undoToast로 되돌릴 수 있는데, 같은 '수정'
+ * 경로인 saveInquiryEdit만 plain toast()로 끝나 고친 내용을 되돌릴 방법이 없었다 — delInquiry(삭제)는
+ * 이미 undoToast가 있어, 메모 하나를 두고 "지우기는 되돌릴 수 있는데 고치기는 안 되는" 비대칭이었다
+ * (app-evolve cycle406 develop). 합치기·이름변경처럼 여러 컬렉션에 걸친 변경이 아니라 이 메모 하나의
+ * text 필드만 바뀌므로, doRenameOwner와 동일한 가벼운 패턴(이전 값만 캡처해 그대로 되돌림)을 쓴다. */
 function saveInquiryEdit(id){
  if(twGuard())return; /* doRenameOwner/doRenameCat과 동일한 '수정' 경로 twGuard — sendInquiry와 같은 공백(app-evolve cycle400 develop) */
  const q=(DB.inquiries||[]).find(x=>x.id===id);if(!q)return;
  const t=$('inqEditText');let v=(t&&t.value||'').trim();
  if(!v){toast('메모 내용을 입력해 주세요');return}
  if(v.length>MEMO_MAX)v=v.slice(0,MEMO_MAX);
- q.text=v;touchSave(q);closeSheet();openInquiryList();toast('메모를 수정했어요');
+ const prevText=q.text;
+ q.text=v;touchSave(q);closeSheet();openInquiryList();
+ undoToast('메모를 수정했어요',()=>{q.text=prevText;touchSave(q);openInquiryList();toast('되돌렸어요')});
 }
 function delInquiry(id){
  if(twGuard())return; /* delGoal/doDeleteCat과 동일한 '삭제' 경로 twGuard — sendInquiry와 같은 공백(app-evolve cycle400 develop) */

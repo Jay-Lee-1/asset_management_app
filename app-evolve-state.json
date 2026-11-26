@@ -1,15 +1,8 @@
 {
   "cycle": 406,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 401,
-      "phase": "develop",
-      "timestamp": "2026-11-25T07:00:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 위임해 cycle340-400 전체 배제 목록(키보드 접근성 전체, 데이터 클램프, txMemo/rMemo/split메모 자동완성, 전역 에러 배너 복구 경로, syncRates seenAt 정체 감지, owner별 예산 오버라이드, 연간 결산 아카이브 겹침 인지, 문의하기 twGuard, confirmSheet 더블탭 가드, 모놀리식 구조개편/렌더성능/CSV완성도/통화·세무리포트·부채상환엔지니어링·클라우드 병합 재설계/esc() XSS/OS알림/할부기능/스크린리더 등 기각 항목)를 주고 twGuard 감사를 계속 확장시켰다. 반복거래 관리 목록의 건별 토글 toggleRecActive(id)와 잔액 조정 전용 편집 시트의 toggleAdjustSurplus(id,el)가 각각 touchSave(r)/touch(t);save()로 실제 DB.recurrences/DB.txns를 직접 변경·저장하면서도 twGuard()가 없어, 같은 화면의 벌크 버전(doBulkRecActive/doBulkInclToggle)과 같은 시트의 삭제 액션(delAdjust→deleteTxnsUndo)은 이미 가드돼 있는데도 튜토리얼 중 건별 토글만 실제로 저장되던 비대칭을 발견(cycle308/309/307/331/400이 owner/category/goal/inquiry/transfer-confirm에 메운 것과 같은 버그 클래스). index.html 2곳(toggleRecActive, toggleAdjustSurplus) 함수 시작부에 `if(twGuard())return;` 추가. test/run.js에 각 함수의 기존 touch() 테스트 바로 뒤 twGuard 회귀 테스트 2건 추가(TWi=0으로 막힘 확인 후 복원). node test/run.js 3980->3982/3982 통과, node --check(sw.js/test/run.js/logic.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 vm.Script 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.535->1.47.536, sw.js CACHE v802->v803. 참고: 이번 사이클 시작 시에도 로컬 HEAD가 detached였고(main 로컬 ref가 51c4fcd(cycle394 review)로 정체, origin/main은 이미 HEAD(8e89a36)까지 최신) git branch -f main HEAD && git checkout main으로 복구(원인 계속 불명, 데이터 손실 없음 — 매 사이클 반복되는 증상이지만 app 코드가 아니라 클라우드 세션의 clone/checkout 동작 자체로 보여 app-evolve 스킬 범위 밖으로 둠).",
-      "commit": "f1d168e"
-    },
     {
       "cycle": 401,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-26T02:13:46.072Z",
       "summary": "critique(cycle405)의 계획대로 백업 파일 복원 확인 시트에 '어떤 백업을 복원하는지' 미리보기를 추가해, proceedWithBackupObj()(평문/PIN 복원 공통 관문)가 '현재 데이터를 백업 파일로 교체할까요?'라는 일반 문구만 보여주던 것과, 훨씬 덜 파괴적인 CSV 거래 가져오기(buildImportPreview)는 이미 미리보기를 제공하던 비대칭을 좁혔다. doExport()의 전체 JSON 백업 분기(kind 없는 ':JSON.stringify(DB,...)' 및 사진 제외 clipboard 폴백의 redactTxnPhotos(DB) 둘 다)에 stamp와 같은 d.getTime()을 _exportedAt으로 심어 파일명과 마커가 같은 순간을 가리키게 했다. logic.js에 순수 함수 backupSummary(obj) 신설 — txnCount/assetCount/exportedAt을 구하고, _exportedAt이 없는 구버전 백업은 txns/nwHistory 중 가장 늦은 날짜(latestDate)로 근사, 둘 다 없으면 null(추측하지 않음). proceedWithBackupObj(raw,onDone)에서 sanitizeBackup 호출 전에(파일 그대로의 건수를 보여주기 위해) backupSummary(raw)로 미리보기 한 줄을 만들어 confirmSheet 안내문 앞에 붙였다 — exportedAt 있으면 'YYYY년 M월 D일 (요일) HH:MM에 만든 백업 · 거래 N건, 자산 M개', latestDate만 있으면 '...까지의 데이터로 보이는 백업 · ...', 둘 다 없으면 기존 문구만(회귀 없음). sanitizeBackup/restoreBackup 등 기존 복원 메커니즘(6초 undo, __preRestore_ localStorage 스냅샷)은 전혀 건드리지 않음. test/run.js에 backupSummary 순수 테스트 4건(exportedAt 우선/latestDate 근사/빈 입력 0·null/null·undefined·배열아닌 입력 안전) + proceedWithBackupObj 실행형 테스트 3건(exportedAt 문구, latestDate 근사 문구, 둘 다 없을 때 기존 문구 유지+미리보기 추측 안 함) 총 7건 추가 — 처음엔 backupSummary가 돌려주는 객체를 deepStrictEqual로 vm 바깥의 {} 리터럴과 통째로 비교해 '구조는 같은데 reference-equal 아님'으로 거짓 실패했는데(sandbox가 vm.createContext라 반환된 새 객체의 Object.prototype이 테스트 realm과 다름 — doRenameCat의 splits 테스트들이 통과하는 건 그 값이 바깥에서 만든 배열을 제자리에서 mutate하기 때문이지 이 경우와 다름), 필드별 strictEqual 비교로 바꿔 고쳤다. node test/run.js 4030->4037/4037 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.544->1.47.545, sw.js CACHE v811->v812. 범위 제외(계획대로): 클라우드 동기화 충돌/병합 화면, CSV 가져오기 미리보기(이미 있음), 부분/선택적 복원, 구버전 백업의 정확한 시각 역산, 내보내기 화면 자체 변경. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 406,
+      "phase": "develop",
+      "timestamp": "2026-11-26T03:14:55.817Z",
+      "summary": "문의하기(메모) 수정(editInquiry/saveInquiryEdit)이 같은 화면의 삭제(delInquiry, cycle327)와 달리 undoToast 없이 plain toast로 끝나, 메모 내용을 잘못 고쳐도 되돌릴 방법이 없던 비대칭을 발견(doRenameOwner/doRenameCat이 cycle345에 메운 것과 같은 수정-경로 undo 공백 클래스, 문의하기만 아직 비어 있었음). saveInquiryEdit()에서 저장 전 q.text를 prevText로 캡처해두고, touchSave(q);closeSheet();openInquiryList() 뒤 undoToast('메모를 수정했어요',()=>{q.text=prevText;touchSave(q);openInquiryList();toast('되돌렸어요')})를 추가(doRenameOwner와 동일한 가벼운 단일 필드 캡처-복원 패턴, delInquiry의 undo 콜백 구조와도 동일). test/run.js에 저장 후 undoToast 호출+되돌리면 text/date/updatedAt(touch 재적용)이 올바르게 복원되는지, 그리고 내용을 비워 저장이 막히는 경로에서는 undoToast가 호출되지 않는지 2건 추가. node test/run.js 4037->4039/4039 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.545->1.47.546, sw.js CACHE v812->v813. logic.js 자체는 변경 없음(순수 로직 함수 신설 없이 index.html UI 함수만 수정).",
       "commit": null
     }
   ]
