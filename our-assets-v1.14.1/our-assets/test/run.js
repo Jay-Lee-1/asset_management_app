@@ -13667,6 +13667,99 @@ test('openIncomeAnalysis: incomeByCategory는 카테고리 수와 무관하게 �
   }
 });
 
+/* ---------- openSpendAnalysis/openIncomeAnalysis: renderLedger(ledArchiveNoticeHtml, cycle404)·
+ * openYearReview(archiveNoticeHtml, cycle399)와 같은 신호(monthIsArchived)로, "오래된 데이터 정리"가
+ * 지운 달을 "아직 쓴 게 없어요 👏"/"아직 들어온 수입이 없어요" 칭찬 빈 상태와 구분한다 — 지워진 달도
+ * 예산만 있는 카테고리는 rows에 v=0으로 남을 수 있어 빈 상태 분기를 안 타므로, 총액 카드 아래 별도
+ * 안내와 예산 카드/트렌드 배지 숨김은 rows가 비었는지와 무관하게 isArchived 하나로만 판단한다
+ * (app-evolve cycle406 critique/advance) ---------- */
+test('openSpendAnalysis: 아카이브된 달은 예산만 있는 카테고리(지출 0)가 있어도 안내 문구를 보여주고, 예산 카드와 트렌드 배지는 숨긴다', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = {
+    owners: [], assets: [], recurrences: [],
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 40000 }] }, // 6월엔 지출 0이어도 예산이 있어 rows에 남음
+    catBudgetRollover: {},
+    settings: { archivedThroughDate: '2026-06-30' }, // 6월 전체가 지워짐
+    txns: [
+      { id: '1', type: 'expense', category: '식비', amount: 30000, date: '2026-05-10', confirmed: true }, // 트렌드 평균용(지워지지 않은 이전 달)
+    ],
+  };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('이 달은 "오래된 데이터 정리"로 비워졌어요'), '아카이브된 달은 총액 카드 아래 안내 문구가 있어야 함');
+  assert.ok(!html.includes('이번 달 예산'), '지워진 달과 비교해봐야 의미 없는 예산 카드는 숨겨야 함');
+  assert.ok(!html.includes('class="trend"'), '지워진 달의 트렌드 배지(총액/카테고리 행 모두)는 숨겨야 함');
+});
+test('openSpendAnalysis: 아카이브된 달에 예산조차 없어 rows가 완전히 비면, 칭찬 카피 대신 아카이브 전용 빈 상태를 보여준다', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = {
+    owners: [], assets: [], recurrences: [],
+    budgetHistory: {}, catBudgetRollover: {},
+    settings: { archivedThroughDate: '2026-06-30' },
+    txns: [],
+  };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.ok(!html.includes('아직 쓴 게 없어요'), '지워진 달을 진짜 무지출처럼 칭찬하면 안 됨');
+  assert.ok(html.includes('이 달은 "오래된 데이터 정리"로 비워졌어요'), '빈 상태도 아카이브 전용 문구여야 함');
+  assert.ok(html.includes('자산 잔액은 그대로 보존돼요'), 'ledgerRowsHtml과 동일한 보조 문구가 있어야 함');
+});
+test('openIncomeAnalysis: 아카이브된 달은 "아직 들어온 수입이 없어요" 대신 안내 문구를 보여주고 트렌드 배지는 숨긴다', () => {
+  const ctx = incomeAnalysisCtx();
+  ctx.DB = {
+    owners: [], assets: [], recurrences: [],
+    settings: { archivedThroughDate: '2026-06-30' },
+    txns: [
+      { id: '1', type: 'income', category: '급여', amount: 3000000, date: '2026-05-10', confirmed: true }, // 트렌드 평균용(지워지지 않은 이전 달)
+    ],
+  };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openIncomeAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.ok(!html.includes('아직 들어온 수입이 없어요'), '지워진 달을 진짜 무수입처럼 보여주면 안 됨');
+  assert.ok(html.includes('이 달은 "오래된 데이터 정리"로 비워졌어요'), '수입 분석도 지출 분석과 동일한 안내 문구를 보여줘야 함');
+  assert.ok(!html.includes('class="trend"'), '지워진 달의 총액 트렌드 배지는 숨겨야 함');
+});
+test('openSpendAnalysis/openIncomeAnalysis: archivedThroughDate가 없거나 안 겹치면 기존처럼 예산 카드/트렌드 배지가 그대로 보인다(회귀)', () => {
+  const sCtx = spendAnalysisCtx();
+  sCtx.DB = {
+    owners: [], assets: [], recurrences: [],
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 40000 }] },
+    catBudgetRollover: {},
+    txns: [
+      { id: '1', type: 'expense', category: '식비', amount: 50000, date: '2026-05-10', confirmed: true },
+      { id: '2', type: 'expense', category: '식비', amount: 30000, date: '2026-06-10', confirmed: true },
+    ],
+  };
+  sCtx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  sCtx.lastSheetHtml = null;
+  sCtx.openSpendAnalysis();
+  let html = sCtx.lastSheetHtml;
+  assert.ok(html.includes('이번 달 예산'), 'archivedThroughDate가 없으면 예산 카드가 그대로 나와야 함');
+  assert.ok(html.includes('class="trend"'), 'archivedThroughDate가 없으면 트렌드 배지가 그대로 나와야 함');
+  assert.ok(!html.includes('"오래된 데이터 정리"로 비워졌어요'), 'archivedThroughDate가 없으면 아카이브 안내가 없어야 함');
+
+  const iCtx = incomeAnalysisCtx();
+  iCtx.DB = {
+    owners: [], assets: [], recurrences: [],
+    txns: [
+      { id: '1', type: 'income', category: '급여', amount: 2000000, date: '2026-05-10', confirmed: true },
+      { id: '2', type: 'income', category: '급여', amount: 3000000, date: '2026-06-10', confirmed: true },
+    ],
+  };
+  iCtx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  iCtx.lastSheetHtml = null;
+  iCtx.openIncomeAnalysis();
+  html = iCtx.lastSheetHtml;
+  assert.ok(html.includes('class="trend"'), 'archivedThroughDate가 없으면 수입 분석도 트렌드 배지가 그대로 나와야 함');
+  assert.ok(!html.includes('"오래된 데이터 정리"로 비워졌어요'), 'archivedThroughDate가 없으면 수입 분석도 아카이브 안내가 없어야 함');
+});
+
 /* ---------- openYearReview: openSpendAnalysis/openIncomeAnalysis보다 큰 1년 범위로 총수입/총지출/
  * 순저축액/저축률과 전년대비 배지, 지출·수입 카테고리 TOP3 스택바를 보여주는 연간 결산
  * (app-evolve cycle246 advance). 연도 전환 버튼(◀/▶)이 각각 openYearReview(y-1)/(y+1)을 부른다. ---------- */

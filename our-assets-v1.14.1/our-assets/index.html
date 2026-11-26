@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.546';
+const APP_VERSION='1.47.547';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -7780,6 +7780,11 @@ function openCatHistory(idx){
 function openIncomeAnalysis(){
  if(ST.spendOwner!=='전체'&&!DB.owners.includes(ST.spendOwner))ST.spendOwner='전체'; /* 귀속 사라지면 전체로 (openSpendAnalysis와 동일 가드) */
  const y=ST.ledger.y,m=ST.ledger.m;const catCache=makeMonthCatCache(incomeByCategory,ST.spendOwner);const rows=catCache(y,m);const total=rows.reduce((s,r)=>s+r.v,0);
+ /* openSpendAnalysis와 동일한 아카이브 안내 — 이 달이 "오래된 데이터 정리"로 지워졌으면 "아직 들어온
+  * 수입이 없어요" 빈 상태 카피가 진짜 0수입과 섞여 보여 오해를 준다(app-evolve cycle406 critique/advance). */
+ const archivedThrough=DB.settings&&DB.settings.archivedThroughDate;
+ const isArchived=monthIsArchived(y,m,archivedThrough);
+ const incomeArchiveNoticeHtml=isArchived?`<div style="text-align:center;color:var(--text-3);font-size:11.5px;font-weight:600;margin:8px 0 0">이 달은 "오래된 데이터 정리"로 비워졌어요 · 자산 잔액은 보존돼요</div>`:'';
  let py=y,pm=m,totalAvg=0;for(let i=0;i<3;i++){pm--;if(pm<1){pm=12;py--}totalAvg+=catCache(py,pm).reduce((s,r)=>s+r.v,0)}
  totalAvg=Math.round(totalAvg/3);
  const totalDeltaPct=totalAvg?Math.round((total-totalAvg)/totalAvg*100):null;
@@ -7788,12 +7793,14 @@ function openIncomeAnalysis(){
    const barPct=total?r.v/total*100:0;
    const trend=incomeTrend(r.c,y,m,3,ST.spendOwner,catCache);
    return `<div class="spend-row" tabindex="0" role="button" aria-label="${esc(r.c)} ${comma(r.v)}원" onclick="openIncomeCatHistory(${idx})" onkeydown="rowKeydown(event,()=>openIncomeCatHistory(${idx}))"><div class="spend-av a-in">${catGlyph('income',r.c,null,'tag')}</div>
-    <div class="spend-mid"><div class="spend-nm">${esc(r.c)} ${incomeTrendBadge(trend.deltaPct)}</div><div class="spend-track"><i style="width:${barPct}%;background:var(--income)"></i></div></div>
+    <div class="spend-mid"><div class="spend-nm">${esc(r.c)} ${isArchived?'':incomeTrendBadge(trend.deltaPct)}</div><div class="spend-track"><i style="width:${barPct}%;background:var(--income)"></i></div></div>
     <div class="spend-amt"><div class="a num">${comma(r.v)}원</div><div class="p">${pct}%</div></div></div>`}).join('')
-   :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 들어온 수입이 없어요</div></div>`;
+   :(isArchived?`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">이 달은 "오래된 데이터 정리"로 비워졌어요</div><div class="es">자산 잔액은 그대로 보존돼요</div></div>`
+    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 들어온 수입이 없어요</div></div>`);
  openSheet(`<h3>${m}월 수입 분석</h3><div class="desc">카테고리를 눌러 내역을 확인해요 · 예정 포함</div>
   ${ownerSegHtml(ST.spendOwner,oi=>`incomeOwnerSel(${oi})`)}
-  <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 수입</div><div class="num" style="font-size:26px;font-weight:700;color:var(--income);margin-top:2px">${comma(total)}원</div>${totalDeltaPct!==null?`<div style="margin-top:4px">${incomeTrendBadge(totalDeltaPct,'최근 3개월 평균 대비 ')}</div>`:''}</div>
+  <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 수입</div><div class="num" style="font-size:26px;font-weight:700;color:var(--income);margin-top:2px">${comma(total)}원</div>${(!isArchived&&totalDeltaPct!==null)?`<div style="margin-top:4px">${incomeTrendBadge(totalDeltaPct,'최근 3개월 평균 대비 ')}</div>`:''}</div>
+  ${incomeArchiveNoticeHtml}
   ${total?`<div class="card eb-card" style="margin-bottom:12px" aria-hidden="true">${buildExpenseBarHtml(rows.map(r=>({cat:r.c,v:r.v})))}</div>`:''}
   <div class="card" style="padding:2px 14px">${body}</div>
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
@@ -8940,9 +8947,18 @@ function openYearReview(y){
   ${s.archiveNotice==='full'?'':(s.income?`<div class="card" style="margin-bottom:12px"><div class="section-title" style="margin-top:0">수입 TOP3</div>${buildExpenseBarHtml(s.topIncomeCats.map(r=>({cat:r.c,v:r.v})))}</div>`:'')}
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
 }
+/* 이 달이 "오래된 데이터 정리"로 통째로 지워졌으면(monthIsArchived, renderLedger의 ledArchiveNoticeHtml과
+ * 동일 신호) spendByCategory가 돌려주는 rows가 비거나(또는 예산만 걸려 있어 전부 0) 전체 합계도 0이 되는데,
+ * 지금까지는 그걸 "아직 쓴 게 없어요 👏" 칭찬 카피와 그대로 섞어 보여줘 사용자가 그 달에 진짜 지출이 0이었던
+ * 것으로 오해하게 만들었다 — openIncomeAnalysis도 동일 문제(app-evolve cycle406 critique/advance).
+ * ledArchiveNoticeHtml과 똑같은 문구로 총액 카드 아래에 안내를 띄우고, 빈 상태 카피도 지워진 달 전용으로
+ * 바꾸며, 지워진 달과 비교해봐야 의미 없는 예산 카드/트렌드 배지는 숨긴다. */
 function openSpendAnalysis(){
  if(ST.spendOwner!=='전체'&&!DB.owners.includes(ST.spendOwner))ST.spendOwner='전체'; /* 귀속 사라지면 전체로 (renderAssets/renderPlan과 동일 패턴) */
  const y=ST.ledger.y,m=ST.ledger.m;const catCache=makeMonthCatCache(spendByCategory,ST.spendOwner);const rows=catCache(y,m);const total=rows.reduce((s,r)=>s+r.v,0);
+ const archivedThrough=DB.settings&&DB.settings.archivedThroughDate;
+ const isArchived=monthIsArchived(y,m,archivedThrough);
+ const spendArchiveNoticeHtml=isArchived?`<div style="text-align:center;color:var(--text-3);font-size:11.5px;font-weight:600;margin:8px 0 0">이 달은 "오래된 데이터 정리"로 비워졌어요 · 자산 잔액은 보존돼요</div>`:'';
  const _bwc=new Map(); /* budgetCarryFor/budgetForMonthWithCarry 메모이즈 Map — 아래 totalBudgetSummary와 카테고리 행 루프가 같은 (카테고리,달) 이월을 두 번 계산하지 않게 공유한다(app-evolve cycle299 advance) */
  const tb=totalBudgetSummary(rows,y,m,_bwc,ST.spendOwner);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
  /* 카테고리 행과 동일한 선제 경고(위 paceWarn 주석 참고)를 전체 예산 합계에도 적용 — 아직 전체
@@ -8974,15 +8990,17 @@ function openSpendAnalysis(){
    const proj=budget&&!bp.over?projectedMonthSpend(r.v,y,m,TODAY):null;
    const paceWarn=(proj!=null&&proj>budget)?`<div style="font-size:11px;color:var(--gold);margin-top:3px">이대로면 ${comma(proj)}원 · 예산 초과 예상</div>`:'';
    return `<div class="spend-row" tabindex="0" role="button" aria-label="${esc(r.c)} ${comma(r.v)}원" onclick="openBudgetPrompt(${idx})" onkeydown="rowKeydown(event,()=>openBudgetPrompt(${idx}))"><div class="spend-av a-food">${catGlyph('expense',r.c,null,'tag')}</div>
-    <div class="spend-mid"><div class="spend-nm">${esc(r.c)} ${spendTrendBadge(trend.deltaPct)}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div>${paceWarn}</div>
+    <div class="spend-mid"><div class="spend-nm">${esc(r.c)} ${isArchived?'':spendTrendBadge(trend.deltaPct)}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div>${paceWarn}</div>
     <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(r.c)} 내역 보기" onclick="event.stopPropagation();openCatHistory(${idx})">${svg('receipt')}</button></div>
     <div class="spend-amt"><div class="a num${overCls}">${comma(r.v)}${budget?`<span class="bgt">/${comma(budget)}</span>`:''}원</div><div class="p${overCls}">${pct}%${budget?' 사용':''}</div></div></div>`}).join('')
-   :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 쓴 게 없어요 👏</div><div class="es">이대로만 가면 완벽해요</div></div>`;
+   :(isArchived?`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">이 달은 "오래된 데이터 정리"로 비워졌어요</div><div class="es">자산 잔액은 그대로 보존돼요</div></div>`
+    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 쓴 게 없어요 👏</div><div class="es">이대로만 가면 완벽해요</div></div>`);
  openSheet(`<h3>${m}월 지출 분석</h3><div class="desc">카테고리를 눌러 예산을 정해보세요 · 예정 포함</div>
   ${ownerSegHtml(ST.spendOwner,oi=>`spendOwnerSel(${oi})`)}
-  <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 지출</div><div class="num" style="font-size:26px;font-weight:700;color:var(--expense);margin-top:2px">${comma(total)}원</div>${totalDeltaPct!==null?`<div style="margin-top:4px">${spendTrendBadge(totalDeltaPct,'최근 3개월 평균 대비 ')}</div>`:''}</div>
+  <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 지출</div><div class="num" style="font-size:26px;font-weight:700;color:var(--expense);margin-top:2px">${comma(total)}원</div>${(!isArchived&&totalDeltaPct!==null)?`<div style="margin-top:4px">${spendTrendBadge(totalDeltaPct,'최근 3개월 평균 대비 ')}</div>`:''}</div>
+  ${spendArchiveNoticeHtml}
   ${total?`<div class="card eb-card" style="margin-bottom:12px" aria-hidden="true">${buildExpenseBarHtml(rows.map(r=>({cat:r.c,v:r.v})))}</div>`:''}
-  ${tb.budgetedTotal?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
+  ${(!isArchived&&tb.budgetedTotal)?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
    <div style="font-size:12.5px;color:var(--text-3);font-weight:700">이번 달 예산</div>
    <div class="num" style="font-size:16px;font-weight:700;margin-top:4px;color:${tbp.over?'var(--expense)':'var(--text)'}">${comma(tb.budgetedTotal)}원 중 ${comma(tb.spentOnBudgeted)}원 사용 · ${tbp.pct}%</div>
    <div class="spend-track" style="margin-top:8px"><i class="${tbp.over?'over':'budgeted'}" style="width:${tbp.barPct}%"></i></div>
