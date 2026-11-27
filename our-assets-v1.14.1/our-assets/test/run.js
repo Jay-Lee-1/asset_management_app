@@ -289,6 +289,9 @@ const FUNCTIONS = [
   // (hist.selMode)·반복거래(recSel)·목표(goalSel)·카테고리(catSel)는 모두 갖춘 선택모드+일괄삭제를
   // 수량 변경 기록(assetQtyLog) 관리 목록에도 추가한 것(app-evolve cycle415 critique → advance).
   'qtyLogSelPartial', 'qtyLogToggleSel', 'qtyLogSelAll', 'qtyLogDelSel',
+  // deleteQtyLogUndo: delAssetQtyLog(건당 삭제)와 qtyLogDelSel(다중 삭제)이 각자 들고 있던 동일한
+  // 톰스톤+twGuard+undoToast 로직을 합친 공유 헬퍼(app-evolve cycle416 critique → advance).
+  'deleteQtyLogUndo',
   // histEnsureRange/goLedgerTo는 가계부(ledger)의 날짜 행을 탭해 전체내역으로 드릴다운하는
   // 경로 — openCatHistory/openAssetHistory와 같은 "필터 리셋 후 화면 전환" 계열인데 여태
   // FUNCTIONS 밖이라 실행형 테스트가 전혀 없었다(app-evolve cycle377 develop).
@@ -13438,6 +13441,38 @@ test('delAssetQtyLog: undo 콜백을 부르면 DB.trashQtyLog에서도 해당 �
   assert.strictEqual(sandbox.DB.trashQtyLog.length, 1);
   sandbox.lastUndo.undoFn();
   assert.strictEqual(sandbox.DB.trashQtyLog.length, 0, '되돌리면 트래시에서도 제거되어야 함(복구된 기록이 트래시에 중복으로 남으면 안 됨)');
+});
+/* ---------- deleteQtyLogUndo: delAssetQtyLog(건당 삭제)와 qtyLogDelSel(다중 삭제)이 각자 들고
+ * 있던 동일한 톰스톤+undoToast 로직을 합친 공유 헬퍼. qtyLogDelSel에만 있던 twGuard를 단건 경로
+ * (delAssetQtyLog)에도 똑같이 적용해, ackGoalAchieved/toggleAutoRates/setRate 등 지금까지
+ * 고쳐온 twGuard 공백 버그 클래스를 이 마지막 한 곳까지 닫는다(app-evolve cycle416
+ * critique → advance). ---------- */
+test('[실행형] delAssetQtyLog: 튜토리얼 모드 중에는 twGuard가 막아서 확인 시트는 뜨지만 실제로는 삭제도 save도 일어나지 않는다(건당 삭제에도 다중삭제와 동일한 twGuard가 적용된 회귀)', () => {
+  const q1 = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 };
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자' }], assetQtyLog: [q1], deletedIds: {}, trashQtyLog: [] };
+  sandbox.confirmSheetCalls = [];
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.TWi = 0;
+  try {
+    sandbox.delAssetQtyLog('q1');
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '튜토리얼 중에도 확인 시트 자체는 떠야 함(qtyLogDelSel과 동일한 구조)');
+    sandbox.confirmSheetCalls[0].cb();
+    assert.strictEqual(sandbox.DB.assetQtyLog.length, 1, '튜토리얼 중에는 실제로 지워지면 안 됨');
+    assert.strictEqual(sandbox.DB.trashQtyLog.length, 0);
+    assert.strictEqual(sandbox.DB.deletedIds.q1, undefined);
+    assert.strictEqual(saveCalled, false, 'save()가 호출되면 안 됨');
+  } finally { sandbox.TWi = -1; sandbox.save = origSave; }
+});
+test('deleteQtyLogUndo: 존재하지 않는 id만 넘기면 조용히 아무 것도 하지 않는다(no-op, trashQtyLog 모양도 안 바뀜)', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자' }],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 }], deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.deleteQtyLogUndo(new Set(['없는id']));
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 1, '해당 없는 id는 아무것도 지우면 안 됨');
+  assert.strictEqual(sandbox.DB.trashQtyLog, undefined, '아무것도 안 지워졌으면 trashQtyLog 모양도 바뀌면 안 됨(deleteGoalsUndo 등과 동일한 opts 회귀 가드)');
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되면 안 됨');
 });
 
 /* ---------- editAssetQtyLog/renderQtyLogEditSheet/saveAssetQtyLogEdit: delAssetQtyLog(삭제)만 있고

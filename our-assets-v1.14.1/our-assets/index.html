@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.565';
+const APP_VERSION='1.47.566';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -7957,11 +7957,7 @@ function openAssetQtyLog(assetId){
 function delAssetQtyLog(id){
  const q=(DB.assetQtyLog||[]).find(x=>x.id===id);if(!q)return;
  confirmSheet('기록을 삭제할까요?','이 수량 변경 기록만 지워요. 자산의 현재 보유 수량은 바뀌지 않아요.','삭제',()=>{
-  DB.assetQtyLog=(DB.assetQtyLog||[]).filter(x=>x.id!==id);
-  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[id]=Date.now(); /* delGoal/delInquiry와 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 다른 기기의 사본을 되살림 */
-  const now=Date.now();DB.trashQtyLog=(DB.trashQtyLog||[]).concat([Object.assign({},q,{_deletedAt:now})]); /* '최근 삭제함' — undoToast의 6초가 지나도(또는 앱을 닫았다 다시 열어도) gcTrashTxns 보존기간까지는 복구 가능(app-evolve cycle324 critique/advance, DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals와 동일 패턴) */
-  save();openAssetQtyLog(q.assetId);
-  undoToast('기록을 삭제했어요',()=>{DB.assetQtyLog.push(q);delete DB.deletedIds[id];DB.trashQtyLog=(DB.trashQtyLog||[]).filter(x=>x.id!==id);touchSave(q);openAssetQtyLog(q.assetId);toast('되돌렸어요')});
+  deleteQtyLogUndo(new Set([id])); /* 톰스톤+undo 로직은 deleteQtyLogUndo로 통합(app-evolve cycle416 critique → advance) */
  });
 }
 /* delAssetQtyLog(삭제)만 있고 고칠 방법이 없어, 날짜를 잘못 고르거나(매수·매도 당시
@@ -14463,6 +14459,20 @@ function deleteGoalsUndo(ids){
  if(removed.length)DB.trashGoals=(DB.trashGoals||[]).concat(removed.map(g=>Object.assign({},g,{_deletedAt:now}))); /* '최근 삭제함' — undoToast의 6초가 지나도(또는 앱을 닫았다 다시 열어도) gcTrashTxns 보존기간까지는 복구 가능(app-evolve cycle322 critique/advance, DB.trashTxns/DB.trashAssets/DB.trashRecs와 동일 패턴) */
  goalDraft=null;save();renderCurrent();
  undoToast(`${removed.length}개 목표를 삭제했어요`,()=>{DB.goals.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);DB.trashGoals=(DB.trashGoals||[]).filter(g=>!ids.has(g.id));touchSave(...removed);renderCurrent();toast('되돌렸어요')})}
+/* delAssetQtyLog(건당 삭제)와 qtyLogDelSel(다중 삭제)이 각자 들고 있던 동일한 톰스톤
+ * (DB.trashQtyLog)+DB.deletedIds 커밋 로직을 여기로 합쳤다 — qtyLogDelSel에만 있던 twGuard를
+ * 단건 경로에도 똑같이 적용해, ackGoalAchieved/toggleAutoRates/setRate 등 지금까지 고쳐온 twGuard
+ * 공백 버그 클래스를 이 마지막 한 곳까지 닫는다(app-evolve cycle416 critique → advance). */
+function deleteQtyLogUndo(ids){
+ if(twGuard())return;
+ const removed=(DB.assetQtyLog||[]).filter(q=>ids.has(q.id));
+ if(!removed.length)return;
+ const assetId=removed[0].assetId;
+ DB.assetQtyLog=(DB.assetQtyLog||[]).filter(q=>!ids.has(q.id));
+ DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
+ DB.trashQtyLog=(DB.trashQtyLog||[]).concat(removed.map(q=>Object.assign({},q,{_deletedAt:now})));
+ save();openAssetQtyLog(assetId);
+ undoToast(removed.length===1?'기록을 삭제했어요':`${removed.length}개 기록을 삭제했어요`,()=>{DB.assetQtyLog.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);DB.trashQtyLog=(DB.trashQtyLog||[]).filter(q=>!ids.has(q.id));touchSave(...removed);openAssetQtyLog(assetId);toast('되돌렸어요')})}
 /* 메뉴 › '삭제한 목표' — deleteGoalsUndo가 DB.trashGoals에 담아둔 삭제된 목표를 보여주고 복구할 수
  * 있는 화면. openRecTrashList/restoreTrashRec과 동일한 manage-row 목록 패턴(app-evolve cycle322
  * critique/advance). 요약은 목표 유형(자산연동/순자산)과 목표액·목표일을 보여준다. */
@@ -15029,21 +15039,15 @@ function qtyLogSelAll(){
  if(items.length&&ST.qtyLogSel.ids.size>=items.length)ST.qtyLogSel.ids.clear();else items.forEach(q=>ST.qtyLogSel.ids.add(q.id));
  if(!qtyLogSelPartial())openAssetQtyLog(assetId);
 }
-/* 수량 변경 기록 관리 선택모드 바닥바의 '삭제' 버튼 — delAssetQtyLog(건당 삭제)와 동일한 톰스톤
- * (DB.trashQtyLog)+톰스톤 식별자(DB.deletedIds)를 여러 건에 적용하고, recDelSel/goalDelSel과
- * 동일하게 하나의 undoToast로 전부 되돌릴 수 있게 한다(app-evolve cycle415 critique → advance). */
+/* 수량 변경 기록 관리 선택모드 바닥바의 '삭제' 버튼 — deleteQtyLogUndo(공유 헬퍼)로 delAssetQtyLog
+ * (건당 삭제)와 동일한 톰스톤(DB.trashQtyLog)+twGuard+undoToast를 적용한다(app-evolve cycle415
+ * critique/advance → cycle416 critique/advance로 delAssetQtyLog와 통합). */
 function qtyLogDelSel(){
  if(!ST.qtyLogSel.ids.size){toast('선택된 기록이 없어요');return}
- const assetId=ST.qtyLogSel.assetId,ids=new Set(ST.qtyLogSel.ids);
+ const ids=new Set(ST.qtyLogSel.ids);
  confirmSheet('기록 삭제',`<b style="color:var(--expense);font-size:16px">${ids.size}개</b> 수량 변경 기록을 삭제할까요? 자산의 현재 보유 수량은 바뀌지 않아요.`,'삭제',()=>{
   ST.qtyLogSel.mode=false;ST.qtyLogSel.ids.clear();
-  if(twGuard())return; /* delAssetQtyLog 단건 삭제는 twGuard 없이도 저장되는 기존 공백이 있지만(별도 범위), 다중 삭제가 새로 추가되는 지금은 ackGoalAchieved류와 동일한 원칙을 처음부터 지킨다(app-evolve cycle415 critique → advance) */
-  const removed=(DB.assetQtyLog||[]).filter(q=>ids.has(q.id));
-  DB.assetQtyLog=(DB.assetQtyLog||[]).filter(q=>!ids.has(q.id));
-  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
-  if(removed.length)DB.trashQtyLog=(DB.trashQtyLog||[]).concat(removed.map(q=>Object.assign({},q,{_deletedAt:now})));
-  save();openAssetQtyLog(assetId);
-  undoToast(`${removed.length}개 기록을 삭제했어요`,()=>{DB.assetQtyLog.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);DB.trashQtyLog=(DB.trashQtyLog||[]).filter(q=>!ids.has(q.id));touchSave(...removed);openAssetQtyLog(assetId);toast('되돌렸어요')});
+  deleteQtyLogUndo(ids);
  });
 }
 
