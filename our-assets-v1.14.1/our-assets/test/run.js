@@ -13578,6 +13578,57 @@ test('saveAssetQtyLogEdit: 추가매수 기록의 투입 금액을 고치면 add
   assert.strictEqual(q.saleProceeds, undefined);
   assert.strictEqual(q.realizedGain, undefined);
 });
+/* ---------- saveAssetQtyLogEdit × costBasis: addedAmount 보정이 자산의 현재 매입원가에도
+ * 반영되는지(이 기록이 그 자산의 가장 늦은 기록일 때만, qtyLogAddedAmountCostBasisDelta 참고) —
+ * cycle401이 saleProceeds 쪽만 고치고 남겨뒀던 비대칭을 메운다(app-evolve cycle417 develop) ---------- */
+test('saveAssetQtyLogEdit: 이 기록이 그 자산의 유일한 기록이면 addedAmount 보정이 자산의 현재 costBasis에도 델타만큼 정확히 반영된다', () => {
+  sandbox.TODAY = '2099-12-31';
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 10, newQty: 20, field: 'stockQty', updatedAt: 1, addedAmount: 500000 };
+  const asset = { id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 1500000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [q] };
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.addedAmount = 700000; // +200000 보정
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(q.addedAmount, 700000);
+  assert.strictEqual(asset.costBasis, 1700000, '매입원가도 같은 델타(+200000)만큼 올라가야 함');
+  assert.strictEqual(asset.updatedAt, 'test-updatedAt', '자산도 함께 touch()돼야 클라우드 동기화에서 이 보정이 안 밀림');
+});
+test('saveAssetQtyLogEdit: 이 기록 뒤(또는 같은 날)에 그 자산의 다른 수량 변경 기록이 있으면 costBasis는 건드리지 않는다(추측하지 않음, 기존 동작 유지)', () => {
+  sandbox.TODAY = '2099-12-31';
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 10, newQty: 20, field: 'stockQty', updatedAt: 1, addedAmount: 500000 };
+  const laterSale = { id: 'q2', assetId: 'a1', date: '2026-02-01', prevQty: 20, newQty: 15, field: 'stockQty', updatedAt: 2, saleProceeds: 100000 };
+  const asset = { id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 15, costBasis: 1500000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [q, laterSale] };
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.addedAmount = 700000;
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(q.addedAmount, 700000, 'qtyLog 표시 자체는 여전히 고쳐짐');
+  assert.strictEqual(asset.costBasis, 1500000, '그 뒤 매도가 비례로 깎아놨을 수 있어 자산의 매입원가는 그대로 둬야 함');
+});
+test('saveAssetQtyLogEdit: addedAmount 보정으로 바뀐 costBasis도 되돌리기(undo)를 부르면 원래 값으로 정확히 복원된다', () => {
+  sandbox.TODAY = '2099-12-31';
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 10, newQty: 20, field: 'stockQty', updatedAt: 1, addedAmount: 500000 };
+  const asset = { id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 1500000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [q] };
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.addedAmount = 700000;
+  sandbox.lastUndo = null;
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(asset.costBasis, 1700000);
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(q.addedAmount, 500000, '되돌리면 addedAmount가 원래대로');
+  assert.strictEqual(asset.costBasis, 1500000, '되돌리면 매입원가도 원래대로');
+});
+test('saveAssetQtyLogEdit: 자산이 이미 삭제됐으면(assetId를 못 찾음) costBasis 보정 없이 기존처럼 조용히 넘어간다', () => {
+  sandbox.TODAY = '2099-12-31';
+  const q = { id: 'q1', assetId: '없는자산', date: '2026-01-01', prevQty: 10, newQty: 20, field: 'stockQty', updatedAt: 1, addedAmount: 500000 };
+  sandbox.DB = { assets: [], assetQtyLog: [q] };
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.addedAmount = 700000;
+  assert.doesNotThrow(() => sandbox.saveAssetQtyLogEdit('q1'));
+  assert.strictEqual(q.addedAmount, 700000);
+});
 test('saveAssetQtyLogEdit: 매도 금액을 수정하면 realizedGainForSale이 애초에 계산해 둔 costBasisRemoved를 보존한 채 새 realizedGain만 다시 계산한다(자산의 현재 매입원가로 재계산하지 않음)', () => {
   // realizedGainForSale(원래 보유 20 → 10으로 매도, 당시 매입원가 300000, 매도 200000)
   // → costBasisRemoved=150000(비례 축소분), realizedGain=200000-150000=50000
@@ -24058,6 +24109,29 @@ test('addCostBasisForBuy: addedAmount가 0 이하/미입력이면 origCostBasis�
   assert.strictEqual(sandbox.addCostBasisForBuy(100000, 0), 100000);
   assert.strictEqual(sandbox.addCostBasisForBuy(100000, -5000), 100000);
   assert.strictEqual(sandbox.addCostBasisForBuy(100000, undefined), 100000);
+});
+/* ---------- qtyLogAddedAmountCostBasisDelta(logic.js, 순수): saveAssetQtyLogEdit이 추가매수
+ * 기록의 addedAmount를 고칠 때, 그 보정을 자산의 현재 costBasis에도 안전하게(=이 기록 이후 다른
+ * 수량 변경이 전혀 없을 때만) 반영할 수 있는 델타를 계산한다. addCostBasisForBuy의 역방향 보정
+ * (app-evolve cycle417 develop) ---------- */
+test('qtyLogAddedAmountCostBasisDelta: 이 기록이 그 자산의 가장 늦은(유일한) 기록이면 새/기존 addedAmount 차이를 그대로 델타로 돌려준다', () => {
+  const logs = [{ id: 'q1', date: '2026-03-01', addedAmount: 500000 }];
+  assert.strictEqual(sandbox.qtyLogAddedAmountCostBasisDelta(logs, 'q1', 700000), 200000);
+  assert.strictEqual(sandbox.qtyLogAddedAmountCostBasisDelta(logs, 'q1', 300000), -200000, '줄이는 보정도 음수 델타로 그대로 반영');
+});
+test('qtyLogAddedAmountCostBasisDelta: 같은 자산에 이 기록보다 늦거나 같은 날짜의 다른 기록이 있으면(그 사이 costBasis가 또 움직였을 수 있어) null — 추측하지 않는다', () => {
+  const logsLater = [{ id: 'q1', date: '2026-03-01', addedAmount: 500000 }, { id: 'q2', date: '2026-03-15', addedAmount: 100000 }];
+  assert.strictEqual(sandbox.qtyLogAddedAmountCostBasisDelta(logsLater, 'q1', 700000), null, '뒤에 다른 기록이 있으면 델타를 못 믿음');
+  const logsSameDay = [{ id: 'q1', date: '2026-03-01', addedAmount: 500000 }, { id: 'q2', date: '2026-03-01', saleProceeds: 10000 }];
+  assert.strictEqual(sandbox.qtyLogAddedAmountCostBasisDelta(logsSameDay, 'q1', 700000), null, '같은 날짜는 순서를 알 수 없어 보수적으로 null');
+  const logsEarlierOnly = [{ id: 'q0', date: '2026-01-01', addedAmount: 100000 }, { id: 'q1', date: '2026-03-01', addedAmount: 500000 }];
+  assert.strictEqual(sandbox.qtyLogAddedAmountCostBasisDelta(logsEarlierOnly, 'q1', 700000), 200000, '이 기록보다 앞선 기록만 있으면(그 뒤로 아무 일도 없었으므로) 안전하게 델타를 돌려줌');
+});
+test('qtyLogAddedAmountCostBasisDelta: id가 없거나 addedAmount가 없는 기록(매도/단순조정)이거나 변화가 없으면 null', () => {
+  const logs = [{ id: 'q1', date: '2026-03-01', addedAmount: 500000 }, { id: 'q2', date: '2026-01-01', saleProceeds: 200000 }];
+  assert.strictEqual(sandbox.qtyLogAddedAmountCostBasisDelta(logs, '없는id', 700000), null);
+  assert.strictEqual(sandbox.qtyLogAddedAmountCostBasisDelta(logs, 'q2', 700000), null, 'addedAmount가 없는(매도) 기록엔 적용 안 됨');
+  assert.strictEqual(sandbox.qtyLogAddedAmountCostBasisDelta(logs, 'q1', 500000), null, '값이 안 바뀌면 델타 0 대신 null(불필요한 touch 방지)');
 });
 /* ---------- realizedGainForSale(logic.js, 순수): 일부 매도 시 "받은 매도 금액"을 입력받으면
  * 실현손익을 계산한다 — addCostBasisForBuy와 대칭되는 매도 쪽 짝(app-evolve cycle265 advance) ---------- */

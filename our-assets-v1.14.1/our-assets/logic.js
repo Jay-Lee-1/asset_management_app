@@ -1428,6 +1428,29 @@ function addCostBasisForBuy(origCostBasis,addedAmount){
  if(!(addedAmount>0))return origCostBasis;
  return Math.round((origCostBasis||0)+addedAmount);
 }
+/* saveAssetQtyLogEdit(index.html)이 추가매수 기록의 addedAmount(투입 금액)를 고칠 때, 그 보정이
+ * 자산의 '현재' 매입원가(costBasis)에도 안전하게 반영될 수 있는지 판정한다. addCostBasisForBuy는
+ * 매입원가에 단순 가산(costBasis+=addedAmount)이라, 이 기록 '이후' 같은 자산에 다른 수량 변경이
+ * 전혀 없었다면(=costBasis가 그 뒤로 scaleCostBasisForSale 등으로 비례 축소되거나 추가되지
+ * 않았다면) 델타(newAddedAmount-기존 addedAmount)만큼 그대로 더해도 지금 costBasis와 정확히
+ * 일치한다. 하지만 그 뒤(또는 같은 날, 순서를 알 수 없음) 다른 매수·매도가 있었다면 이 addedAmount가
+ * 지금 costBasis에 남긴 몫이 더 이상 1:1이 아니라(매도라면 비례로 깎였고, 매수라면 그 사이에 또
+ * 가산이 끼었을 수 있음) 델타 보정이 틀린 값을 만들 수 있다 — saveAssetQtyLogEdit의 saleProceeds
+ * 보정(바로 아래 realizedGainForSale 주석)과 같은 '모르면 추측하지 않는다' 원칙에 따라 그 경우엔
+ * null을 돌려줘 호출부가 costBasis를 건드리지 않게 한다(addedAmount 수정 전까지의 기존 동작 유지,
+ * app-evolve cycle417 develop — 지금까지 addedAmount를 고쳐도 qtyLog 표시만 바뀌고 실제 매입원가는
+ * 그대로 남아 손익·연환산수익률 계산에 보정이 전혀 반영되지 않던 공백). logsForAsset은 같은
+ * assetId의 전체 기록(자기 자신 포함)이어야 하고, 날짜 비교만 쓴다 — updatedAt(입력 순서)은 실제
+ * 거래 발생 순서와 다를 수 있어 믿지 않는다. */
+function qtyLogAddedAmountCostBasisDelta(logsForAsset,qid,newAddedAmount){
+ const q=(logsForAsset||[]).find(x=>x.id===qid);
+ if(!q||!(q.addedAmount>0))return null;
+ const delta=newAddedAmount-q.addedAmount;
+ if(delta===0)return null;
+ const hasOtherOnOrAfter=(logsForAsset||[]).some(x=>x.id!==qid&&x.date>=q.date);
+ if(hasOtherOnOrAfter)return null;
+ return delta;
+}
 /* 일부 매도 시 "이번에 받은 매도 금액"을 입력받으면 실현손익(realized gain)을 계산한다 —
  * addCostBasisForBuy와 대칭되는 매도 쪽 짝. scaleCostBasisForSale이 비례 축소하는 costBasis
  * 감소분(costBasisRemoved=이번 매도로 빠져나간 매입원가)을 구하고, saleProceeds를 받았으면

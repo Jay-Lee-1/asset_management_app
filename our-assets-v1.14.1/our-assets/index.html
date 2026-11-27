@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.566';
+const APP_VERSION='1.47.567';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -8001,8 +8001,17 @@ function saveAssetQtyLogEdit(id){
  const newAddedAmount=q.addedAmount>0?sanitizeAmount(d.addedAmount,0):q.addedAmount;
  const newSaleProceeds=q.saleProceeds>0?sanitizeAmount(d.saleProceeds,0):q.saleProceeds;
  const prevDate=q.date,prevAddedAmount=q.addedAmount,prevSaleProceeds=q.saleProceeds,prevRealizedGain=q.realizedGain;
+ const asset=(DB.assets||[]).find(x=>x.id===q.assetId);
+ /* addedAmount(투입 금액) 보정이 자산의 '지금' 매입원가(costBasis)에도 안전하게 반영될 수 있는지
+  * qtyLogAddedAmountCostBasisDelta(logic.js)로 미리 판정한다 — q.addedAmount를 아래서 덮어쓰기
+  * 전에, 그 함수가 기존 값을 그대로 볼 수 있을 때 호출해야 한다(app-evolve cycle417 develop,
+  * saleProceeds 보정은 cycle401부터 있었는데 addedAmount 보정만 qtyLog 표시만 바뀌고 실제
+  * 매입원가는 그대로 남아 손익·연환산수익률에 전혀 반영되지 않던 비대칭을 메운다). */
+ const costBasisDelta=asset?qtyLogAddedAmountCostBasisDelta((DB.assetQtyLog||[]).filter(x=>x.assetId===q.assetId),id,newAddedAmount):null;
+ const prevCostBasis=costBasisDelta!=null?asset.costBasis:undefined;
  q.date=newDate;
  if(q.addedAmount>0)q.addedAmount=newAddedAmount;
+ if(costBasisDelta!=null)asset.costBasis=Math.round((asset.costBasis||0)+costBasisDelta);
  if(q.saleProceeds>0&&newSaleProceeds!==q.saleProceeds){
   if(q.realizedGain!=null){
    const costBasisRemoved=q.saleProceeds-q.realizedGain; /* realizedGainForSale(logic.js)이 애초에 계산해 둔 원가차감분 — 자산의 지금 매입원가로 다시 구하지 않고 그대로 보존 */
@@ -8010,9 +8019,9 @@ function saveAssetQtyLogEdit(id){
   } /* realizedGain이 처음부터 null(당시 매입원가를 몰라 계산 못 했던 매도)이면 그대로 null로 둠 — 추측하지 않는다는 기존 원칙 유지 */
   q.saleProceeds=newSaleProceeds;
  }
- touchSave(q);
+ touchSave(...(costBasisDelta!=null?[q,asset]:[q]));
  closeSheet();openAssetQtyLog(q.assetId);
- undoToast('기록을 수정했어요',()=>{q.date=prevDate;q.addedAmount=prevAddedAmount;q.saleProceeds=prevSaleProceeds;q.realizedGain=prevRealizedGain;touchSave(q);openAssetQtyLog(q.assetId);toast('되돌렸어요')});
+ undoToast('기록을 수정했어요',()=>{q.date=prevDate;q.addedAmount=prevAddedAmount;q.saleProceeds=prevSaleProceeds;q.realizedGain=prevRealizedGain;if(costBasisDelta!=null)asset.costBasis=prevCostBasis;touchSave(...(costBasisDelta!=null?[q,asset]:[q]));openAssetQtyLog(q.assetId);toast('되돌렸어요')});
 }
 /* 메뉴 › '삭제한 수량기록' — delAssetQtyLog가 DB.trashQtyLog에 담아둔 삭제된 수량 변경/매도 기록을
  * 모든 자산에 걸쳐 보여주고 복구할 수 있는 화면. openGoalTrashList/restoreTrashGoal과 동일한
