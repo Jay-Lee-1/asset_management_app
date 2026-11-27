@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.560';
+const APP_VERSION='1.47.561';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -4848,7 +4848,13 @@ function openBigMinSheet(){
   <button class="btn btn-primary" onclick="setBigMin()">${svg('check')} 저장</button>`);
  setTimeout(()=>{const el=$('bigMinInput');if(el){el.focus();el.select()}},250);
 }
+/* toggleAutoRates/toggleConfirmTransfers(cycle413), toggleCatVarUI/toggleBudgetRolloverUI(cycle412),
+ * ackGoalAchieved/ackDebtPayoff(cycle409)와 같은 twGuard 공백 — openBigMinSheet()는 메뉴(설정)의
+ * 시트라 #nav와 동일한 '구조적 틈'(twStage 오버레이 밖)으로 튜토리얼 중에도 그대로 열고 저장을
+ * 누를 수 있는데, setBigMin()은 DB.settings.bigMin을 가드 없이 바로 영구 기록해 "튜토리얼 중에는
+ * 실제로 저장되지 않아요" 약속이 깨진다(app-evolve cycle414 develop). */
 function setBigMin(){
+ if(twGuard())return;
  const v=num($('bigMinInput'));
  if(!v){toast('금액을 넣어주세요');return}
  DB.settings.bigMin=v;save();closeSheet();renderCurrent();toast(`${comma(v)}원 이상만 표시해요`);

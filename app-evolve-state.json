@@ -1,15 +1,8 @@
 {
   "cycle": 414,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 409,
-      "phase": "develop",
-      "timestamp": "2026-11-26T16:00:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 위임해 조사. twGuard(튜토리얼 중 '실제로 저장되지 않아요') 감사 시리즈(cycle308/345/398/401/403 — confirmTransferNow/postponeTransfer/toggleRecActive/saveBudget 등)가 반복적으로 메운 동일한 구조적 틈(홈 알림 카드는 #nav처럼 twStage 스포트라이트 오버레이 밖의 실제 화면이라 튜토리얼 중에도 그대로 탭 가능)이 ackGoalAchieved(id)/ackDebtPayoff(assetId)에는 아직 빠져 있던 것을 발견 — 목표 달성/부채 완납 홈 알림 카드의 onclick이 이 두 함수를 직접 호출하는데, 각각 g.achievedAckAt/a.payoffAckAt을 확인 없이 바로 기록하고 save()를 호출해, 튜토리얼을 보여주는 중에 실제 달성/완납 데이터가 있으면 ack이 조용히 영구 저장되는 실제 데이터 오염 버그였다. 두 함수 시작에 if(twGuard())return; 추가(confirmTransferNow와 동일하게 함수 전체를 막아 openGoalForm/openAssetHistory 호출도 같이 차단). saveTx/delTx/saveAsset/delAsset/saveRec/doSettle*/doMaturity/toggleRecActive/doBulkRecActive/restoreTrash* 등 다른 변경 함수들은 이미 twGuard가 있거나 가드된 undo 경로를 거침을 재확인(추가 공백 없음, 전체 재감사는 범위 제외). test/run.js에 TWi=0(튜토리얼 활성) 상태에서 achievedAckAt/payoffAckAt이 안 바뀌고 save()/openGoalForm/openAssetHistory도 안 불리는지 확인하는 confirmTransferNow 패턴의 테스트 2건 추가. 오케스트레이터가 diff를 직접 리뷰(twGuard() 정의, ackGoalAchieved/ackDebtPayoff 변경 확인)하고 node test/run.js 재실행 4062->4064/4064 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new vm.Script() 파싱 통과를 재검증한 뒤 커밋. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.550->1.47.551, sw.js CACHE v817->v818. 범위 제외: twGuard 전체 재감사, ack 전 확인 다이얼로그 추가 등 새 UX 패턴 도입.",
-      "commit": null
-    },
     {
       "cycle": 409,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-27T09:50:00.000Z",
       "summary": "critique(cycle413)의 계획대로 logic.js에 goalProgressRate(goalProgress가 쓰던 최근 90일 구간 선형 증가율 계산만 떼어낸 것, debtPayoffRate와 대등)와 goalWhatIf(baseRate를 0으로 바닥 깐 뒤 extraPerMonth/30을 더해 effectiveRate 계산, debtPayoffWhatIf와 대등)를 신설해, 부채만 갖추고 있던 인터랙티브 what-if('매달 얼마씩 더 모으면 언제 달성하는지')를 목표에도 추가했다(logic.js 1253-1266행 주석이 goalProgress와 debtPayoffProjection/debtPayoffWhatIf가 설계 철학까지 같다고 명시하는데도 목표만 정적 투사 문구뿐이던 기능 격차 해소). index.html의 renderGoalForm()에 goalWhatIfText/goalWhatIfUpdate(assetBalCard의 debtWhatIfText/debtWhatIfUpdate와 완전히 같은 패턴 — #goalWhatIfResult textContent 즉시 갱신 + 220ms 디바운스 announceLive)를 신설하고, hist.length>=2(추세를 계산할 최소 조건)이고 아직 미달성인 '기존' 목표(og=DB.goals에 저장된 원본을 기준으로 삼음 — assetBalCard가 입력 중인 폼이 아니라 이미 저장된 자산 기준으로 what-if를 보여주는 것과 동일한 전제. 아직 저장 전인 신규 목표는 추세 이력 자체가 없어 제외)를 수정할 때만 '매달 이만큼 더 모으면?' 입력 + 실시간 결과를 보여주게 했다. 목표에는 부채의 이자/상환 개념이 없으므로 debtAmortSuffix에 대응하는 보조 계산은 계획대로 범위 제외. test/run.js에 15건 추가 — goalProgressRate/goalWhatIf 순수함수 단위 테스트 8건(증가/정체·감소/이력부족 추세, 이미달성/베이스라인일치/악화추세에서도 추가분만으로 계산/단조성/빈이력), renderGoalForm의 what-if 노출 조건 4건(정상노출+베이스라인 문구/신규목표 제외/이미달성 제외/이력 1건뿐이라 추세불가 제외), goalWhatIfUpdate 실행형 테스트 3건(입력반영+textContent 즉시갱신+220ms 디바운스 announceLive, 연속입력마다 이전 타이머 교체, 존재하지 않는 목표·결과영역 사라짐 조기반환 2종). node test/run.js 4098->4113/4113 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/982194/1770자) 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.559->1.47.560, sw.js CACHE v826->v827. 범위 제외(계획대로): 목표의 이자/상환 패리티, 차트/히스토리 시각화 패리티(별도의 더 큰 후속 사이클 후보), debtWhatIf* 자체 변경(재사용만). pending_advance_plan null로 비움, phase를 develop으로 회전, cycle 414로 증가.",
+      "commit": null
+    },
+    {
+      "cycle": 414,
+      "phase": "develop",
+      "timestamp": "2026-11-27T11:12:21.383Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 조사. cycle413 develop이 \"diff를 작게 유지하려 보류, future 후보\"로 명시적으로 남겨둔 setBigMin()(상태 파일 cycle413 develop 요약 참고)을 처리 — ackGoalAchieved/ackDebtPayoff(cycle409)·toggleCatVarUI/toggleBudgetRolloverUI(cycle412)·toggleAutoRates/toggleConfirmTransfers(cycle413)와 같은 twGuard 공백 클래스. openBigMinSheet()(\"큰 지출 기준\" 금액 설정 시트)는 메뉴(설정) 화면에서 여는 시트로 #nav와 동일한 구조적 틈(twStage 오버레이 밖이라 튜토리얼 중에도 그대로 열고 탭 가능)에 있는데, 저장 버튼이 호출하는 setBigMin()은 가드 없이 DB.settings.bigMin=v;save()를 바로 실행해 \"튜토리얼 중에는 실제로 저장되지 않아요\" 약속이 깨지는 실데이터 오염 버그였다. setBigMin() 맨 앞에 if(twGuard())return; 추가(ackGoalAchieved/toggleAutoRates 등과 동일한 함수 전체를 막는 패턴, openBigMinSheet() 자체의 UI나 bigMin() 순수 로직은 변경 없음). test/run.js FUNCTIONS 화이트리스트에 setBigMin 추가, $ 스텁 맵에 bigMinInput 처리 추가(budgetIn 등과 동일 패턴), 테스트 3건 추가(정상 입력 시 설정변경+save()+closeSheet()+renderCurrent()+토스트, 빈 입력이면 기존 설정 유지+save() 미호출 회귀 방지, [실행형] TWi=0(튜토리얼 활성) 상태에서 twGuard가 막아 설정도 save()도 안 바뀌고 twGuard 자신의 토스트만 뜨는지 확인). 오케스트레이터가 diff를 직접 리뷰(두 줄 추가뿐인 최소 변경 확인)하고 node test/run.js 독립 재실행 4113->4116/4116 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/982598/1770자) 전부 new vm.Script() 파싱 통과를 재검증. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.560->1.47.561, sw.js CACHE v827->v828. 범위 제외: 다른 모든 DB-mutating 함수에 대한 전체 twGuard 재감사(반복 기각 범위), move류(moveAsset/moveCat/moveGoal/moveOwner) 재정렬은 의도적으로 twGuard 없음.",
       "commit": null
     }
   ]

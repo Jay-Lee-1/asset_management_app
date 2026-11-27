@@ -264,7 +264,7 @@ const FUNCTIONS = [
   // 설정 폼/화면/완료처리. firstCashForOwner/settleConfigured는 doSettle/renderTxSheet/renderMenu가
   // 공유하는 작은 헬퍼라 그 호출부들과 같은 sandbox에 항상 함께 올라가야 한다.
   'firstCashForOwner', 'settleConfigured', 'settleDraftRows', 'openSettleConfigForm', 'settleConfigPick', 'settleConfigAddRow', 'settleConfigRemoveRow', 'settleConfigRatioInput', 'settleConfigEqualSplit', 'renderSettleConfigForm', 'saveSettleConfig', 'clearSettleConfig', 'openSettlement', 'settlementBreakdownHTML', 'settlementBreakdownHTMLN', 'confirmSettlement', 'doSettle', 'existingSettleTransfersN', 'confirmSettlementN', 'doSettleN',
-  'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
+  'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet', 'setBigMin',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtPayoffStatuses', 'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
   // goalsBehind/goalsAchieved·openGoalBehindList/openGoalAchievedList(app-evolve cycle408 advance)는
@@ -898,7 +898,7 @@ const sandbox = {
   // 있음) 안전하게 넘어가는 분기를 검증한다.
   bootSplashEl: { remove: () => { sandbox.bootSplashRemoveCalls++; } },
   bootSplashRemoveCalls: 0,
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'errDetailTa' ? sandbox.errDetailTaEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : id === 'goalWhatIfExtra' ? (sandbox.goalWhatIfExtraValue === undefined ? null : { value: sandbox.goalWhatIfExtraValue }) : id === 'goalWhatIfResult' ? (sandbox.goalWhatIfResultMissing ? null : sandbox.goalWhatIfResultEl) : id === 'debtPlanExtra' ? (sandbox.debtPlanExtraValue === undefined ? null : { value: sandbox.debtPlanExtraValue }) : id === 'debtPlanBody' ? (sandbox.debtPlanBodyMissing ? null : sandbox.debtPlanBodyEl) : id === 'txCatSuggest' ? (sandbox.txCatSuggestMissing ? null : sandbox.txCatSuggestEl) : id === 'recCatSuggest' ? (sandbox.recCatSuggestMissing ? null : sandbox.recCatSuggestEl) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'errDetailTa' ? sandbox.errDetailTaEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : id === 'goalWhatIfExtra' ? (sandbox.goalWhatIfExtraValue === undefined ? null : { value: sandbox.goalWhatIfExtraValue }) : id === 'goalWhatIfResult' ? (sandbox.goalWhatIfResultMissing ? null : sandbox.goalWhatIfResultEl) : id === 'debtPlanExtra' ? (sandbox.debtPlanExtraValue === undefined ? null : { value: sandbox.debtPlanExtraValue }) : id === 'debtPlanBody' ? (sandbox.debtPlanBodyMissing ? null : sandbox.debtPlanBodyEl) : id === 'txCatSuggest' ? (sandbox.txCatSuggestMissing ? null : sandbox.txCatSuggestEl) : id === 'recCatSuggest' ? (sandbox.recCatSuggestMissing ? null : sandbox.recCatSuggestEl) : id === 'bigMinInput' ? (sandbox.bigMinInputValue === undefined ? null : { value: sandbox.bigMinInputValue }) : null,
   // debtWhatIfResultEl은 debtWhatIfUpdate()가 textContent를 직접 대입하는 결과 표시 엘리먼트
   // (부채 상환 추가 납입 시뮬레이터, app-evolve cycle262 advance) — bkTextEl처럼 호출 간에도
   // 값이 남는 공유 객체로 선언해 textContent 갱신을 검사할 수 있게 한다.
@@ -5095,6 +5095,67 @@ test('openBigMinSheet: bigMinInput도 다른 금액 입력란과 동일하게 fi
   sandbox.openBigMinSheet();
   assert.ok(sandbox.lastSheetHtml.includes('<div class="field-clear"><input id="bigMinInput"'), 'bigMinInput 입력이 field-clear로 감싸져 있지 않음');
   assert.ok(sandbox.lastSheetHtml.includes(`<button type="button" class="fc-x" aria-label="기준 금액 지우기" onclick="clrInput('bigMinInput')">`), 'bigMinInput에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+
+/* ---------- setBigMin: toggleAutoRates/toggleConfirmTransfers(cycle413), toggleCatVarUI/
+ * toggleBudgetRolloverUI(cycle412), ackGoalAchieved/ackDebtPayoff(cycle409)와 같은 twGuard 감사
+ * 공백 — openBigMinSheet()는 메뉴(설정) 시트라 #nav와 동일한 구조적 틈으로 튜토리얼 중에도 그대로
+ * 열고 저장을 누를 수 있는데, setBigMin()은 DB.settings.bigMin을 가드 없이 영구 기록한다
+ * (app-evolve cycle414 develop). ---------- */
+test('setBigMin: 정상 금액을 넣으면 설정이 바뀌고 save()·closeSheet()·renderCurrent()·토스트가 모두 일어난다', () => {
+  sandbox.DB = { settings: {} };
+  sandbox.bigMinInputValue = '150000';
+  sandbox.closeSheetCalls = 0;
+  let renderCalled = false;
+  const origRender = sandbox.renderCurrent;
+  sandbox.renderCurrent = () => { renderCalled = true; };
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.lastToast = null;
+  sandbox.setBigMin();
+  assert.strictEqual(sandbox.DB.settings.bigMin, 150000);
+  assert.ok(saveCalled, 'save()가 호출되어야 함');
+  assert.strictEqual(sandbox.closeSheetCalls, 1, 'closeSheet()가 호출되어야 함');
+  assert.ok(renderCalled, 'renderCurrent()가 호출되어야 함');
+  assert.strictEqual(sandbox.lastToast, '150,000원 이상만 표시해요');
+  sandbox.save = origSave;
+  sandbox.renderCurrent = origRender;
+  sandbox.bigMinInputValue = undefined;
+});
+test('setBigMin: 금액을 비워두면 안내 토스트만 뜨고 설정은 바뀌지 않는다', () => {
+  sandbox.DB = { settings: { bigMin: 100000 } };
+  sandbox.bigMinInputValue = '';
+  sandbox.closeSheetCalls = 0;
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.lastToast = null;
+  sandbox.setBigMin();
+  assert.strictEqual(sandbox.DB.settings.bigMin, 100000, '빈 입력이면 기존 설정이 바뀌면 안 됨');
+  assert.ok(!saveCalled, '빈 입력이면 save()가 호출되면 안 됨');
+  assert.strictEqual(sandbox.closeSheetCalls, 0, '빈 입력이면 시트가 닫히면 안 됨');
+  assert.strictEqual(sandbox.lastToast, '금액을 넣어주세요');
+  sandbox.save = origSave;
+  sandbox.bigMinInputValue = undefined;
+});
+test('[실행형] setBigMin: 튜토리얼 모드 중에는 twGuard가 막아서 설정도 save()도 바뀌지 않는다', () => {
+  sandbox.DB = { settings: { bigMin: 100000 } };
+  sandbox.bigMinInputValue = '999000';
+  sandbox.TWi = 0;
+  sandbox.closeSheetCalls = 0;
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.lastToast = null;
+  sandbox.setBigMin();
+  assert.strictEqual(sandbox.DB.settings.bigMin, 100000, '튜토리얼 중에는 설정이 바뀌면 안 됨');
+  assert.ok(!saveCalled, '튜토리얼 중에는 save()가 호출되면 안 됨');
+  assert.strictEqual(sandbox.closeSheetCalls, 0, '튜토리얼 중에는 시트가 닫히면 안 됨');
+  assert.ok(sandbox.lastToast.includes('튜토리얼'), 'twGuard의 안내 토스트만 떠야 함');
+  sandbox.save = origSave;
+  sandbox.TWi = -1;
+  sandbox.bigMinInputValue = undefined;
 });
 
 /* ---------- saveBudget: budgetIn 입력란이 다른 금액 입력란(txAmt/rAmt/asAmt 등)처럼 천단위
