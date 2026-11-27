@@ -284,7 +284,11 @@ const FUNCTIONS = [
   // 전혀 없던 공백이었다(app-evolve cycle373 critique/advance). debtPayoffPtsFor를 그대로
   // 재사용하므로 바로 위 줄과 같은 sandbox에 올려야 한다.
   'debtPlanDebts', 'debtPlanBodyHTML', 'openDebtPlan', 'debtPlanStrategySel', 'debtPlanUpdate',
-  'rateUnknown', 'rateStale', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'editAssetQtyLog', 'renderQtyLogEditSheet', 'saveAssetQtyLogEdit', 'qtyLogTrashBody', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'catsTrashBody', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  'rateUnknown', 'rateStale', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'qtyLogBody', 'delAssetQtyLog', 'editAssetQtyLog', 'renderQtyLogEditSheet', 'saveAssetQtyLogEdit', 'qtyLogTrashBody', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'catsTrashBody', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  // qtyLogSelPartial/qtyLogToggleSel/qtyLogSelAll/qtyLogDelSel: 자산(aSel)·일별내역(lSel)·전체내역
+  // (hist.selMode)·반복거래(recSel)·목표(goalSel)·카테고리(catSel)는 모두 갖춘 선택모드+일괄삭제를
+  // 수량 변경 기록(assetQtyLog) 관리 목록에도 추가한 것(app-evolve cycle415 critique → advance).
+  'qtyLogSelPartial', 'qtyLogToggleSel', 'qtyLogSelAll', 'qtyLogDelSel',
   // histEnsureRange/goLedgerTo는 가계부(ledger)의 날짜 행을 탭해 전체내역으로 드릴다운하는
   // 경로 — openCatHistory/openAssetHistory와 같은 "필터 리셋 후 화면 전환" 계열인데 여태
   // FUNCTIONS 밖이라 실행형 테스트가 전혀 없었다(app-evolve cycle377 develop).
@@ -13601,6 +13605,147 @@ test('saveAssetQtyLogEdit: 존재하지 않는 id면 조용히 아무 것도 하
   sandbox.lastUndo = null;
   assert.doesNotThrow(() => sandbox.saveAssetQtyLogEdit('nope'));
   assert.strictEqual(sandbox.lastUndo, null);
+});
+
+/* ---------- qtyLogToggleSel/qtyLogSelAll/qtyLogDelSel: 자산(aSel)·일별내역(lSel)·전체내역
+ * (hist.selMode)·반복거래(recSel)·목표(goalSel)·카테고리(catSel) 여섯 관리화면이 모두 갖춘
+ * 롱프레스 선택모드+일괄삭제를 수량 변경 기록(assetQtyLog) 관리 목록에도 추가한 것
+ * (app-evolve cycle415 critique → advance). recToggleSel/recSelAll/recDelSel과 동일한 패턴이되,
+ * qtyLog는 한 자산의 기록만 보여주므로 ST.qtyLogSel.assetId로 전체선택/톰스톤 범위를 좁힌다. ---------- */
+test('qtyLogToggleSel: 선택한 id를 추가하고, #qtyLogBody만 다시 그린다(openAssetQtyLog() 전체 재오픈 없음)', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자' }], assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 }] };
+  sandbox.ST = { qtyLogSel: { mode: true, ids: new Set(), assetId: 'a1' } };
+  const qtyLogBodyEl = { innerHTML: 'old' };
+  const orig$ = sandbox.$, origOpen = sandbox.openAssetQtyLog;
+  let openCalls = 0;
+  sandbox.$ = (id) => (id === 'qtyLogBody' ? qtyLogBodyEl : null);
+  sandbox.openAssetQtyLog = () => { openCalls++; };
+  try {
+    sandbox.qtyLogToggleSel('q1');
+    assert.ok(sandbox.ST.qtyLogSel.ids.has('q1'), 'q1이 선택 목록에 추가돼야 함');
+    assert.strictEqual(openCalls, 0, '#qtyLogBody가 있으면 openAssetQtyLog() 전체를 다시 열면 안 됨');
+    assert.ok(qtyLogBodyEl.innerHTML.includes('sel-on'), '#qtyLogBody가 새 선택 상태(sel-on)로 갱신돼야 함');
+  } finally { sandbox.$ = orig$; sandbox.openAssetQtyLog = origOpen; }
+});
+test('qtyLogToggleSel: 같은 id를 다시 호출하면 선택이 해제된다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자' }], assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 }] };
+  sandbox.ST = { qtyLogSel: { mode: true, ids: new Set(['q1']), assetId: 'a1' } };
+  const qtyLogBodyEl = { innerHTML: 'old' };
+  const orig$ = sandbox.$;
+  sandbox.$ = (id) => (id === 'qtyLogBody' ? qtyLogBodyEl : null);
+  try {
+    sandbox.qtyLogToggleSel('q1');
+    assert.ok(!sandbox.ST.qtyLogSel.ids.has('q1'), 'q1이 선택 목록에서 제거돼야 함');
+    assert.ok(!qtyLogBodyEl.innerHTML.includes('sel-on'), '선택 해제 후에는 sel-on 클래스가 없어야 함');
+  } finally { sandbox.$ = orig$; }
+});
+test('qtyLogSelAll: 전체선택되지 않은 상태에서 부르면 같은 자산(assetId)의 기록만 전부 선택되고, 다른 자산의 기록은 건드리지 않는다(핵심 경계조건)', () => {
+  sandbox.DB = {
+    assetQtyLog: [
+      { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 },
+      { id: 'q2', assetId: 'a1', date: '2026-02-01', prevQty: 10, newQty: 8, field: 'stockQty', updatedAt: 2 },
+      { id: 'q3', assetId: 'a2', date: '2026-01-05', prevQty: 1, newQty: 2, field: 'stockQty', updatedAt: 3 },
+    ],
+  };
+  sandbox.ST = { qtyLogSel: { mode: true, ids: new Set(), assetId: 'a1' } };
+  const orig$ = sandbox.$, origOpen = sandbox.openAssetQtyLog;
+  sandbox.$ = () => null; // openAssetQtyLog 폴백 경로로 충분 — 여기선 선택 집합만 확인
+  sandbox.openAssetQtyLog = () => {};
+  try {
+    sandbox.qtyLogSelAll();
+    assert.strictEqual(sandbox.ST.qtyLogSel.ids.size, 2, 'a1의 기록 두 건만 선택돼야 함');
+    assert.ok(sandbox.ST.qtyLogSel.ids.has('q1') && sandbox.ST.qtyLogSel.ids.has('q2'));
+    assert.ok(!sandbox.ST.qtyLogSel.ids.has('q3'), '다른 자산(a2)의 기록은 선택되면 안 됨');
+  } finally { sandbox.$ = orig$; sandbox.openAssetQtyLog = origOpen; }
+});
+test('qtyLogSelAll: 이미 전체선택된 상태에서 다시 부르면 전체 해제된다', () => {
+  sandbox.DB = { assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 }] };
+  sandbox.ST = { qtyLogSel: { mode: true, ids: new Set(['q1']), assetId: 'a1' } };
+  const orig$ = sandbox.$, origOpen = sandbox.openAssetQtyLog;
+  sandbox.$ = () => null;
+  sandbox.openAssetQtyLog = () => {};
+  try {
+    sandbox.qtyLogSelAll();
+    assert.strictEqual(sandbox.ST.qtyLogSel.ids.size, 0, '전체선택 상태에서 다시 부르면 선택이 모두 해제돼야 함');
+  } finally { sandbox.$ = orig$; sandbox.openAssetQtyLog = origOpen; }
+});
+test('qtyLogDelSel: 선택이 비어 있으면 안내 토스트만 띄우고 confirmSheet를 부르지 않는다', () => {
+  sandbox.DB = { assetQtyLog: [{ id: 'q1', assetId: 'a1' }] };
+  sandbox.ST = { qtyLogSel: { mode: true, ids: new Set(), assetId: 'a1' } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.qtyLogDelSel();
+  assert.strictEqual(sandbox.lastToast, '선택된 기록이 없어요');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+});
+test('qtyLogDelSel: 확인을 누르면 선택 모드가 꺼지고, 선택된 기록 전체가 DB.assetQtyLog에서 빠지며 _deletedAt과 함께 DB.trashQtyLog에 담긴다(delAssetQtyLog와 동일한 톰스톤 패턴)', () => {
+  const q1 = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1, addedAmount: 300000 };
+  const q2 = { id: 'q2', assetId: 'a1', date: '2026-02-01', prevQty: 10, newQty: 8, field: 'stockQty', updatedAt: 2, saleProceeds: 100000, realizedGain: 20000 };
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자' }], assetQtyLog: [q1, q2], deletedIds: {}, trashQtyLog: [] };
+  sandbox.ST = { qtyLogSel: { mode: true, ids: new Set(['q1', 'q2']), assetId: 'a1' } };
+  sandbox.confirmSheetCalls = [];
+  const before = Date.now();
+  sandbox.qtyLogDelSel();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('2개'), '선택 개수가 확인 메시지에 포함되어야 함');
+  assert.strictEqual(sandbox.ST.qtyLogSel.ids.size, 2, 'confirmSheet 콜백을 부르기 전에는 선택이 아직 유지되어야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.ST.qtyLogSel.mode, false, '삭제를 확정하면 선택 모드가 꺼져야 함');
+  assert.strictEqual(sandbox.ST.qtyLogSel.ids.size, 0, '삭제를 확정하면 선택 목록이 비워져야 함');
+  assert.deepStrictEqual(sandbox.DB.assetQtyLog, [], '선택된 기록 둘 다 삭제되어야 함');
+  assert.strictEqual(typeof sandbox.DB.deletedIds.q1, 'number');
+  assert.strictEqual(typeof sandbox.DB.deletedIds.q2, 'number');
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 2);
+  assert.ok(sandbox.DB.trashQtyLog.every(x => typeof x._deletedAt === 'number' && x._deletedAt >= before));
+});
+test('qtyLogDelSel: undoToast의 되돌리기를 누르면 realizedGain/saleProceeds/addedAmount까지 정확히 복원되고, 톰스톤/트래시에서도 함께 빠진다', () => {
+  const q1 = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1, addedAmount: 300000 };
+  const q2 = { id: 'q2', assetId: 'a1', date: '2026-02-01', prevQty: 10, newQty: 8, field: 'stockQty', updatedAt: 2, saleProceeds: 100000, realizedGain: 20000 };
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자' }], assetQtyLog: [q1, q2], deletedIds: {}, trashQtyLog: [] };
+  sandbox.ST = { qtyLogSel: { mode: true, ids: new Set(['q1', 'q2']), assetId: 'a1' } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.qtyLogDelSel();
+  sandbox.confirmSheetCalls[0].cb();
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  assert.ok(/2개/.test(sandbox.lastUndo.msg));
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 2);
+  const restored1 = sandbox.DB.assetQtyLog.find(x => x.id === 'q1');
+  const restored2 = sandbox.DB.assetQtyLog.find(x => x.id === 'q2');
+  assert.strictEqual(restored1.addedAmount, 300000);
+  assert.strictEqual(restored2.saleProceeds, 100000);
+  assert.strictEqual(restored2.realizedGain, 20000);
+  assert.strictEqual(restored1.updatedAt, 'test-updatedAt', '되돌린 기록도 touchSave로 다시 찍혀야 클라우드 동기화 시 보존됨');
+  assert.strictEqual(sandbox.DB.deletedIds.q1, undefined);
+  assert.strictEqual(sandbox.DB.deletedIds.q2, undefined);
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 0, '되돌리면 트래시에서도 함께 빠져야 함(복구된 기록이 중복으로 남으면 안 됨)');
+});
+test('[실행형] qtyLogDelSel: 튜토리얼 모드 중에는 twGuard가 막아서 확인 시트는 뜨지만 실제로는 삭제도 save도 일어나지 않는다', () => {
+  const q1 = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 };
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자' }], assetQtyLog: [q1], deletedIds: {}, trashQtyLog: [] };
+  sandbox.ST = { qtyLogSel: { mode: true, ids: new Set(['q1']), assetId: 'a1' } };
+  sandbox.confirmSheetCalls = [];
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.TWi = 0;
+  try {
+    sandbox.qtyLogDelSel();
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '튜토리얼 중에도 확인 시트 자체는 떠야 함(recDelSel류와 동일한 구조)');
+    sandbox.confirmSheetCalls[0].cb();
+    assert.strictEqual(sandbox.DB.assetQtyLog.length, 1, '튜토리얼 중에는 실제로 지워지면 안 됨');
+    assert.strictEqual(sandbox.DB.trashQtyLog.length, 0);
+    assert.strictEqual(saveCalled, false, 'save()가 호출되면 안 됨');
+  } finally { sandbox.TWi = -1; sandbox.save = origSave; }
+});
+test('[실행형] closeSheet: ST.qtyLogSel이 활성(mode=true)이었으면 recSel/goalSel/catSel과 동일하게 해제하고 updateSelBottom()을 부른다(스와이프/스크림 닫기 등 openAssetQtyLog()를 거치지 않는 경로로 닫아도 다음 open 시 선택모드가 안 남는 회귀 방지)', () => {
+  const { ctx, updateSelBottomCalls } = closeSheetCtx();
+  ctx.ST.qtyLogSel.mode = true; ctx.ST.qtyLogSel.ids = new Set(['q1']); ctx.ST.qtyLogSel.assetId = 'a1';
+  ctx.closeSheet();
+  assert.strictEqual(ctx.ST.qtyLogSel.mode, false, 'qtyLogSel도 recSel/goalSel/catSel과 동일하게 closeSheet()에서 해제돼야 함');
+  assert.strictEqual(ctx.ST.qtyLogSel.ids.size, 0);
+  assert.strictEqual(ctx.ST.recSel.mode, false, '다른 선택모드는 원래부터 꺼져 있었으니 그대로 꺼져 있어야 함');
+  assert.strictEqual(updateSelBottomCalls.length, 1, 'qtyLogSel만 활성이었으면 updateSelBottom()이 정확히 한 번만 불려야 함');
 });
 
 /* ---------- openAssetQtyLogTrashList/restoreTrashQtyLog: 메뉴 › '삭제한 수량기록' —
@@ -45658,7 +45803,7 @@ function closeSheetCtx() {
     window: {},
     $: (id) => dom.getElementById(id),
     history: { pushState: () => {}, back: () => {} },
-    ST: { recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: false, ids: new Set() } },
+    ST: { recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: false, ids: new Set() }, qtyLogSel: { mode: false, ids: new Set(), assetId: null } },
     updateSelBottom: () => { updateSelBottomCalls.push(true); },
     // closeSheet가 TAB_SYNC_PENDING을 null화한 "뒤에" applyForeignSave를 부르는지(재진입 안전성)
     // 확인하려면 스파이 자신이 호출 시점의 전역값을 함께 떠놔야 한다.
