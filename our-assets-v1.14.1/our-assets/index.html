@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.557';
+const APP_VERSION='1.47.558';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -4444,7 +4444,7 @@ function renderGoalForm(editing){
 }
 function saveGoal(editing){
  if(twGuard())return;
- syncGoalInputs();const d=goalDraft;if(!d)return;
+ syncGoalInputs();const d=goalDraft;if(!d)return;if(_savedDrafts.has(d))return; /* saveTx/saveAsset과 동일 — 시트 닫힘 애니메이션 중 버튼이 살아있어 더블탭하면 DB.goals에 중복 push된다(app-evolve cycle412 advance) */
  d.name=cleanName(d.name);
  if(!d.name){toast('목표 이름을 입력해 주세요');return}
  if(!(d.targetAmount>0)){toast('목표 금액을 입력해 주세요');return}
@@ -4453,12 +4453,25 @@ function saveGoal(editing){
  const isAsset=d.type==='asset';
  if(isAsset&&!d.linkedAssetId){toast('연결할 자산을 선택해 주세요');return}
  const linkedAsset=isAsset?(DB.assets||[]).find(x=>x.id===d.linkedAssetId):null;
+ _savedDrafts.add(d); /* 검증을 모두 통과한 뒤에만 추가 — saveTx/saveAsset과 동일하게, 검증 실패 후 고쳐서 다시 저장하는 경로는 막지 않는다(app-evolve cycle412 advance) */
+ const i=(DB.goals||[]).findIndex(x=>x.id===d.id);
+ const origGoal=i>=0?JSON.parse(JSON.stringify(DB.goals[i])):null; /* 교체 전 원본 전체 깊은 복제 — undo 복원용(saveAsset의 origAsset과 동일 패턴, app-evolve cycle412 advance) */
  const order=d.order!=null?d.order:(DB.goals||[]).reduce((m,g)=>Math.max(m,g.order||0),0)+1; /* moveGoal()의 '사용자 정의순'이 쓸 order를 지연 부여 — 기존 목표(order 없음)는 goalsManageBody의 (g.order||0) 정렬·goalOrderedIds()에서 0으로 취급돼 안전하고, moveGoal이 처음 호출될 때 movedAssetOrder가 전체를 다시 번호 매겨 정상화된다(moveAsset 부트스트랩과 동일, app-evolve cycle407 advance) */
  const rec=touch({id:d.id,name:d.name,type:isAsset?'asset':'networth',linkedAssetId:isAsset?d.linkedAssetId:null,targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,owner:isAsset?(linkedAsset?linkedAsset.owner:(d.owner||'all')):(d.owner||'all'),createdAt:d.createdAt||Date.now(),achievedAckAt:d.achievedAckAt||null,order}); /* touch() 누락 시 mergeRemoteDataIntoLocal의 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 목표를 이 저장이 조용히 되돌릴 수 있음(saveAsset 등과 동일한 불변식). asset형은 owner를 연결 자산의 귀속으로 맞춰 goalOwnerEff/캐러셀 필터가 일관되게 동작하게 함. achievedAckAt을 d.achievedAckAt||null로 명시적으로 이어주지 않으면 목표를 한 번이라도 수정할 때 조용히 사라져 goalNewlyAchieved가 다시 true가 되어 재알림이 발생함(app-evolve cycle256 advance). order도 같은 이유로 명시적으로 이어줘야 수정 저장이 순서를 되돌리지 않음 */
  if(!goalProgress(rec,goalHistoryFor(rec),TODAY).achieved)rec.achievedAckAt=null; /* 목표 금액을 나중에 올려 더는 achieved가 아니게 되면 ack도 리셋 — 재달성 시 다시 축하 알림이 뜨게 함(cycle256) */
- const i=(DB.goals||[]).findIndex(x=>x.id===d.id);
  if(i>=0)DB.goals[i]=rec;else DB.goals.push(rec);
- save();goalDraft=null;closeSheet();renderCurrent();toast(editing?'목표를 수정했어요':'목표를 추가했어요');
+ save();goalDraft=null;closeSheet();renderCurrent();
+ const msg=editing?'목표를 수정했어요':'목표를 추가했어요';
+ /* 신규 추가(origGoal=null)는 트래시로 지우면 되므로 기존 toast()만 유지 — 수정은 saveAsset/commitTx와
+  * 동일하게 undoToast로, undo 시점에 origGoal.id로 다시 찾아 교체한다(배열 인덱스를 클로저하면 6초
+  * 윈도우 동안 배경 동기화로 자리가 바뀔 수 있음, app-evolve cycle412 advance) */
+ if(origGoal){
+   undoToast(msg,()=>{
+     const j=(DB.goals||[]).findIndex(x=>x.id===origGoal.id);
+     if(j>=0)DB.goals[j]=JSON.parse(JSON.stringify(origGoal));else DB.goals.push(JSON.parse(JSON.stringify(origGoal)));
+     save();renderCurrent();toast('되돌렸어요');
+   });
+ }else toast(msg);
 }
 /* 목표 상세로 이동하는 모든 진입점(goalRowHTML/openGoalsList 행, 홈 알림의 goalAchieved 카드)을 openGoalForm
  * 대신 이 함수로 거치게 한다 — 사용자가 달성한 목표를 실제로 열어 봤다는 사실 자체를 ack으로 기록해야

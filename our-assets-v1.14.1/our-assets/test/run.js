@@ -7150,6 +7150,45 @@ test('saveGoal: 기존 목표를 수정하면(id 일치) 같은 자리에서 교
   assert.strictEqual(sandbox.DB.goals[0].name, '여행자금(유럽)');
   assert.strictEqual(sandbox.DB.goals[0].targetAmount, 5000000);
 });
+/* ---------- saveGoal: 더블탭 중복 저장 가드 + 수정 undoToast (app-evolve cycle412 advance) ----------
+ * saveTx/saveAsset/commitRec은 모두 (1) _savedDrafts(WeakSet)로 같은 draft의 재호출(시트 닫힘
+ * 애니메이션 중 더블탭)을 조용히 무시하고, (2) 수정 저장은 undoToast로 6초 되돌릴 수 있는데,
+ * saveGoal만 이 두 가드가 둘 다 빠져 있었다(app-evolve cycle412 critique가 발견). ---------- */
+test('saveGoal: 같은 draft로 두 번 연속 호출해도(더블탭) 신규 목표가 중복 추가되지 않는다', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '내 집 마련';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 1, '같은 draft로 다시 저장해도 목표가 1개만 있어야 함');
+});
+test('saveGoal: 기존 목표를 수정해 저장하면 undoToast가 뜨고, 되돌리면 이름/금액/목표일/achievedAckAt이 모두 수정 전 값으로 복원된다', () => {
+  sandbox.lastUndo = null;
+  sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: '2026-12-31', achievedAckAt: 12345, order: 1 }] };
+  sandbox.goalDraft = { id: 'g1', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '여행자금(유럽)';
+  sandbox.goalAmtValue = '5,000,000';
+  sandbox.goalDraft.targetDate = '2027-06-30';
+  sandbox.saveGoal(true);
+  assert.strictEqual(sandbox.DB.goals[0].name, '여행자금(유럽)');
+  assert.ok(sandbox.lastUndo && typeof sandbox.lastUndo.undoFn === 'function', 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.goals[0].name, '여행자금', '되돌리면 수정 전 이름으로 복원되어야 함');
+  assert.strictEqual(sandbox.DB.goals[0].targetAmount, 3000000, '되돌리면 수정 전 금액으로 복원되어야 함');
+  assert.strictEqual(sandbox.DB.goals[0].targetDate, '2026-12-31', '되돌리면 수정 전 목표일로 복원되어야 함');
+  assert.strictEqual(sandbox.DB.goals[0].achievedAckAt, 12345, '되돌리면 수정이 리셋했던 achievedAckAt도 원래 값으로 복원되어야 함');
+});
+test('saveGoal: 새 목표를 추가할 때는(수정이 아니라 신규라 되돌릴 원본이 없음) undoToast 없이 평범한 toast만 뜬다', () => {
+  sandbox.lastUndo = null;
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '내 집 마련';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 1);
+  assert.strictEqual(sandbox.lastUndo, null, '신규 추가는 undoToast가 호출되면 안 됨(트래시로 지우면 되므로)');
+});
 /* app-evolve cycle307 develop: saveAsset/recSave 등 다른 모든 저장 경로와 달리 saveGoal만
  * twGuard가 없어 튜토리얼 중에도 실제로 DB.goals에 저장됐었다. */
 test('saveGoal: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 저장되지 않는다', () => {
