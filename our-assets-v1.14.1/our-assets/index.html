@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.561';
+const APP_VERSION='1.47.562';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -4452,6 +4452,97 @@ function goalWhatIfUpdate(goalId){
  clearTimeout(_goalWhatIfAnnT);
  _goalWhatIfAnnT=setTimeout(()=>announceLive(text),220);
 }
+/* networth형 목표의 '진행 추이 보기'(아래 renderGoalForm/openGoalNwChart) 전용 순자산 추이 카드 —
+ * 홈 화면의 nwHistoryCard(index.html:3545)와 같은 데이터(nwHistoryRange/nwHistoryForOwner/
+ * nwChartPath)를 쓰지만, nwHistoryCard는 홈 전용 id(#nwhChart 등)·전역 상태(ST.nwPreset,
+ * #nwHistBody)에 묶여 있어 그대로 재사용할 수 없다 — 홈 탭(page-home)은 다른 탭을 보고 있어도
+ * go()가 .page를 지우지 않고 .active만 토글해 DOM에 계속 남아있으므로, 이 시트 안에 똑같은
+ * id를 또 그리면 문서에 id가 중복돼 $('nwhChart')가 홈 쪽을 먼저 찾아버린다. assetBalCard가
+ * 바로 이 이유로 nwHistoryCard와 별도 id·피크 핸들러를 쓰는 것과 동일한 패턴으로, 이 카드도
+ * 전용 id(goalNwChart 등)·전용 전역(_goalNwChartPts)·전용 피크 핸들러를 따로 둔다
+ * (app-evolve cycle414 advance, cycle413 critique가 남긴 차트/히스토리 패리티 후속 과제). */
+function goalNwChartCard(owner,preset){
+ owner=owner||'all';preset=preset||'m3';
+ const segHTML=`<div class="seg nwh-seg" role="group" aria-label="기간 선택"><div class="seg-blob"></div>${[['m1','1개월'],['m3','3개월'],['y1','1년'],['all','전체']].map(([p,l])=>`<button type="button" class="${preset===p?'on':''}" aria-pressed="${preset===p}" onclick="goalNwPresetSel('${p}')">${l}</button>`).join('')}</div>`;
+ let pts=nwHistoryRange(DB.nwHistory||[],preset,TODAY);
+ if(owner!=='all')pts=nwHistoryForOwner(pts,owner);
+ if(pts.length<2)return `<div class="card nwh-card">
+   <div class="section-title" style="margin-top:0">순자산 추이</div>
+   ${segHTML}
+   <div class="empty" style="padding:18px 0"><div class="es">추이는 곧 쌓여요</div></div>
+ </div>`;
+ const {line,area}=nwChartPath(pts,300,80);
+ const first=pts[0],last=pts[pts.length-1];
+ const diff=last.nw-first.nw,up=diff>=0;
+ const color=up?'var(--income)':'var(--expense)';
+ _goalNwChartPts=pts;
+ return `<div class="card nwh-card">
+   <div class="section-title" style="margin-top:0">순자산 추이</div>
+   ${segHTML}
+   <div class="nwh-range">${shortDate2(first.date)} ~ ${shortDate2(last.date)} <b class="${up?'':'minus'}">${up?'+':''}${comma(diff)}원</b></div>
+   <div class="nwh-chart" id="goalNwChart" tabindex="0" role="img" aria-label="순자산 추이 차트, 화살표 키로 날짜별 값 탐색" onpointerdown="goalNwChartPeekStart(event)" onpointermove="goalNwChartPeekMove(event)" onpointerup="goalNwChartPeekEnd()" onpointercancel="goalNwChartPeekEnd()" onpointerleave="goalNwChartPeekEnd()" onkeydown="goalNwChartPeekKey(event)" onblur="goalNwChartPeekEnd()">
+     <svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+       <path d="${area}" fill="${color}" opacity="0.12" stroke="none"/>
+       <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" vector-effect="non-scaling-stroke"/>
+       <line id="goalNwPeekLine" x1="0" x2="0" y1="0" y2="80" stroke="var(--text-3)" stroke-dasharray="2,2" style="display:none"/>
+     </svg>
+     <div class="nwh-peek-label" id="goalNwPeekLabel" aria-hidden="true"></div>
+   </div>
+ </div>`;
+}
+let _goalNwOwner='all',_goalNwPreset='m3',_goalNwChartPts=null,_goalNwPeekIdx=null;
+/* assetBalPresetSel(assetBalCard 위)과 동일한 포커스 보존 패턴 — #goalNwChartBody만 다시 그려
+ * 시트 전체를 다시 열지 않는다. */
+function goalNwPresetSel(p){
+ if(_goalNwPreset===p)return;
+ _goalNwPreset=p;
+ const el=$('goalNwChartBody');if(!el)return;
+ const hadFocus=el.contains(document.activeElement);
+ el.innerHTML=goalNwChartCard(_goalNwOwner,_goalNwPreset);
+ if(hadFocus){const on=el.querySelector('.seg button.on');if(on)on.focus()}
+ requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}});
+}
+/* nwChartPeekStart/Move/Key/End(nwHistoryCard 위)와 동일한 좌표 매핑 원칙 — 전용 id/전역만 다르다. */
+function goalNwChartPeekStart(e){
+ const el=$('goalNwChart');if(!el||!_goalNwChartPts||_goalNwChartPts.length<2)return;
+ if(el.setPointerCapture&&e.pointerId!=null)try{el.setPointerCapture(e.pointerId)}catch(err){}
+ goalNwChartPeekMove(e);
+}
+function goalNwChartPeekMove(e){
+ const el=$('goalNwChart');if(!el||!_goalNwChartPts||_goalNwChartPts.length<2)return;
+ const rect=el.getBoundingClientRect();if(!rect.width)return;
+ const ratio=(e.clientX-rect.left)/rect.width;
+ const idx=nwNearestPointIndex(_goalNwChartPts,ratio);
+ if(idx<0||idx===_goalNwPeekIdx)return;
+ _goalNwPeekIdx=idx;
+ chartPeekRenderAt(_goalNwChartPts,'goalNwPeekLine','goalNwPeekLabel','순자산',idx);
+}
+function goalNwChartPeekKey(e){
+ if(!_goalNwChartPts||_goalNwChartPts.length<2)return;
+ if(e.key==='Escape'){goalNwChartPeekEnd();return;}
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
+ e.preventDefault();
+ const idx=nwChartKeyStep(_goalNwPeekIdx,e.key,_goalNwChartPts.length);
+ if(idx<0||idx===_goalNwPeekIdx)return;
+ _goalNwPeekIdx=idx;
+ chartPeekRenderAt(_goalNwChartPts,'goalNwPeekLine','goalNwPeekLabel','순자산',idx);
+}
+function goalNwChartPeekEnd(){
+ _goalNwPeekIdx=null;
+ const line=$('goalNwPeekLine');if(line)line.style.display='none';
+ const label=$('goalNwPeekLabel');if(label)label.classList.remove('on');
+}
+/* renderGoalForm의 '진행 추이 보기' 버튼(networth형)이 여는 가벼운 시트 — 이미 열려있는 목표
+ * 수정 시트 위에 새 내용을 그대로 덮어쓴다(goalTypeSel/duplicateGoal 등 같은 시트 안에서 openSheet를
+ * 다시 불러 내용을 교체하는 기존 관례와 동일 — 뒤로가기는 두지 않는다. asset형이 여는
+ * openAssetHistory(전체내역 탭으로 완전히 이동)도 목표 폼으로 돌아가는 길이 없는 것과 동등하다). */
+function openGoalNwChart(goalId){
+ const g=(DB.goals||[]).find(x=>x.id===goalId);if(!g)return;
+ _goalNwOwner=goalOwnerEff(g);_goalNwPreset='m3';_goalNwChartPts=null;_goalNwPeekIdx=null;
+ openSheet(`<h3>${esc(g.name)} 진행 추이</h3><div class="desc">순자산이 이 목표를 향해 어떻게 변해왔는지 보여줘요</div>
+  <div id="goalNwChartBody">${goalNwChartCard(_goalNwOwner,_goalNwPreset)}</div>
+  <div style="height:12px"></div><button class="btn btn-primary" onclick="closeSheet()">닫기</button>`);
+}
 function renderGoalForm(editing){
  const d=goalDraft;
  const isAsset=d.type==='asset';
@@ -4483,6 +4574,20 @@ function renderGoalForm(editing){
    <div class="msub2" id="goalWhatIfResult" style="margin-top:4px">${goalWhatIfText(wi,p)}</div>`;
   }
  }
+ /* 자산(asset)은 openAssetSheet(수정 폼)와 openAssetHistory+assetBalCard(잔액추이 차트)가 분리돼
+  * '보기'와 '수정하기'가 다른 화면인데, 목표는 이 폼 하나뿐이라 차트로 가는 진입점이 없었다
+  * (cycle413 critique → cycle414 advance). og(저장된 원본)가 있을 때만 보여준다 — whatIfHTML과
+  * 같은 이유로 신규(미저장) 목표는 추적할 이력 자체가 없다. 유형은 og.type(저장된 원본)으로
+  * 판단한다 — isAsset(draft d.type)이 아니라 og를 쓰는 건 whatIfHTML과 동일한 전제(아직 저장
+  * 안 한 유형 전환은 반영하지 않음). */
+ let progressHTML='';
+ if(og){
+  if(og.type==='asset'){
+   progressHTML=goalLinkedAssetGone(og)?'':`<button type="button" class="pick" style="margin-top:10px" onclick="closeSheet();openAssetHistory('${og.linkedAssetId}')"><div class="pav a-save">${svg('chart')}</div><div class="pbody"><div class="pn">진행 추이 보기</div><div class="psub">연결 자산의 잔액 추이로 이동해요</div></div><div class="pc">${svg('chevR')}</div></button>`;
+  }else{
+   progressHTML=`<button type="button" class="pick" style="margin-top:10px" onclick="openGoalNwChart('${og.id}')"><div class="pav a-save">${svg('chart')}</div><div class="pbody"><div class="pn">진행 추이 보기</div><div class="psub">순자산 추이 차트로 봐요</div></div><div class="pc">${svg('chevR')}</div></button>`;
+  }
+ }
  openSheet(`<h3>${editing?'목표 수정':'목표 추가'}</h3><div class="desc">${isAsset?'연결한 자산의 잔액이 이 금액에 도달하는 걸 목표로 추적해요':'순자산이 이 금액에 도달하는 걸 목표로 추적해요'}</div>
   <div class="field"><label for="goalName">목표 이름</label><div class="field-clear"><input id="goalName" maxlength="${NAME_MAX}" value="${esc(d.name||'')}" placeholder="예: 내 집 마련 자금"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('goalName')">✕</button></div></div>
   ${typeSeg}
@@ -4491,6 +4596,7 @@ function renderGoalForm(editing){
   <div class="field"><label>목표일 (선택)</label><div class="pick ${d.targetDate?'':'placeholder'}" style="cursor:pointer" onclick="syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})">
     <div class="row-tap" tabindex="0" role="button" aria-label="목표일 ${d.targetDate?fmtDateFull(d.targetDate):'선택'}" onkeydown="rowKeydown(event,()=>{syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})})"><div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.targetDate?fmtDateFull(d.targetDate):'목표일 선택'}</div></div></div><div class="pc">${d.targetDate?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="목표일 지우기" onclick="event.stopPropagation();goalClearDate(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div></div>
   ${whatIfHTML}
+  ${progressHTML}
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
     <button class="btn btn-primary" onclick="saveGoal(${editing})">${editing?'수정하기':'추가하기'}</button></div>
   ${editing?`<button class="del-link" onclick="delGoal('${d.id}')">${svg('trash')} 이 목표 삭제</button>`:''}`);

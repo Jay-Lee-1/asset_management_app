@@ -396,6 +396,10 @@ const FUNCTIONS = [
   // goalWhatIfText를 직접 호출하므로 renderGoalForm을 쓰는 이 sandbox에 함께 올라가야 한다.
   // goalWhatIf 자체는 logic.js 전용(전체 로드돼 자동으로 끌어와짐)이라 여기 올릴 필요 없다.
   'goalWhatIfText', 'goalWhatIfUpdate',
+  // goalNwChartCard/openGoalNwChart: networth형 목표의 '진행 추이 보기'(renderGoalForm이 여는
+  // 가벼운 시트, app-evolve cycle414 advance) — renderGoalForm이 만드는 버튼의 onclick 문자열이
+  // openGoalNwChart를 참조하므로, 그 실행을 직접 검증하려면 이 sandbox에 함께 올라가야 한다.
+  'goalNwChartCard', 'openGoalNwChart',
   'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved', 'goalOrderedIds', 'moveGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'inquiriesTrashBody', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry', 'inqTextInput',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
@@ -559,7 +563,11 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _qtyLogEditDraft는 editAssetQtyLog()가 세팅하고 renderQtyLogEditSheet()/saveAssetQtyLogEdit()가
 // 읽는 "수량 변경 기록 수정 시트"의 작업본(날짜 피커 콜백과 금액 입력 oninput이 직접 갱신)이라
 // 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다(app-evolve cycle401 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', '_catQT', '_catMgmtKind', 'CLOUD_SYNC_ERR_KIND', '_qtyLogEditDraft', '_goalWhatIfExtra', '_goalWhatIfAnnT'];
+// _goalNwOwner는 goalNwChartCard/openGoalNwChart(바로 위 FUNCTIONS 주석)가 공유하는 전용 전역
+// 묶음(_goalNwOwner/_goalNwPreset/_goalNwChartPts/_goalNwPeekIdx, 한 줄의 let 선언)의 대표
+// 이름이다 — extractLet은 마커 뒤 첫 ";"까지 통째로 가져오므로 이 하나만 올리면 네 변수가
+// 전부 함께 들어온다(app-evolve cycle414 advance).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', '_catQT', '_catMgmtKind', 'CLOUD_SYNC_ERR_KIND', '_qtyLogEditDraft', '_goalWhatIfExtra', '_goalWhatIfAnnT', '_goalNwOwner'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -8273,6 +8281,65 @@ test('renderGoalForm: 이력이 1건뿐이면(추세 계산 불가) what-if 입�
   sandbox.lastSheetHtml = null;
   sandbox.renderGoalForm(true);
   assert.ok(!sandbox.lastSheetHtml.includes('goalWhatIfExtra'), 'hist.length<2면 goalProgress도 추세를 못 구하므로 what-if도 보이면 안 됨');
+});
+/* ---------- renderGoalForm/openGoalNwChart: '진행 추이 보기' 진입점(app-evolve cycle413 critique
+ * → cycle414 advance) — 자산(asset)은 openAssetSheet(수정 폼)과 openAssetHistory+assetBalCard
+ * (잔액추이 차트)가 분리돼 있는데 목표는 renderGoalForm 하나뿐이라 차트로 가는 길이 없던 공백을
+ * 메운다. asset형은 연결 자산의 openAssetHistory로, networth형은 전용 openGoalNwChart 시트로
+ * 이어주고, og(DB.goals에 저장된 원본)가 없는 신규 목표는 whatIfHTML과 동일한 이유로 버튼 자체를
+ * 보여주지 않는다. ---------- */
+test('renderGoalForm: asset형 기존 목표(연결 자산이 살아있음)는 "진행 추이 보기" 버튼이 closeSheet() 후 연결 자산의 openAssetHistory로 이동한다', () => {
+  sandbox.DB = {
+    owners: ['나'],
+    assets: [{ id: 'a1', type: 'savings', owner: '나', baseAmount: 100000, includeInTotal: true }],
+    txns: [], recurrences: [], settings: { confirmTransfers: false }, nwHistory: [],
+    goals: [{ id: 'g1', name: '비상금', type: 'asset', linkedAssetId: 'a1', targetAmount: 200000, owner: '나' }],
+  };
+  sandbox.goalDraft = { id: 'g1', name: '비상금', targetAmount: 200000, targetDate: '', type: 'asset', linkedAssetId: 'a1', owner: '나' };
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(true);
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('진행 추이 보기'), '연결 자산이 살아있는 asset형 기존 목표에는 진행 추이 버튼이 보여야 함');
+  assert.ok(html.includes(`onclick="closeSheet();openAssetHistory('a1')"`), `버튼이 closeSheet() 후 연결 자산의 openAssetHistory로 이동해야 함: ${html}`);
+});
+test('renderGoalForm: asset형 기존 목표인데 연결 자산이 삭제됐으면 "진행 추이 보기" 버튼을 숨긴다(goalLinkedAssetGone 방어 — 보여줄 추이 화면이 없음)', () => {
+  sandbox._goalHistCache.clear();
+  sandbox.DB = { owners: [], assets: [], txns: [], recurrences: [], settings: { confirmTransfers: false }, nwHistory: [], goals: [{ id: 'g1', name: '비상금', type: 'asset', linkedAssetId: '없는자산', targetAmount: 200000, owner: 'all' }] };
+  sandbox.goalDraft = { id: 'g1', name: '비상금', targetAmount: 200000, targetDate: '', type: 'asset', linkedAssetId: '없는자산', owner: 'all' };
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(true);
+  assert.ok(!sandbox.lastSheetHtml.includes('진행 추이 보기'), '연결 자산이 사라진 asset형 목표는 보여줄 추이 화면이 없으므로 버튼을 숨겨야 함');
+});
+test('renderGoalForm: networth형 기존 목표는 "진행 추이 보기" 버튼이 openGoalNwChart(goalId)를 열고, 그 시트는 목표의 귀속으로 필터링된 순자산 추이를 보여준다', () => {
+  sandbox.DB = {
+    owners: ['나', '배우자'],
+    goals: [{ id: 'g1', name: '내 집 마련', type: 'networth', targetAmount: 1000000, owner: '나' }],
+    nwHistory: [
+      { date: '2026-01-01', nw: 0, byOwner: { '나': { ta: 0, td: 0 }, '배우자': { ta: 0, td: 0 } } },
+      { date: '2026-01-11', nw: 200000, byOwner: { '나': { ta: 100000, td: 0 }, '배우자': { ta: 100000, td: 0 } } },
+    ],
+  };
+  sandbox.TODAY = '2026-01-11';
+  sandbox.goalDraft = { id: 'g1', name: '내 집 마련', targetAmount: 1000000, targetDate: '', type: 'networth', owner: '나' };
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(true);
+  const formHtml = sandbox.lastSheetHtml;
+  assert.ok(formHtml.includes('진행 추이 보기'), 'networth형 기존 목표에는 진행 추이 버튼이 보여야 함');
+  assert.ok(formHtml.includes(`onclick="openGoalNwChart('g1')"`), `버튼이 openGoalNwChart(goalId)를 열어야 함: ${formHtml}`);
+
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalNwChart('g1');
+  const chartHtml = sandbox.lastSheetHtml;
+  assert.ok(chartHtml.includes('내 집 마련 진행 추이'), '시트 제목에 목표 이름이 들어가야 함');
+  assert.ok(chartHtml.includes('nwh-chart'), '순자산 추이 차트가 그려져야 함(귀속별 2개 스냅샷으로 pts.length>=2)');
+  assert.strictEqual(sandbox._goalNwOwner, '나', "goalOwnerEff로 목표의 owner('나')가 그대로 전달돼야 함");
+});
+test('renderGoalForm: 신규 목표를 추가할 때는(아직 DB.goals에 저장 전) "진행 추이 보기" 버튼이 보이지 않는다', () => {
+  sandbox.DB = { owners: [], assets: [], goals: [], nwHistory: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', targetAmount: 300000, targetDate: '', type: 'networth', owner: 'all' };
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(false);
+  assert.ok(!sandbox.lastSheetHtml.includes('진행 추이 보기'), '신규 목표는 og(저장된 원본)가 없어 추적할 이력 자체가 없음');
 });
 /* ---------- goalWhatIfUpdate: 목표 쪽 what-if 시뮬레이터의 경량 업데이트 핸들러 (app-evolve
  * cycle413 advance) — debtWhatIfUpdate와 완전히 같은 패턴으로, 카드를 통째로 다시 그리지 않고
