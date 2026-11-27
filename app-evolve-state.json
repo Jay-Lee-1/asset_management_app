@@ -1,15 +1,8 @@
 {
   "cycle": 414,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 409,
-      "phase": "review",
-      "timestamp": "2026-11-26T17:10:00.000Z",
-      "summary": "develop(cycle409) 커밋 230fa31(ackGoalAchieved/ackDebtPayoff에 누락된 twGuard 추가)를 검토. twActive()/twGuard() 정의(index.html:9964-9965 — TWi>=0이면 toast 띄우고 true 반환)를 직접 읽고, delGoal·confirmTransferNow 등 기존 '전체 함수를 막는' twGuard 관례와 diff가 정확히 같은 모양(if(twGuard())return; 을 함수 맨 앞에 추가해 achievedAckAt/payoffAckAt 기록뿐 아니라 뒤따르는 openGoalForm/openAssetHistory 호출까지 같이 막음)인지 ackGoalAchieved/ackDebtPayoff 실제 정의(index.html:4428-4458)를 대조해 확인. saveTx/delTx/saveAsset/toggleRecActive/doBulkRecActive 등 이미 twGuard가 있거나 가드된 undo 경로를 쓰는 변경 함수들과 비교해 이번 두 함수가 유일한 공백이었다는 전제도 grep으로 재확인(추가 공백 없음). 추가된 테스트 2건(TWi=0 상태에서 achievedAckAt/payoffAckAt 불변 + save()/openGoalForm/openAssetHistory 미호출)이 실제로 그 분기를 커버하는지 확인. node test/run.js 재실행 4064/4064 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과, APP_VERSION 1.47.551/sw.js CACHE v818 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 409,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-27T11:12:21.383Z",
       "summary": "general-purpose 서브에이전트에게 위임해 조사. cycle413 develop이 \"diff를 작게 유지하려 보류, future 후보\"로 명시적으로 남겨둔 setBigMin()(상태 파일 cycle413 develop 요약 참고)을 처리 — ackGoalAchieved/ackDebtPayoff(cycle409)·toggleCatVarUI/toggleBudgetRolloverUI(cycle412)·toggleAutoRates/toggleConfirmTransfers(cycle413)와 같은 twGuard 공백 클래스. openBigMinSheet()(\"큰 지출 기준\" 금액 설정 시트)는 메뉴(설정) 화면에서 여는 시트로 #nav와 동일한 구조적 틈(twStage 오버레이 밖이라 튜토리얼 중에도 그대로 열고 탭 가능)에 있는데, 저장 버튼이 호출하는 setBigMin()은 가드 없이 DB.settings.bigMin=v;save()를 바로 실행해 \"튜토리얼 중에는 실제로 저장되지 않아요\" 약속이 깨지는 실데이터 오염 버그였다. setBigMin() 맨 앞에 if(twGuard())return; 추가(ackGoalAchieved/toggleAutoRates 등과 동일한 함수 전체를 막는 패턴, openBigMinSheet() 자체의 UI나 bigMin() 순수 로직은 변경 없음). test/run.js FUNCTIONS 화이트리스트에 setBigMin 추가, $ 스텁 맵에 bigMinInput 처리 추가(budgetIn 등과 동일 패턴), 테스트 3건 추가(정상 입력 시 설정변경+save()+closeSheet()+renderCurrent()+토스트, 빈 입력이면 기존 설정 유지+save() 미호출 회귀 방지, [실행형] TWi=0(튜토리얼 활성) 상태에서 twGuard가 막아 설정도 save()도 안 바뀌고 twGuard 자신의 토스트만 뜨는지 확인). 오케스트레이터가 diff를 직접 리뷰(두 줄 추가뿐인 최소 변경 확인)하고 node test/run.js 독립 재실행 4113->4116/4116 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/982598/1770자) 전부 new vm.Script() 파싱 통과를 재검증. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.560->1.47.561, sw.js CACHE v827->v828. 범위 제외: 다른 모든 DB-mutating 함수에 대한 전체 twGuard 재감사(반복 기각 범위), move류(moveAsset/moveCat/moveGoal/moveOwner) 재정렬은 의도적으로 twGuard 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 414,
+      "phase": "review",
+      "timestamp": "2026-11-27T12:08:19.999Z",
+      "summary": "develop(cycle414) 커밋 30fdf1a(setBigMin()에 누락된 twGuard 추가)를 검토. twActive()/twGuard() 정의(index.html:10110-10111, TWi>=0이면 toast 후 true 반환)를 직접 읽고, ackGoalAchieved/toggleCatVarUI/toggleAutoRates 등 기존 '함수 맨 앞에서 전체를 막는' twGuard 관례와 diff가 정확히 같은 모양(두 줄 추가뿐: 가드 1줄 + 주석 1줄)인지 setBigMin() 실제 정의(index.html:4856-4860)를 대조해 확인. setBigMin()의 유일한 호출부(openBigMinSheet()의 저장 버튼 onclick, 4848행과 Enter 키다운 핸들러, 4847행)를 grep으로 재확인해 다른 경로가 가드를 우회하지 않음을 확인. test/run.js FUNCTIONS 화이트리스트와 $ 스텁 맵(bigMinInputValue)에 이미 등록돼 있었음을 확인(cycle413 goalWhatIf 작업에서 bigMinInput 매핑 자체는 이미 있었고, 이번엔 테스트만 추가). 추가된 테스트 3건(정상 입력 시 save/closeSheet/renderCurrent/토스트 전부 호출, 빈 입력이면 기존 설정 유지+save 미호출, TWi=0 튜토리얼 중에는 twGuard가 막아 설정도 save도 안 바뀌고 twGuard 자신의 토스트만 뜨는지)이 각 분기를 정확히 커버하는지 확인. node test/run.js 독립 재실행 4116/4116 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/982598/1770자) 전부 new vm.Script() 파싱 통과, APP_VERSION 1.47.561/sw.js CACHE v828 일치 재확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
