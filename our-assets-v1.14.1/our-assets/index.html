@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.559';
+const APP_VERSION='1.47.560';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -4346,9 +4346,16 @@ function goalsManageBody(qRaw){
  }).join('')}</div>`;
 }
 let goalDraft=null;
+/* goalWhatIfExtra(아래 renderGoalForm/goalWhatIfUpdate)가 입력값을 들고 있는 모듈 스코프 변수 —
+ * ST.hist.debtWhatIfExtra와 같은 역할이지만, 목표 수정 폼은 ST.hist(전체내역 화면 전용 상태)와
+ * 무관해 별도 변수로 둔다(app-evolve cycle413 advance). openGoalForm이 매번 0으로 되돌려,
+ * 다른 목표를 열었을 때 이전 목표에 입력해둔 추가 저축액이 새어들지 않게 한다(debtWhatIfExtra가
+ * openAssetHistory에서 자산을 바꿀 때 0으로 리셋하는 것과 동일한 이유). */
+let _goalWhatIfExtra=0;
 function openGoalForm(id){
  const g=id?(DB.goals||[]).find(x=>x.id===id):null;
  goalDraft=g?{...g,owner:goalOwnerEff(g)}:{id:uid(),name:'',type:'networth',linkedAssetId:null,targetAmount:0,targetDate:'',owner:'all',createdAt:Date.now()};
+ _goalWhatIfExtra=0;
  snapDraft('goal');
  renderGoalForm(!!g);
 }
@@ -4418,6 +4425,33 @@ function ownerSegHtml(current,onClickFor,opts){
  const list=[sentinelValue,...DB.owners];
  return `<div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${list.map((o,oi)=>`<button${typeAttr} class="${current===o?'on':''}" aria-pressed="${current===o}" onclick="${onClickFor(oi)}">${o===sentinelValue?esc(sentinelLabel):esc(o)}</button>`).join('')}</div>`;
 }
+/* debtWhatIfText(assetBalCard 위)와 대등한 목표 쪽 문구 조립 — goalWhatIf(baseline)/goalProgress
+ * (베이스라인, 여기선 매개변수명 p)의 결과를 같은 형식으로 합쳐 renderGoalForm의 최초 렌더와
+ * goalWhatIfUpdate의 경량 갱신이 항상 같은 문구를 내게 한다(app-evolve cycle413 advance). */
+function goalWhatIfText(wi,p){
+ if(wi.achieved)return '이미 목표를 달성했어요';
+ if(!wi.projectedDate)return '이렇게 더 모아도 최근 추세로는 달성일을 가늠하기 어려워요';
+ if(!p.projectedDate)return `매달 이만큼 더 모으면 ${shortDate2(wi.projectedDate)}쯤 달성해요`;
+ const monthsSaved=Math.round(daysBetween(wi.projectedDate,p.projectedDate)/30);
+ return monthsSaved>0?`매달 이만큼 더 모으면 ${shortDate2(wi.projectedDate)}쯤 달성해요 (약 ${monthsSaved}개월 빨라져요)`:`매달 이만큼 더 모으면 ${shortDate2(wi.projectedDate)}쯤 달성해요`;
+}
+/* debtWhatIfUpdate(assetBalCard 위)와 완전히 같은 경량 업데이트 패턴 — 입력값이 바뀔 때마다 폼
+ * 전체를 다시 그리지 않고 #goalWhatIfResult의 textContent만 갱신하고, 같은 220ms 디바운스로
+ * announceLive에도 공지한다(app-evolve cycle413 advance). */
+let _goalWhatIfAnnT=null;
+function goalWhatIfUpdate(goalId){
+ const g=(DB.goals||[]).find(x=>x.id===goalId);if(!g)return;
+ const resEl=$('goalWhatIfResult');if(!resEl)return;
+ const extra=num($('goalWhatIfExtra'));
+ _goalWhatIfExtra=extra;
+ const hist=goalHistoryFor(g);
+ const p=goalProgress(g,hist,TODAY);
+ const wi=goalWhatIf(hist,TODAY,g.targetAmount,extra);
+ const text=goalWhatIfText(wi,p);
+ resEl.textContent=text;
+ clearTimeout(_goalWhatIfAnnT);
+ _goalWhatIfAnnT=setTimeout(()=>announceLive(text),220);
+}
 function renderGoalForm(editing){
  const d=goalDraft;
  const isAsset=d.type==='asset';
@@ -4430,6 +4464,25 @@ function renderGoalForm(editing){
  const goalOwnerSeg=isAsset?'':ownerSegHtml(d.owner||'all',oi=>`goalOwnerSel(${oi},${editing})`,{sentinelValue:'all',sentinelLabel:'전체'});
  const ownerOrAssetField=isAsset?`<div class="field"><label>연결할 자산</label>${assetPickBtn(d.linkedAssetId,`goalOpenAsset(${editing})`)}</div>`
   :(goalOwnerSeg?`<div class="field"><label>귀속</label>${goalOwnerSeg}</div>`:'');
+ /* debtWhatIfExtra(assetBalCard)와 대등한 목표 쪽 what-if — hist.length>=2(추세를 계산할 최소
+  * 조건, goalProgress와 동일)이고 아직 미달성인 '기존' 목표를 수정할 때만 보여준다. 신규 목표
+  * (og 없음, 아직 DB.goals에 저장 전)는 추세 이력 자체가 없어 보여줄 게 없다(app-evolve cycle413
+  * critique → advance). og는 goalDraft(d, 입력 중인 수정값)가 아니라 DB.goals에 저장된 원본을
+  * 쓴다 — assetBalCard가 입력 중인 폼이 아니라 이미 저장된 자산 기준으로 what-if를 보여주는
+  * 것과 동일한 전제(사용자가 아직 저장하지 않은 목표 금액 수정값은 saveGoal 전까지 추세 계산에
+  * 반영하지 않음). */
+ const og=editing?(DB.goals||[]).find(x=>x.id===d.id):null;
+ let whatIfHTML='';
+ if(og){
+  const rawHist=goalHistoryFor(og);
+  const p=goalProgress(og,rawHist,TODAY);
+  if(!p.achieved&&rawHist.filter(h=>h.date<=TODAY).length>=2){
+   const extra=_goalWhatIfExtra||0;
+   const wi=goalWhatIf(rawHist,TODAY,og.targetAmount,extra);
+   whatIfHTML=`<div class="field" style="margin-top:10px"><label for="goalWhatIfExtra">매달 이만큼 더 모으면?</label><div class="field-clear"><input id="goalWhatIfExtra" class="num" inputmode="numeric" value="${extra?comma(extra):''}" placeholder="0" oninput="fmtAmt(this);goalWhatIfUpdate('${og.id}')"><button type="button" class="fc-x" aria-label="추가 저축액 지우기" onclick="clrInput('goalWhatIfExtra');goalWhatIfUpdate('${og.id}')">✕</button></div></div>
+   <div class="msub2" id="goalWhatIfResult" style="margin-top:4px">${goalWhatIfText(wi,p)}</div>`;
+  }
+ }
  openSheet(`<h3>${editing?'목표 수정':'목표 추가'}</h3><div class="desc">${isAsset?'연결한 자산의 잔액이 이 금액에 도달하는 걸 목표로 추적해요':'순자산이 이 금액에 도달하는 걸 목표로 추적해요'}</div>
   <div class="field"><label for="goalName">목표 이름</label><div class="field-clear"><input id="goalName" maxlength="${NAME_MAX}" value="${esc(d.name||'')}" placeholder="예: 내 집 마련 자금"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('goalName')">✕</button></div></div>
   ${typeSeg}
@@ -4437,6 +4490,7 @@ function renderGoalForm(editing){
   <div class="field"><label for="goalAmt">${isAsset?'목표 금액 (원)':'목표 순자산 (원)'}</label><div class="field-clear"><input id="goalAmt" class="num" inputmode="numeric" value="${d.targetAmount?comma(d.targetAmount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveGoal(${editing})"><button type="button" class="fc-x" aria-label="목표 금액 지우기" onclick="clrInput('goalAmt')">✕</button></div></div>
   <div class="field"><label>목표일 (선택)</label><div class="pick ${d.targetDate?'':'placeholder'}" style="cursor:pointer" onclick="syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})">
     <div class="row-tap" tabindex="0" role="button" aria-label="목표일 ${d.targetDate?fmtDateFull(d.targetDate):'선택'}" onkeydown="rowKeydown(event,()=>{syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})})"><div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.targetDate?fmtDateFull(d.targetDate):'목표일 선택'}</div></div></div><div class="pc">${d.targetDate?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="목표일 지우기" onclick="event.stopPropagation();goalClearDate(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div></div>
+  ${whatIfHTML}
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
     <button class="btn btn-primary" onclick="saveGoal(${editing})">${editing?'수정하기':'추가하기'}</button></div>
   ${editing?`<button class="del-link" onclick="delGoal('${d.id}')">${svg('trash')} 이 목표 삭제</button>`:''}`);

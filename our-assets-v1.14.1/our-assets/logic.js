@@ -1210,6 +1210,23 @@ function requiredMonthlyPace(cur,target,targetDate,today){
  months=Math.max(1,months);
  return remaining/months;
 }
+/* goalProgress가 쓰던 '최근 trendWindowDays일 구간의 처음·끝 두 점 선형 일별 증가율' 계산만
+ * 떼어낸 순수 함수 — debtPayoffRate(아래)와 완전히 같은 역할을 목표 쪽에 대응시킨다. goalWhatIf
+ * (아래)가 추가 저축 없이도 이미 늘고 있는 속도(baseRate)를 알아야 해서 goalProgress와 중복
+ * 구현하지 않고 공유한다(app-evolve cycle413 advance, debtPayoffRate/debtPayoffWhatIf와 동일
+ * 패턴). hist가 비어있거나 1점뿐이면 0(추세를 모름) — debtPayoffRate와 마찬가지로 호출부가
+ * achieved/빈 이력 처리를 각자의 맥락에 맞게 먼저 걸러낸 뒤 쓰는 것을 전제한다. */
+function goalProgressRate(nwHistory,today,trendWindowDays){
+ trendWindowDays=trendWindowDays||90;
+ const hist=(nwHistory||[]).filter(h=>h.date<=today);
+ if(hist.length<2)return 0;
+ const last=hist[hist.length-1];
+ const cutoff=addDays(last.date,-trendWindowDays);
+ const windowed=hist.filter(h=>h.date>cutoff);
+ const first=(windowed.length>=2?windowed:hist)[0];
+ const days=daysBetween(first.date,last.date);
+ return days>0?(last.nw-first.nw)/days:0;
+}
 function goalProgress(goal,nwHistory,today,trendWindowDays){
  trendWindowDays=trendWindowDays||90;
  const hist=(nwHistory||[]).filter(h=>h.date<=today);
@@ -1220,16 +1237,31 @@ function goalProgress(goal,nwHistory,today,trendWindowDays){
  const achieved=target>0&&cur>=target;
  let projectedDate=null;
  if(!achieved&&remaining>0&&hist.length>=2){
-  const last=hist[hist.length-1];
-  const cutoff=addDays(last.date,-trendWindowDays);
-  const windowed=hist.filter(h=>h.date>cutoff);
-  const first=(windowed.length>=2?windowed:hist)[0];
-  const days=daysBetween(first.date,last.date);
-  const rate=days>0?(last.nw-first.nw)/days:0;
-  if(rate>0)projectedDate=addDays(last.date,Math.ceil(remaining/rate));
+  const rate=goalProgressRate(nwHistory,today,trendWindowDays);
+  if(rate>0)projectedDate=addDays(hist[hist.length-1].date,Math.ceil(remaining/rate));
  }
  const requiredMonthly=requiredMonthlyPace(cur,target,goal&&goal.targetDate,today);
  return {cur,target,pct,remaining,achieved,projectedDate,requiredMonthly};
+}
+/* goalProgress의 what-if 확장 — debtPayoffWhatIf(아래)와 대등한 "매달 얼마씩 더 모으면 언제
+ * 달성하는지"를 목표 쪽에 추가한다(logic.js 위쪽 주석이 goalProgress와 debtPayoffProjection/
+ * debtPayoffWhatIf가 설계 철학까지 같다고 명시하는데도, 부채만 인터랙티브 what-if를 갖추고 목표는
+ * 정적 투사뿐이던 공백을 메움, app-evolve cycle413 critique→advance). extraPerMonth<=0이면
+ * baseRate 그대로라 goalProgress와 항상 같은 projectedDate를 돌려준다(호출부가 베이스라인
+ * 비교에 쓸 수 있도록, debtPayoffWhatIf와 동일 계약). baseRate가 음수(최근 추세가 줄고 있음)면
+ * 0으로 바닥을 깐다 — debtPayoffWhatIf와 같은 이유로, 악화 중인 추세가 사용자가 입력한 추가
+ * 저축액을 깎아먹어 혼란스러운 결과를 만들지 않게 한다. 목표에는 부채의 이자/상환 개념이 없으므로
+ * amortizationPayoffMonths에 대응하는 보조 계산은 이번 사이클 범위에서 뺀다. */
+function goalWhatIf(nwHistory,today,target,extraPerMonth,trendWindowDays){
+ const hist=(nwHistory||[]).filter(h=>h.date<=today);
+ if(!hist.length)return {achieved:false,projectedDate:null};
+ const last=hist[hist.length-1];
+ const remaining=target-last.nw;
+ if(!(remaining>0))return {achieved:true,projectedDate:null};
+ const baseRate=Math.max(0,goalProgressRate(nwHistory,today,trendWindowDays));
+ const effectiveRate=baseRate+(extraPerMonth>0?extraPerMonth/30:0);
+ const projectedDate=effectiveRate>0?addDays(last.date,Math.ceil(remaining/effectiveRate)):null;
+ return {achieved:false,projectedDate};
 }
 
 /* 목표일이 지났는데도 아직 달성하지 못한 목표인지 — homeAlerts()의 goalBehind 알림은 hist.length>=2(이력

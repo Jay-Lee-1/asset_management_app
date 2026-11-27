@@ -390,7 +390,13 @@ const FUNCTIONS = [
   // $(...)가 없으면 바로 return하는 얕은 래퍼라(기본 $ 스텁은 'assetBody' 등을 세팅하지 않는 한
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshAllocationHistoryCard', 'refreshInvestGainLossCard',
-  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved', 'goalOrderedIds', 'moveGoal',
+  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset',
+  // goalWhatIfText/goalWhatIfUpdate: 목표 쪽 what-if 시뮬레이터(app-evolve cycle413 advance) —
+  // debtPayoffPtsFor/debtWhatIfText/debtWhatIfUpdate와 완전히 같은 패턴으로, renderGoalForm이
+  // goalWhatIfText를 직접 호출하므로 renderGoalForm을 쓰는 이 sandbox에 함께 올라가야 한다.
+  // goalWhatIf 자체는 logic.js 전용(전체 로드돼 자동으로 끌어와짐)이라 여기 올릴 필요 없다.
+  'goalWhatIfText', 'goalWhatIfUpdate',
+  'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved', 'goalOrderedIds', 'moveGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'inquiriesTrashBody', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry', 'inqTextInput',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
   'modeSeg', 'monthNav', 'monthNavKeydown', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
@@ -553,7 +559,7 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _qtyLogEditDraft는 editAssetQtyLog()가 세팅하고 renderQtyLogEditSheet()/saveAssetQtyLogEdit()가
 // 읽는 "수량 변경 기록 수정 시트"의 작업본(날짜 피커 콜백과 금액 입력 oninput이 직접 갱신)이라
 // 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다(app-evolve cycle401 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', '_catQT', '_catMgmtKind', 'CLOUD_SYNC_ERR_KIND', '_qtyLogEditDraft'];
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', '_debtPlanAnnT', '_catQT', '_catMgmtKind', 'CLOUD_SYNC_ERR_KIND', '_qtyLogEditDraft', '_goalWhatIfExtra', '_goalWhatIfAnnT'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -892,11 +898,14 @@ const sandbox = {
   // 있음) 안전하게 넘어가는 분기를 검증한다.
   bootSplashEl: { remove: () => { sandbox.bootSplashRemoveCalls++; } },
   bootSplashRemoveCalls: 0,
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'errDetailTa' ? sandbox.errDetailTaEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : id === 'debtPlanExtra' ? (sandbox.debtPlanExtraValue === undefined ? null : { value: sandbox.debtPlanExtraValue }) : id === 'debtPlanBody' ? (sandbox.debtPlanBodyMissing ? null : sandbox.debtPlanBodyEl) : id === 'txCatSuggest' ? (sandbox.txCatSuggestMissing ? null : sandbox.txCatSuggestEl) : id === 'recCatSuggest' ? (sandbox.recCatSuggestMissing ? null : sandbox.recCatSuggestEl) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'errDetailTa' ? sandbox.errDetailTaEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : id === 'goalWhatIfExtra' ? (sandbox.goalWhatIfExtraValue === undefined ? null : { value: sandbox.goalWhatIfExtraValue }) : id === 'goalWhatIfResult' ? (sandbox.goalWhatIfResultMissing ? null : sandbox.goalWhatIfResultEl) : id === 'debtPlanExtra' ? (sandbox.debtPlanExtraValue === undefined ? null : { value: sandbox.debtPlanExtraValue }) : id === 'debtPlanBody' ? (sandbox.debtPlanBodyMissing ? null : sandbox.debtPlanBodyEl) : id === 'txCatSuggest' ? (sandbox.txCatSuggestMissing ? null : sandbox.txCatSuggestEl) : id === 'recCatSuggest' ? (sandbox.recCatSuggestMissing ? null : sandbox.recCatSuggestEl) : null,
   // debtWhatIfResultEl은 debtWhatIfUpdate()가 textContent를 직접 대입하는 결과 표시 엘리먼트
   // (부채 상환 추가 납입 시뮬레이터, app-evolve cycle262 advance) — bkTextEl처럼 호출 간에도
   // 값이 남는 공유 객체로 선언해 textContent 갱신을 검사할 수 있게 한다.
   debtWhatIfResultEl: { textContent: '' },
+  // goalWhatIfResultEl: debtWhatIfResultEl과 완전히 같은 역할의 목표 쪽 what-if 시뮬레이터
+  // 결과 표시 엘리먼트(goalWhatIfUpdate, app-evolve cycle413 advance).
+  goalWhatIfResultEl: { textContent: '' },
   // debtPlanBodyEl은 debtPlanStrategySel()/debtPlanUpdate()(부채 상환 계획, app-evolve cycle373
   // advance)가 innerHTML을 직접 대입한 뒤 그 textContent로 announceLive를 공지하는 결과
   // 영역이다 — debtWhatIfResultEl처럼 단순 textContent 대입이 아니라 innerHTML(태그 포함
@@ -2803,6 +2812,58 @@ test('goalProgress: 이미 달성했으면 targetDate가 있어도 requiredMonth
   const hist = [{ date: '2026-01-01', nw: 1000000 }];
   const p = sandbox.goalProgress({ targetAmount: 1000000, targetDate: '2026-07-01' }, hist, '2026-01-01');
   assert.strictEqual(p.requiredMonthly, null);
+});
+
+/* ---------- goalProgressRate/goalWhatIf: 목표 쪽 추가 저축 시뮬레이터 (app-evolve cycle413
+ * critique → advance) ---------- goalProgressRate는 goalProgress가 쓰던 '최근 trendWindowDays일
+ * 구간의 일별 증가율' 계산만 떼어낸 것이라, 리팩터 전후로 goalProgress의 동작 자체가 바뀌지
+ * 않았는지도 위 기존 테스트들이 이미 보장한다. goalWhatIf는 debtPayoffRate/debtPayoffWhatIf와
+ * 완전히 대등한 구조(baseRate를 0으로 바닥 깐 뒤 extraPerMonth/30을 더함)라, 네 경계를 같은
+ * 시나리오 모양으로 검증한다. */
+test('goalProgressRate: 순자산이 꾸준히 늘고 있으면 양수 일별 증가율을 돌려준다(goalProgress와 같은 10일/10만원 시나리오 = 1만원/일)', () => {
+  const hist = [{ date: '2026-01-01', nw: 0 }, { date: '2026-01-11', nw: 100000 }];
+  assert.strictEqual(sandbox.goalProgressRate(hist, '2026-01-11'), 10000);
+});
+test('goalProgressRate: 순자산이 정체·감소 중이면 음수를 돌려준다 — goalProgress와 달리 0으로 깎지 않고 실제 추세를 그대로 알려준다', () => {
+  const hist = [{ date: '2026-01-01', nw: 500000 }, { date: '2026-02-01', nw: 400000 }];
+  assert.strictEqual(sandbox.goalProgressRate(hist, '2026-02-01'), -100000 / 31);
+});
+test('goalProgressRate: 스냅샷이 1개 이하면(추세를 모름) 0을 돌려준다', () => {
+  assert.strictEqual(sandbox.goalProgressRate([{ date: '2026-01-01', nw: 500000 }], '2026-01-01'), 0);
+  assert.strictEqual(sandbox.goalProgressRate([], '2026-01-01'), 0);
+});
+test('goalWhatIf: 이미 목표를 달성했으면(remaining<=0) achieved=true이고(추가 저축과 무관) 투사 날짜는 null이다', () => {
+  const hist = [{ date: '2026-01-01', nw: 500000 }, { date: '2026-02-01', nw: 1200000 }];
+  const wi = sandbox.goalWhatIf(hist, '2026-02-01', 1000000, 50000);
+  assert.strictEqual(wi.achieved, true);
+  assert.strictEqual(wi.projectedDate, null);
+});
+test('goalWhatIf: 추가 저축액이 0이면 goalProgress와 정확히 같은 투사일을 돌려준다(베이스라인 비교 전제)', () => {
+  const hist = [{ date: '2026-01-01', nw: 0 }, { date: '2026-01-11', nw: 100000 }];
+  const p = sandbox.goalProgress({ targetAmount: 300000 }, hist, '2026-01-11');
+  const wi = sandbox.goalWhatIf(hist, '2026-01-11', 300000, 0);
+  assert.strictEqual(wi.projectedDate, p.projectedDate);
+  assert.strictEqual(wi.projectedDate, '2026-01-31');
+});
+test('goalWhatIf: 추세가 정체·감소 중(음수 rate)이어도 추가 저축액만으로 effectiveRate를 계산해 투사일이 나온다(악화 추세가 추가분을 깎아먹지 않음)', () => {
+  const hist = [{ date: '2026-01-01', nw: 500000 }, { date: '2026-02-01', nw: 400000 }]; // 오히려 줄어듦
+  const p = sandbox.goalProgress({ targetAmount: 1000000 }, hist, '2026-02-01');
+  assert.strictEqual(p.projectedDate, null, '베이스라인은 감소 중이라 투사 불가(회귀 확인)');
+  const wi = sandbox.goalWhatIf(hist, '2026-02-01', 1000000, 150000); // 매달 15만원 추가 = 5000/일
+  assert.strictEqual(wi.achieved, false);
+  assert.strictEqual(wi.projectedDate, sandbox.addDays('2026-02-01', Math.ceil(600000 / 5000)), '매달 추가 저축분(5000/일)만으로 투사해야 함');
+});
+test('goalWhatIf: 추가 저축액이 클수록 투사일이 더 빨라진다(단조성)', () => {
+  const hist = [{ date: '2026-01-01', nw: 0 }, { date: '2026-01-11', nw: 100000 }]; // baseRate=10000/일
+  const none = sandbox.goalWhatIf(hist, '2026-01-11', 300000, 0).projectedDate;
+  const some = sandbox.goalWhatIf(hist, '2026-01-11', 300000, 60000).projectedDate; // +2000/일
+  const more = sandbox.goalWhatIf(hist, '2026-01-11', 300000, 300000).projectedDate; // +10000/일
+  assert.ok(more < some && some < none, `더 많이 추가 저축할수록 투사일이 빨라져야 함: none=${none} some=${some} more=${more}`);
+});
+test('goalWhatIf: 이력이 비어있으면 achieved=false이고 투사 날짜도 null(추세 자체가 없음)', () => {
+  const wi = sandbox.goalWhatIf([], '2026-01-11', 300000, 50000);
+  assert.strictEqual(wi.achieved, false);
+  assert.strictEqual(wi.projectedDate, null);
 });
 
 /* ---------- requiredMonthlyPace: targetDate 기반 필요 월 저축액 역산 (app-evolve cycle303 advance) ----------
@@ -8109,6 +8170,104 @@ test('goalRowHTML/openGoalsList: 연결 자산이 삭제되진 않았지만 종�
   sandbox.openGoalsList();
   assert.ok(sandbox.lastSheetHtml.includes('연결된 자산을 추적할 수 없어요'), 'openGoalsList도 같은 캡션을 보여줘야 함');
   assert.ok(/aria-label="[^"]*연결된 자산을 추적할 수 없어요[^"]*"/.test(sandbox.lastSheetHtml), 'openGoalsList의 행 aria-label에도 보강되지 않음');
+});
+/* ---------- renderGoalForm: 목표 쪽 what-if 입력(goalWhatIfExtra/goalWhatIfResult, app-evolve
+ * cycle413 critique → advance) — assetBalCard의 debtWhatIfExtra와 대등하게, hist.length>=2(추세를
+ * 계산할 최소 조건)이고 아직 미달성인 '기존' 목표를 수정할 때만 보여준다. og(DB.goals에 저장된
+ * 원본)가 없는 신규 목표(아직 저장 전)에는 보여줄 추세 이력 자체가 없다. ---------- */
+test('renderGoalForm: 이력이 2건 이상이고 미달성인 기존 목표를 수정하면 "매달 이만큼 더 모으면?" what-if 입력과 결과가 보인다', () => {
+  sandbox._goalHistCache.clear();
+  sandbox.TODAY = '2026-01-11';
+  sandbox.DB = { owners: [], goals: [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 300000, owner: 'all' }], nwHistory: [{ date: '2026-01-01', nw: 0 }, { date: '2026-01-11', nw: 100000 }] };
+  sandbox.goalDraft = { id: 'g1', name: '비상금', targetAmount: 300000, targetDate: '', type: 'networth', owner: 'all' };
+  sandbox._goalWhatIfExtra = 0;
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(true);
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('id="goalWhatIfExtra"'), 'what-if 입력칸이 렌더돼야 함');
+  assert.ok(html.includes('id="goalWhatIfResult"'), 'what-if 결과 영역이 렌더돼야 함');
+  assert.ok(html.includes('매달 이만큼 더 모으면 01/31쯤 달성해요'), `추가 저축=0이면 goalProgress와 같은 베이스라인 문구가 나와야 함: ${html}`);
+});
+test('renderGoalForm: 신규 목표를 추가할 때는(아직 DB.goals에 저장 전) what-if 입력이 보이지 않는다', () => {
+  sandbox.DB = { owners: [], goals: [], nwHistory: [{ date: '2026-01-01', nw: 0 }, { date: '2026-01-11', nw: 100000 }] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', targetAmount: 300000, targetDate: '', type: 'networth', owner: 'all' };
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(false);
+  assert.ok(!sandbox.lastSheetHtml.includes('goalWhatIfExtra'), '신규 목표는 추세 이력 자체가 없어 what-if를 보여줄 게 없음');
+});
+test('renderGoalForm: 이미 달성한 목표는 what-if 입력이 보이지 않는다', () => {
+  sandbox._goalHistCache.clear();
+  sandbox.TODAY = '2026-01-11';
+  sandbox.DB = { owners: [], goals: [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 100000, owner: 'all' }], nwHistory: [{ date: '2026-01-01', nw: 0 }, { date: '2026-01-11', nw: 100000 }] };
+  sandbox.goalDraft = { id: 'g1', name: '비상금', targetAmount: 100000, targetDate: '', type: 'networth', owner: 'all' };
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(true);
+  assert.ok(!sandbox.lastSheetHtml.includes('goalWhatIfExtra'), '이미 달성했으면 추가 저축 시뮬레이터가 의미 없으므로 보이면 안 됨');
+});
+test('renderGoalForm: 이력이 1건뿐이면(추세 계산 불가) what-if 입력이 보이지 않는다', () => {
+  sandbox._goalHistCache.clear();
+  sandbox.TODAY = '2026-01-11';
+  sandbox.DB = { owners: [], goals: [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 300000, owner: 'all' }], nwHistory: [{ date: '2026-01-11', nw: 100000 }] };
+  sandbox.goalDraft = { id: 'g1', name: '비상금', targetAmount: 300000, targetDate: '', type: 'networth', owner: 'all' };
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(true);
+  assert.ok(!sandbox.lastSheetHtml.includes('goalWhatIfExtra'), 'hist.length<2면 goalProgress도 추세를 못 구하므로 what-if도 보이면 안 됨');
+});
+/* ---------- goalWhatIfUpdate: 목표 쪽 what-if 시뮬레이터의 경량 업데이트 핸들러 (app-evolve
+ * cycle413 advance) — debtWhatIfUpdate와 완전히 같은 패턴으로, 카드를 통째로 다시 그리지 않고
+ * 입력값만 읽어 #goalWhatIfResult의 textContent만 갱신하고 같은 220ms 디바운스로 announceLive에도
+ * 공지한다. ---------- */
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout;
+  function restoreTimers() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; }
+  test('[실행형] goalWhatIfUpdate: 입력값을 _goalWhatIfExtra에 반영하고(쉼표 포맷 포함) 결과 영역 textContent는 즉시 갱신하고, announceLive는 220ms 디바운스 뒤 같은 문구로 정확히 1번 공지한다', () => {
+    sandbox._goalHistCache.clear();
+    sandbox.TODAY = '2026-04-11';
+    // 2026-01-01~2026-04-11(100일)간 100,000 증가 = baseRate 1,000/일. remaining=300,000-100,000=200,000.
+    sandbox.DB = { owners: [], goals: [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 300000, owner: 'all' }], nwHistory: [{ date: '2026-01-01', nw: 0 }, { date: '2026-04-11', nw: 100000 }] };
+    sandbox.goalWhatIfExtraValue = '30,000';
+    sandbox.goalWhatIfResultEl.textContent = '';
+    sandbox.announceLiveCalls = [];
+    let capturedMs = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; fn(); return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    try {
+      sandbox.goalWhatIfUpdate('g1');
+      assert.strictEqual(sandbox._goalWhatIfExtra, 30000, 'num()으로 쉼표를 벗겨 읽은 숫자가 _goalWhatIfExtra에 반영돼야 함');
+      // extra=30,000/월 -> +1,000/일 -> effectiveRate=2,000/일(베이스라인 1,000/일의 2배) -> 베이스라인(200일)보다 100일 빨라짐 ≈ 3개월
+      assert.ok(/매달 이만큼 더 모으면 \d{2}\/\d{2}쯤 달성해요 \(약 \d+개월 빨라져요\)/.test(sandbox.goalWhatIfResultEl.textContent), `goalWhatIfResult의 textContent가 renderGoalForm과 같은 goalWhatIfText 문구로 갱신돼야 함: ${sandbox.goalWhatIfResultEl.textContent}`);
+      assert.strictEqual(capturedMs, 220, '다른 입력 필드와 같은 220ms 디바운스를 써야 함');
+      assert.strictEqual(sandbox.announceLiveCalls.length, 1, 'announceLive가 정확히 1번 불려야 함');
+      assert.strictEqual(sandbox.announceLiveCalls[0], sandbox.goalWhatIfResultEl.textContent, 'announceLive에 공지되는 문구가 textContent에 쓴 문구와 정확히 같아야 함');
+    } finally { restoreTimers(); }
+  });
+  test('[실행형] goalWhatIfUpdate: 연속 입력마다 이전 announceLive 디바운스 타이머를 지우고 새로 하나만 건다(매 keystroke마다 스크린리더가 끊어 읽지 않도록)', () => {
+    sandbox._goalHistCache.clear();
+    sandbox.TODAY = '2026-01-11';
+    sandbox.DB = { owners: [], goals: [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 300000, owner: 'all' }], nwHistory: [{ date: '2026-01-01', nw: 0 }, { date: '2026-01-11', nw: 100000 }] };
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer' + setCalls; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    try {
+      sandbox.goalWhatIfExtraValue = '1';
+      sandbox.goalWhatIfUpdate('g1');
+      sandbox.goalWhatIfExtraValue = '12';
+      sandbox.goalWhatIfUpdate('g1');
+      sandbox.goalWhatIfExtraValue = '123';
+      sandbox.goalWhatIfUpdate('g1');
+      assert.strictEqual(setCalls, 3, 'keystroke마다 디바운스 타이머를 새로 걸어야 함(announceLive는 아직 안 불림)');
+      assert.strictEqual(clearCalls, 3, 'keystroke마다 이전 타이머를 지워야 중복 공지가 안 쌓임');
+    } finally { restoreTimers(); }
+  });
+})();
+test('[실행형] goalWhatIfUpdate: 존재하지 않는 목표이거나 결과 영역(#goalWhatIfResult)이 이미 사라졌으면(시트가 닫힌 뒤 등) 아무 것도 하지 않고 조용히 반환한다(announceLive도 불리지 않음)', () => {
+  sandbox.DB = { owners: [], goals: [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 300000, owner: 'all' }], nwHistory: [] };
+  sandbox.announceLiveCalls = [];
+  assert.doesNotThrow(() => sandbox.goalWhatIfUpdate('nonexistent'), '존재하지 않는 목표 id도 안전하게 넘어가야 함');
+  sandbox.goalWhatIfResultMissing = true;
+  assert.doesNotThrow(() => sandbox.goalWhatIfUpdate('g1'), '결과 영역이 없어도(시트 닫힘 등) 안전하게 넘어가야 함');
+  sandbox.goalWhatIfResultMissing = false;
+  assert.strictEqual(sandbox.announceLiveCalls.length, 0, '두 조기 반환 경로 모두 announceLive를 부르지 않아야 함');
 });
 test('homeAlerts: 연결 자산이 삭제된 asset형 목표는 goalBehind 알림에서 제외된다(cur 0 오탐 방지)', () => {
   setupHomeAlertsDB();
