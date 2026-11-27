@@ -1,15 +1,8 @@
 {
   "cycle": 413,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 408,
-      "phase": "develop",
-      "timestamp": "2026-11-26T11:19:37.000Z",
-      "summary": "(이전 develop 실행이 history append를 빠뜨려 이번 review 사이클에서 커밋 b306687 기준으로 사후 기록) toggleRecActive/doBulkRecActive(반복거래 단건/일괄 일시중지·재시작 토글)가 _autoDeactivatedByAssetDelete/_autoDeactivatedByCatDelete 플래그를 지운 적이 없던 버그를 발견해 수정. relinkDeletedAsset/restoreTrashAsset/restoreTrashCat/catsTrashBody는 모두 '수동으로 토글된 반복거래는 이 플래그가 없다'는 전제로 자산/카테고리 복구 시 자동 재활성화 여부를 판정하는데, 실제로는 플래그가 안 지워져 사용자가 자발적으로 멈춰둔 반복거래를 복구 시 조용히 다시 켜버렸다. 두 토글 함수에서 active를 바꾼 직후 두 플래그를 무조건 삭제하도록 수정, doBulkRecActive의 undo 콜백은 지워진 플래그까지 원래값으로 복원하도록 확장. 회귀 테스트 4건 추가. node test/run.js 4054->4058/4058 통과. APP_VERSION 1.47.548->1.47.549, sw.js CACHE v815->v816.",
-      "commit": "b306687"
-    },
     {
       "cycle": 408,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-27T06:32:00.000Z",
       "summary": "critique(cycle412)의 계획대로 목표(Goal) 저장 경로 saveGoal(index.html:4445-4461)이 saveTx/commitTx·commitRec·saveAsset은 모두 갖춘 두 안전장치(_savedDrafts 더블탭 중복저장 가드, 수정 저장 시 undoToast 6초 되돌리기)를 둘 다 빠뜨리고 있던 공백을 메웠다. syncGoalInputs() 직후 if(_savedDrafts.has(d))return; 가드를 추가하고, 모든 유효성 검증(이름/금액/targetDate 범위/연결자산)을 통과한 뒤에만 _savedDrafts.add(d)를 호출해 검증 실패 후 고쳐서 다시 저장하는 정상 경로는 막지 않았다 (saveTx/saveAsset과 동일 패턴). DB.goals 교체 직전에 origGoal=깊은 복제(없으면 null)를 떠두고, 저장 후 origGoal이 있으면(=수정) undoToast(msg, ...)로 origGoal.id를 다시 찾아 교체 복원(배열 인덱스를 클로저하지 않고 id로 재탐색 — 6초 윈도우 동안 배경 클라우드 병합이 DB.goals 배열을 바꿀 수 있기 때문, cycle391이 saveAsset에 적용한 것과 동일 근거), 없으면(=신규) 기존처럼 plain toast만 띄우게 바꿨다. test/run.js에 3건 추가 — 같은 draft로 saveGoal(false)를 두 번 연속 호출해도 DB.goals에 1개만 추가되는 더블탭 회귀 테스트, 기존 목표 수정 후 undoToast의 되돌리기 콜백을 호출하면 이름/금액/목표일뿐 아니라 수정 저장이 리셋했던 achievedAckAt까지 정확히 수정 전 값으로 복원되는 테스트, 신규 목표 추가는 origGoal이 null이라 undoToast 없이 plain toast만 뜨는 것을 확인하는 테스트. node test/run.js 4091->4094/4094 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html에서 HTML 주석 제거 후 추출한 inline <script> 블록 5개(519/1274/0/978661/1770자) 전부 new Function() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.557->1.47.558, sw.js CACHE v824->v825. 범위 제외(계획대로): goalDraft 자체의 다른 필드 검증 로직, duplicateGoal/delGoal(이미 undoToast 있음), moveGoal(재정렬이라 undoToast 없는 게 다른 move류와 동일한 의도된 설계). pending_advance_plan null로 비움, phase를 develop으로 회전, cycle 413으로 증가.",
+      "commit": null
+    },
+    {
+      "cycle": 413,
+      "phase": "develop",
+      "timestamp": "2026-11-27T07:15:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 조사. 설정 화면의 toggleAutoRates()(시세 자동 연동)와 toggleConfirmTransfers()(이체 확인) 두 토글 함수가 ackGoalAchieved/ackDebtPayoff(cycle409)·toggleCatVarUI/toggleBudgetRolloverUI(cycle412)와 같은 twGuard 공백 클래스임을 발견 — 이 둘은 메뉴(시세 시트/가계부 설정) 안의 토글이라 #nav와 같은 구조적 틈(twStage 오버레이 밖이라 튜토리얼 중에도 그대로 클릭 가능)에 있는데, 특히 toggleConfirmTransfers는 끌 때 실제 미확인 이체/반복거래를 confirmed=true로 영구 확정해버려 \"튜토리얼 중에는 실제로 저장되지 않아요\" 약속이 깨지는 실질적 데이터 오염 버그였다. toggleAutoRates도 설정 플래그와 즉시 syncRates(true) 호출(외부 네트워크 요청)이 영구 저장됐다. 두 함수 맨 앞에 if(twGuard())return; 추가(기존 동작/부수효과는 그대로, ackGoalAchieved/toggleCatVarUI와 동일 패턴). 오케스트레이터가 diff를 직접 리뷰(두 줄 추가뿐인 최소 변경 확인)하고 node test/run.js 재실행으로 재검증. test/run.js FUNCTIONS에 toggleAutoRates 추가(toggleConfirmTransfers는 이미 있었음), 테스트 4건 추가 — toggleAutoRates 기본 동작 2건(켤 때 save+syncRates(true), 끌 때 syncRates 미호출 — 기존엔 이 함수 자체에 테스트가 없었음), 두 함수의 튜토리얼 중 twGuard 차단 테스트 각 1건(toggleConfirmTransfers는 확인 시트 미표시·미확인 이체 미확정까지 검증). node test/run.js 4094->4098/4098 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과(오케스트레이터 독립 재검증). index.html/sw.js 수정했으므로 APP_VERSION 1.47.558->1.47.559, sw.js CACHE v825->v826. 범위 제외: toggleAppLock/toggleBioUnlock/toggleOsNotify/toggleNotifyMuteGroup(금융데이터가 아닌 기기보안/알림권한이라 twGuard 대상 아님으로 판단), setBigMin(동일 클래스 공백이나 diff 작게 유지하려 보류, future 후보), 전체 twGuard 재감사(반복 기각 범위), moveAsset/moveGoal의 클라우드 동기화 순서보존 여부(mergeCollection이 id-keyed 병합이라 moveOwner/moveCat과 다른 메커니즘이라 이 버그 클래스에 해당 안 함을 확인).",
       "commit": null
     }
   ]

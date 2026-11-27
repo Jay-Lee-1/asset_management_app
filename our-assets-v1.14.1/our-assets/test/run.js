@@ -359,7 +359,7 @@ const FUNCTIONS = [
   // app-evolve cycle220 develop(crypto만 보유해도 주말 휴장 시간대에 자동 갱신·"주말 휴장" 표시가
   // 계속되던 회귀 수정) 검증용 — syncRates는 네트워크 호출을 포함하므로 아래 sandbox.syncRates
   // 스파이로 대체한다(migrateLegacy/startApp 등과 같은 패턴).
-  'heldCurrencies', 'heldStockCodes', 'heldCryptoCodes', 'needFx', 'needStock', 'needCrypto', 'hasRateAssets', 'autoSyncRates',
+  'heldCurrencies', 'heldStockCodes', 'heldCryptoCodes', 'needFx', 'needStock', 'needCrypto', 'hasRateAssets', 'autoSyncRates', 'toggleAutoRates',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'allocPresetSegHTML', 'allocationHistoryCard', 'allocHistPeekLabel', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass', 'moveOwner',
   // targetAllocationCard/refreshTargetAllocationCard(목표 자산배분, app-evolve cycle313 advance)는
@@ -22208,6 +22208,66 @@ test('toggleConfirmTransfers: 반복거래가 이미 다른 날짜로 confirmedD
   assert.deepStrictEqual(rec.confirmedDates, ['2026-05-15', '2026-06-15']);
   sandbox.lastUndo.undoFn();
   assert.deepStrictEqual(rec.confirmedDates, ['2026-05-15'], '되돌리면 이전에 이미 있던 confirmedDates는 남고 새로 추가된 날짜만 빠져야 함');
+}));
+
+/* ---------- toggleAutoRates: 시세 설정 시트의 "시세 자동 연동" 스위치. 켤 때는 즉시 1회 동기화
+ * (syncRates(true))까지 함께 트리거하고, 끌 때는 더 받아오지 않는다. ---------- */
+test('toggleAutoRates: 꺼진 상태에서 누르면 설정이 켜지고 save()·토스트·즉시 동기화(syncRates(true))가 모두 일어난다', () => {
+  sandbox.DB = { settings: { autoRates: false } };
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.syncRatesCalls = [];
+  sandbox.toggleAutoRates();
+  assert.strictEqual(sandbox.DB.settings.autoRates, true);
+  assert.ok(saveCalled, '설정을 바꾼 뒤 save()가 호출되어야 함');
+  assert.ok(sandbox.lastToast.includes('켰어요'));
+  assert.deepStrictEqual(sandbox.syncRatesCalls, [true], '켤 때는 바로 1회 동기화해야 함');
+  sandbox.save = origSave;
+});
+test('toggleAutoRates: 켜진 상태에서 누르면 설정이 꺼지고 save()·토스트만 일어나며 추가 동기화는 트리거하지 않는다', () => {
+  sandbox.DB = { settings: { autoRates: true } };
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.syncRatesCalls = [];
+  sandbox.toggleAutoRates();
+  assert.strictEqual(sandbox.DB.settings.autoRates, false);
+  assert.ok(saveCalled);
+  assert.ok(sandbox.lastToast.includes('껐어요'));
+  assert.deepStrictEqual(sandbox.syncRatesCalls, [], '끌 때는 동기화를 트리거하면 안 됨');
+  sandbox.save = origSave;
+});
+/* ---------- toggleAutoRates/toggleConfirmTransfers: toggleCatVarUI/toggleBudgetRolloverUI(cycle412),
+ * ackGoalAchieved/ackDebtPayoff(cycle409)와 같은 twGuard 감사 공백 — 이 두 설정 스위치는 하단
+ * 네비(#nav)와 같은 '구조적 틈'(twStage 오버레이 밖)으로 튜토리얼 중에도 그대로 눌릴 수 있는데,
+ * 특히 toggleConfirmTransfers는 끌 때 실제 미확인 이체/반복거래를 영구 확정해버린다(app-evolve
+ * cycle413 develop). ---------- */
+test('[실행형] toggleAutoRates: 튜토리얼 모드 중에는 twGuard가 막아서 설정도 save()도 바뀌지 않는다', () => {
+  sandbox.DB = { settings: { autoRates: false } };
+  sandbox.TWi = 0;
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.syncRatesCalls = [];
+  sandbox.toggleAutoRates();
+  assert.strictEqual(sandbox.DB.settings.autoRates, false, '튜토리얼 중에는 설정이 바뀌면 안 됨');
+  assert.ok(!saveCalled, '튜토리얼 중에는 save()가 호출되면 안 됨');
+  assert.deepStrictEqual(sandbox.syncRatesCalls, [], '튜토리얼 중에는 동기화도 트리거되면 안 됨');
+  sandbox.save = origSave;
+  sandbox.TWi = -1;
+});
+test('[실행형] toggleConfirmTransfers: 튜토리얼 모드 중에는 twGuard가 막아서 설정도 안 바뀌고 미확인 이체도 확정되지 않는다', () => withFakeToday('2026-06-15', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.TWi = 0;
+  sandbox.confirmSheetCalls = [];
+  const oneOff = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [oneOff], recurrences: [] };
+  sandbox.toggleConfirmTransfers();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '튜토리얼 중에는 확인 시트조차 뜨면 안 됨');
+  assert.strictEqual(sandbox.DB.settings.confirmTransfers, true, '튜토리얼 중에는 설정이 바뀌면 안 됨');
+  assert.strictEqual(oneOff.confirmed, false, '튜토리얼 중에는 미확인 이체가 확정되면 안 됨');
+  sandbox.TWi = -1;
 }));
 
 /* ---------- rollPendingTransfers: 이체 확인이 켜진 상태에서 기한이 지난(과거 날짜) 미확인 이체를 오늘로 당긴다
