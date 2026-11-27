@@ -1,15 +1,12 @@
 {
   "cycle": 414,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "목표(Goal) 진행 상세 보기 — 연결 자산/순자산 차트로 이어주는 진입점 추가",
+    "why": "자산(asset)은 openAssetSheet(수정 폼)과 openAssetHistory(히스토리 탭+assetBalCard 잔액추이 차트, index.html:7779/3728)가 분리돼 있어 자산을 '보기'와 '수정하기'가 각각 다른 화면이다. 반면 목표(Goal)는 openGoalForm/renderGoalForm(index.html:4355/4455) 단 하나뿐이라 '보기'가 곧 '수정 폼'이고, cycle413이 goalWhatIf로 부채의 인터랙티브 투사 문구만 목표에 들여왔을 뿐 차트/히스토리 자체는 전혀 없다 — cycle413 advance 요약이 '차트/히스토리 시각화 패리티'를 명시적으로 '별도의 더 큰 후속 사이클 후보'로 남겨둔 항목. 직접 코드로 재확인: asset형 목표(d.type==='asset')는 연결 자산이 이미 openAssetHistory+assetBalCard로 완비된 잔액추이 차트(1개월/3개월/1년/전체 세그먼트, SVG 라인+영역, 터치 피크)를 갖고 있는데 목표 쪽에서는 그 화면으로 가는 진입점이 전혀 없고, networth형 목표(d.owner)는 홈 화면의 nwHistoryCard(owner,preset)(index.html:3545)가 이미 그 귀속의 순자산 추이 차트를 그리고 있는데도 목표 폼에서는 재사용할 길이 없다. 둘 다 기존 차트를 새로 만들지 않고 그대로 재사용할 수 있는, 비교적 작고 안전한 진입점 추가 작업이다.",
+    "approach": "renderGoalForm(index.html:4455)의 whatIfHTML 블록 바로 아래, og(editing && DB.goals에 저장된 원본)가 있을 때만(신규 미저장 목표는 제외, whatIfHTML과 동일 조건) '진행 추이 보기' 버튼/row-tap 하나를 추가한다. isAsset이면 onclick이 closeSheet() 후 openAssetHistory(d.linkedAssetId) 호출 — 연결 자산이 market-valued면 openAssetHistory가 내부적으로 openAssetQtyLog로 알아서 분기하므로 별도 처리 불필요, linkedAsset이 사라진 경우(goalLinkedAssetGone)는 버튼을 숨기거나 toast로 안내. networth형이면 새 함수 openGoalNwChart(goalId) 또는 og.owner를 바로 써서 closeSheet() 후 openSheet로 nwHistoryCard(og.owner,'m3')를 보여주는 가벼운 시트를 연다(새 차트 컴포넌트를 만들지 않고 nwHistoryCard를 그대로 호출 — 프리셋 전환이 필요하면 refreshNwHistoryCard(index.html:4954)와 동일한 패턴으로 재그리기). FUNCTIONS 화이트리스트에 신설 함수 등록. 테스트 계획: (1) asset형 og 존재 시 버튼이 openAssetHistory(linkedAssetId)를 호출하는지, (2) networth형 og 존재 시 버튼이 nwHistoryCard 기반 시트를 여는지(og.owner가 올바르게 전달되는지), (3) 신규(미저장) 목표에는 버튼 자체가 없는지, (4) linkedAsset이 사라진 asset형 목표의 방어적 처리. 범위 제외: assetBalCard/nwHistoryCard 등 기존 차트 순수 로직·마크업 자체 변경(그대로 재사용만), goalRowHTML(홈 카드)에 차트 미리보기 추가(스코프 확장, 별도 후보), 부채의 debtAmortSuffix에 대응하는 목표 전용 보조 계산(이미 cycle413에서 범위 제외 확정), 목표 전용 신규 차트 컴포넌트 설계(기존 자산 재사용이 가능하므로 불필요)."
+  },
   "history": [
-    {
-      "cycle": 409,
-      "phase": "critique",
-      "timestamp": "2026-11-26T18:00:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 위임해 cycle308-409 전체 twGuard 감사 완료 항목·cycle404-408의 기각/완료 항목(ledger 아카이브 인지, 예산CSV ownerBudgets, 백업복원미리보기, 문의하기undo, 지출수입분석 아카이브안내+월네비, budgetHistoryValueAt 테스트, toggleRecActive 플래그버그, goalsBehind/debtBehind Multi카드 대칭 등)을 배제 목록으로 주고 재검토시킴. budgetOverMulti/budgetPaceWarnMulti 드릴다운(cycle408에서 이미 marginal로 기각), matMulti→openMaturity (이미 실제 상세뷰로 연결돼 공백 없음 확인), assetQtyLog realizedGain 재계산 검증(데이터클램프 영역, 기각범위와 겹침) 세 후보를 검토 후 기각하고, homeAlertCard()의 allocationDrift/allocationDriftMulti(index.html:13633/13638, 카드 문구 자체가 '지금 X% · 목표 Y% · 눌러서 확인하세요')가 다른 모든 홈알림(budgetOver→openSpendAnalysisThisMonth, settleDue→openSettlement, debtBehind→openAssetHistory, goalBehind/goalAchieved/debtBehind/debtPaidOff→각 openXxxList 등)과 달리 실제 드리프트 상세(actual%/target%, rebalanceAmount 매수매도 안내 — targetAllocationCard():3977-4006에만 존재하고 Assets탭 owner==='all'에서만 보임, 알림으로는 도달 불가)가 아니라 순수 %입력 편집기 openTargetAllocationForm()(:4012, renderTargetAllocationForm:4031-4043, 수치/안내 없음)으로 연결되는 비대칭을 발견 — cycle408이 goal/debt Multi 카드에서 고친 것과 같은 클래스이나 당시 감사 범위 밖이었던 자산배분 알림에서 새로 발견. pending_advance_plan에 targetAllocationCard의 drift 행 마크업을 공유 헬퍼 allocationDriftRowsHtml로 추출 + openAllocationDriftSheet() 신설(homeAlerts()와 동일 계산 재사용, '먼저 보기, 수정은 한 단계 더' 패턴) + homeAlertCard의 allocationDrift/allocationDriftMulti onclick 교체 + FUNCTIONS 화이트리스트 등록 + 테스트 3건 계획 저장(allocationDrift()/rebalanceAmount() 등 순수함수 변경, %편집기 UX 자체 변경, targetAllocationCard 노출규칙 변경, 다른 알림 라우팅 전체 재감사는 범위 제외로 명시). node test/run.js 4064/4064 통과 확인(서브에이전트가 베이스라인으로 실행, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 409,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-27T12:08:19.999Z",
       "summary": "develop(cycle414) 커밋 30fdf1a(setBigMin()에 누락된 twGuard 추가)를 검토. twActive()/twGuard() 정의(index.html:10110-10111, TWi>=0이면 toast 후 true 반환)를 직접 읽고, ackGoalAchieved/toggleCatVarUI/toggleAutoRates 등 기존 '함수 맨 앞에서 전체를 막는' twGuard 관례와 diff가 정확히 같은 모양(두 줄 추가뿐: 가드 1줄 + 주석 1줄)인지 setBigMin() 실제 정의(index.html:4856-4860)를 대조해 확인. setBigMin()의 유일한 호출부(openBigMinSheet()의 저장 버튼 onclick, 4848행과 Enter 키다운 핸들러, 4847행)를 grep으로 재확인해 다른 경로가 가드를 우회하지 않음을 확인. test/run.js FUNCTIONS 화이트리스트와 $ 스텁 맵(bigMinInputValue)에 이미 등록돼 있었음을 확인(cycle413 goalWhatIf 작업에서 bigMinInput 매핑 자체는 이미 있었고, 이번엔 테스트만 추가). 추가된 테스트 3건(정상 입력 시 save/closeSheet/renderCurrent/토스트 전부 호출, 빈 입력이면 기존 설정 유지+save 미호출, TWi=0 튜토리얼 중에는 twGuard가 막아 설정도 save도 안 바뀌고 twGuard 자신의 토스트만 뜨는지)이 각 분기를 정확히 커버하는지 확인. node test/run.js 독립 재실행 4116/4116 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/982598/1770자) 전부 new vm.Script() 파싱 통과, APP_VERSION 1.47.561/sw.js CACHE v828 일치 재확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 414,
+      "phase": "critique",
+      "timestamp": "2026-11-27T12:30:00.000Z",
+      "summary": "cycle413 advance 요약이 '차트/히스토리 시각화 패리티'를 명시적으로 '별도의 더 큰 후속 사이클 후보'로 남겨둔 항목을 이번 critique에서 직접 코드로 검증. openAssetSheet(수정 폼, 5631행)와 openAssetHistory(히스토리 탭+assetBalCard 잔액추이 차트, 7779/3728행)가 분리돼 있어 자산은 '보기'와 '수정하기'가 다른 화면인데, 목표(Goal)는 openGoalForm/renderGoalForm(4355/4455행) 단 하나뿐이라 '보기'가 곧 '수정 폼'이고 cycle413이 goalWhatIf로 들여온 인터랙티브 투사 문구 외에는 차트·히스토리가 전혀 없음을 재확인(goalRowHTML/openGoalsList의 유일한 진입점도 openGoalForm 하나로 수렴, 별도의 '목표 상세' 화면 없음을 grep으로 확인). asset형 목표(d.type==='asset')는 연결 자산이 이미 완비된 잔액추이 차트(1개월/3개월/1년/전체 세그먼트, SVG 라인+영역, 터치 피크)를 갖고 있는데 목표 쪽에는 그 화면으로 가는 진입점이 없고, networth형 목표(d.owner)는 홈 화면의 nwHistoryCard(owner,preset, 3545행)가 이미 그 귀속의 순자산 추이 차트를 그리고 있는데도 목표 폼에서는 재사용할 길이 없음을 확인 — 둘 다 기존 차트를 그대로 재사용할 수 있어 새 차트 컴포넌트가 필요 없는, 비교적 작고 안전한 진입점 추가 작업. 다른 후보는 검토하지 않음(이 항목이 cycle413이 이미 식별해 둔 명확한 후속 과제라 바로 채택). pending_advance_plan에 renderGoalForm의 whatIfHTML 아래 '진행 추이 보기' 버튼(asset형→openAssetHistory 재사용, networth형→nwHistoryCard 기반 가벼운 시트 신설) + 테스트 4건 계획(asset형 라우팅, networth형 라우팅+owner 전달, 신규 미저장 목표는 버튼 숨김, 연결자산 소실 시 방어적 처리) 저장. 범위 제외: assetBalCard/nwHistoryCard 등 기존 차트 자체 변경(재사용만), goalRowHTML 홈 카드에 차트 미리보기 추가(스코프 확장), 목표 전용 신규 차트 컴포넌트. node test/run.js 4116/4116 통과 확인(코드 변경 없음, 베이스라인 재확인). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
