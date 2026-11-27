@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.555';
+const APP_VERSION='1.47.556';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -1772,8 +1772,19 @@ function mergeRemoteDataIntoLocal(remoteData){
   * 합쳐뒀으므로(1495-1498줄) 그 결과를 그대로 넘긴다 — delOwner/doDeleteCat이 삭제 시 합성 키
   * (owner:<normName>, cat:<type>:<normName>)를 거기에 남긴다. */
  DB.categories=DB.categories||{expense:[],income:[],saving:[]};
+ DB.categoriesOrderAt=DB.categoriesOrderAt||{};
  const remoteCats=remoteData.categories||{};
- ['expense','income','saving'].forEach(k=>{DB.categories[k]=mergeNameListWithTombstones(DB.categories[k]||[],remoteCats[k]||[],DB.deletedIds,n=>catTombKey(k,n),normName)});
+ const remoteCatsOrderAt=remoteData.categoriesOrderAt||{};
+ /* categoriesOrderAt(moveCat()이 타입별로 순서만 바꿀 때 찍는 시각, app-evolve cycle411 critique/advance)을
+  * owners의 ownersOrderAt과 동일한 이유로 넘긴다 — 안 그러면 mergeNameListWithTombstones의 union이
+  * 멤버십 변화가 없다고 보고 그대로 로컬의 옛 순서를 돌려줘, 다른 기기에서 한 moveCat 결과가 동기화
+  * 후 조용히 되돌아간다. owners는 단일 배열이라 숫자 하나로 충분했지만, categories는 expense/income/
+  * saving 세 개의 독립 배열이라 공유 숫자 하나를 쓰면 한 타입의 재정렬이 다른 두 타입의 비교 기준까지
+  * 덮어써 엉뚱한 승자를 고를 수 있으므로 타입별로 독립된 타임스탬프를 쓴다. */
+ ['expense','income','saving'].forEach(k=>{
+  DB.categories[k]=mergeNameListWithTombstones(DB.categories[k]||[],remoteCats[k]||[],DB.deletedIds,n=>catTombKey(k,n),normName,DB.categoriesOrderAt[k],remoteCatsOrderAt[k]);
+  DB.categoriesOrderAt[k]=Math.max(DB.categoriesOrderAt[k]||0,remoteCatsOrderAt[k]||0);
+ });
  /* ownersOrderAt(moveOwner가 순서만 바꿀 때 찍는 시각, app-evolve cycle411 develop)을 함께 넘겨
   * "멤버십은 그대로인데 순서만 바뀐" 병합에서도 더 최근에 순서를 바꾼 쪽이 이기게 한다 — 안 그러면
   * mergeNameListWithTombstones의 union이 멤버십 변화가 없다고 보고 그대로 로컬의 옛 순서를 돌려줘,
@@ -2930,6 +2941,8 @@ function migrate(){
  DB.nwHistory=DB.nwHistory||[]; /* 순자산 추이: {date,ta,td,nw,byOwner?,byType?} 일별 스냅샷 (updateNwHistory). byOwner는 {owner:{ta,td,byType?}}(귀속별 유형 비중은 app-evolve cycle334 critique/advance로 추가, 그 전 항목엔 없을 수 있음), byType은 {type:amount}(가구 전체 기준, app-evolve cycle310 critique/advance) — 모두 이전 항목엔 없을 수 있음(하위호환) */
  DB.recurrences=(DB.recurrences||[]).map(r=>Object.assign({skip:[],edits:{},endDate:null,autoConfirm:true,confirmedDates:[],shared:false},r,{id:r.id||uid(),active:r.active!==false}));
  DB.categories=DB.categories||{};
+ DB.categoriesOrderAt=DB.categoriesOrderAt||{}; /* moveCat()이 타입별로 순서만 바꿀 때 찍는 시각(ms) — mergeRemoteDataIntoLocal의 mergeNameListWithTombstones가 순서 LWW 기준으로 쓴다. DB.ownersOrderAt(2922행)과 동일한 목적이지만 expense/income/saving 세 타입이 독립 배열이라 타입별로 따로 둔다(app-evolve cycle411 critique/advance) */
+ ['expense','income','saving'].forEach(k=>{DB.categoriesOrderAt[k]=DB.categoriesOrderAt[k]||0});
  DB.catIcon=DB.catIcon||{}; /* '타입:이름' → 아이콘 키 (선택). 없으면 기본 아이콘 */
  DB.catVar=DB.catVar||{};   /* '타입:이름' → true (변동 카테고리: 매달 실제 금액 입력) */
  DB.catBudgetRollover=DB.catBudgetRollover||{}; /* 'expense:이름' → true (예산 이월 opt-in, 기본 false=하위호환) — budgetForMonthWithCarry()가 조회 */
@@ -9360,6 +9373,7 @@ function moveCat(k,i,dir){
  const arr=movedCatOrder(DB.categories[k],i,dir);
  if(!arr)return;
  DB.categories[k]=arr;
+ DB.categoriesOrderAt=DB.categoriesOrderAt||{};DB.categoriesOrderAt[k]=Date.now(); /* 멤버십은 그대로인 "순서만" 바뀐 변경 — mergeNameListWithTombstones가 클라우드 병합에서 이 시각을 LWW 기준으로 써, 아직 순서를 안 바꾼 다른 기기와 동기화해도 이 순서가 조용히 되돌아가지 않게 한다(app-evolve cycle411 critique/advance, moveOwner/DB.ownersOrderAt과 동일 패턴) */
  save();openCatManage(k)}
 /* 삭제될 카테고리를 참조하는 '활성' 반복거래를 찾는다 — activeRecsForAssets(2334)와 같은 이유:
    반복거래는 과거 기록이 아니라 계속 새 항목을 만들어내는 생성기라, 카테고리 삭제 후에도

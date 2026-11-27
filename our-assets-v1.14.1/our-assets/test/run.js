@@ -25206,6 +25206,56 @@ test('mergeRemoteDataIntoLocal: 아직 순서를 안 바꾼 기기가 보낸 옛
   assert.deepStrictEqual(sandbox.DB.owners, ['배우자', '나', '공용'], 'local이 더 최근에 moveOwner를 했으면 remote의 옛 순서로 덮이면 안 됨');
   assert.strictEqual(sandbox.DB.ownersOrderAt, 5000);
 });
+/* DB.owners와 같은 클래스의 공백을 DB.categories[k]에도 적용(cycle411 critique/advance) — categories는
+ * expense/income/saving 세 개의 독립 배열이라, 한 타입의 재정렬이 다른 타입의 병합 결과에 영향을
+ * 주지 않는 격리까지 함께 검증한다(공유 단일 숫자였다면 깨졌을 설계 의도). */
+test('mergeRemoteDataIntoLocal: 다른 기기가 moveCat으로 바꾼 카테고리 순서가 동기화 후 조용히 되돌아가지 않는다(cycle411)', () => {
+  // 기기B(local): expense 순서를 안 건드림(categoriesOrderAt.expense=0). 기기A(remote): moveCat으로 '교통'을 앞으로 옮기고 push(더 최신)
+  sandbox.DB = minimalMergeDB({
+    catsV2: true,
+    categories: { expense: ['식비', '교통'], income: [], saving: [] },
+    categoriesOrderAt: { expense: 0, income: 0, saving: 0 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    categories: { expense: ['교통', '식비'], income: [], saving: [] },
+    categoriesOrderAt: { expense: 5000, income: 0, saving: 0 },
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(j(sandbox.DB.categories.expense), ['교통', '식비'], '멤버십이 같아도 더 최근에 바뀐 remote 순서를 따라야 함');
+  assert.strictEqual(sandbox.DB.categoriesOrderAt.expense, 5000, '병합 후에도 "이긴" 순서변경 시각을 들고 있어야 다음 병합에서도 기준으로 쓸 수 있음');
+});
+test('mergeRemoteDataIntoLocal: 아직 순서를 안 바꾼 기기가 보낸 카테고리의 옛 순서는 이미 moveCat을 한 local 순서를 덮지 않는다', () => {
+  sandbox.DB = minimalMergeDB({
+    catsV2: true,
+    categories: { expense: ['교통', '식비'], income: [], saving: [] },
+    categoriesOrderAt: { expense: 5000, income: 0, saving: 0 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    categories: { expense: ['식비', '교통'], income: [], saving: [] },
+    categoriesOrderAt: { expense: 0, income: 0, saving: 0 },
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(j(sandbox.DB.categories.expense), ['교통', '식비'], 'local이 더 최근에 moveCat을 했으면 remote의 옛 순서로 덮이면 안 됨');
+  assert.strictEqual(sandbox.DB.categoriesOrderAt.expense, 5000);
+});
+test('mergeRemoteDataIntoLocal: 한 타입(income)만 재정렬해도 다른 타입(expense/saving)의 병합 순서에는 영향이 없다(타입별 독립 타임스탬프 설계 검증)', () => {
+  // income만 remote가 더 최신(5000) — expense/saving은 양쪽 다 0이라 local 기준 유지가 맞다.
+  // 공유 단일 숫자였다면 income의 5000이 expense/saving 비교에도 새어나가 엉뚱하게 remote가 이겼을 상황.
+  sandbox.DB = minimalMergeDB({
+    catsV2: true,
+    categories: { expense: ['식비', '교통'], income: ['급여', '용돈', sandbox.ADJUST_CAT], saving: ['적금', '청약'] },
+    categoriesOrderAt: { expense: 0, income: 0, saving: 0 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    categories: { expense: ['교통', '식비'], income: ['용돈', '급여', sandbox.ADJUST_CAT], saving: ['청약', '적금'] },
+    categoriesOrderAt: { expense: 0, income: 5000, saving: 0 },
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(j(sandbox.DB.categories.income), ['용돈', '급여', sandbox.ADJUST_CAT], 'income은 remote가 더 최신이라 remote 순서를 따라야 함(ADJUST_CAT은 양쪽에 이미 있어 migrate()가 추가로 건들지 않음)');
+  assert.deepStrictEqual(j(sandbox.DB.categories.expense), ['식비', '교통'], 'expense는 양쪽 다 0(동률)이라 local 순서가 그대로 유지돼야 함');
+  assert.deepStrictEqual(j(sandbox.DB.categories.saving), ['적금', '청약'], 'saving도 양쪽 다 0(동률)이라 local 순서가 그대로 유지돼야 함');
+  assert.deepStrictEqual(j(sandbox.DB.categoriesOrderAt), { expense: 0, income: 5000, saving: 0 }, '이긴 타입만 타임스탬프가 올라가고 나머지 타입은 영향받지 않아야 함');
+});
 test('mergeRemoteDataIntoLocal: DB.ownerBudgets가 비어도(양쪽 모두 없음) 예외 없이 빈 객체로 남는다', () => {
   sandbox.DB = minimalMergeDB({ owners: [] });
   assert.doesNotThrow(() => sandbox.mergeRemoteDataIntoLocal({ owners: [], deletedIds: {} }));
@@ -37658,6 +37708,29 @@ test('moveCat: 경계(맨 위를 위로, 맨 아래를 아래로)에서는 아�
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '교통'], '경계에서는 순서가 바뀌면 안 됨');
   sandbox.moveCat('expense', 1, 1);
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '교통'], '경계에서는 순서가 바뀌면 안 됨');
+});
+/* moveOwner/DB.ownersOrderAt(cycle411 develop)과 동일한 클래스의 공백을 categories에도 적용
+ * (cycle411 critique/advance) — owners는 단일 배열이라 숫자 하나면 됐지만, categories는
+ * expense/income/saving이 서로 독립 배열이라 타입별로 독립된 DB.categoriesOrderAt[k]를 쓴다. */
+test('moveCat: 순서를 바꾸면 DB.categoriesOrderAt[k](멤버십 변화 없는 순서변경 LWW 기준, cycle411)을 현재 시각으로 찍는다', () => {
+  setupCatManageDB();
+  sandbox.DB.categoriesOrderAt = { expense: 1000, income: 1000, saving: 1000 };
+  sandbox.moveCat('expense', 0, 1);
+  assert.ok(sandbox.DB.categoriesOrderAt.expense > 1000, 'moveCat은 mergeRemoteDataIntoLocal의 순서 LWW가 쓸 수 있도록 categoriesOrderAt[k]를 갱신해야 함');
+  assert.strictEqual(sandbox.DB.categoriesOrderAt.income, 1000, '손대지 않은 다른 타입(income)의 타임스탬프는 그대로여야 함');
+  assert.strictEqual(sandbox.DB.categoriesOrderAt.saving, 1000, '손대지 않은 다른 타입(saving)의 타임스탬프는 그대로여야 함');
+});
+test('moveCat: 경계 가드로 아무것도 안 바뀌면 DB.categoriesOrderAt[k]도 그대로 둔다', () => {
+  setupCatManageDB();
+  sandbox.DB.categoriesOrderAt = { expense: 1000, income: 1000, saving: 1000 };
+  sandbox.moveCat('expense', 0, -1);
+  assert.strictEqual(sandbox.DB.categoriesOrderAt.expense, 1000, '실제로 순서가 안 바뀌면 순서변경 시각도 갱신되면 안 됨');
+});
+test('moveCat: DB.categoriesOrderAt이 아직 없어도(마이그레이션 전 등) 터지지 않고 새로 만들어 찍는다', () => {
+  setupCatManageDB();
+  assert.strictEqual(sandbox.DB.categoriesOrderAt, undefined);
+  assert.doesNotThrow(() => sandbox.moveCat('expense', 0, 1));
+  assert.ok(sandbox.DB.categoriesOrderAt.expense > 0);
 });
 
 /* ---------- 카테고리 관리 선택모드(ST.catSel) — 거래내역/전체내역/자산목록/반복거래/목표관리 5곳이
