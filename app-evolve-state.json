@@ -1,15 +1,12 @@
 {
   "cycle": 411,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "DB.categories[k] 순서 변경(moveCat)이 클라우드 동기화 시 되돌아가는 버그 수정 — cycle411이 DB.owners/moveOwner에서 고친 것과 동일한 클래스를 categories에 적용",
+    "why": "moveCat(k,i,dir)(index.html:9359-9363)은 moveOwner와 완전히 같은 구조(movedCatOrder로 인접교환 → DB.categories[k]=arr;save();openCatManage(k))인데 순서 변경 시각을 전혀 기록하지 않고, mergeRemoteDataIntoLocal의 categories 병합 호출(index.html:1776, [\"expense\",\"income\",\"saving\"].forEach)도 orderAt 파라미터 없이 mergeNameListWithTombstones를 호출한다. 멤버십이 안 바뀌면 union은 로컬의 옛 순서를 그대로 돌려주므로, 기기A가 moveCat으로 카테고리 순서를 바꿔 push해도 아직 순서를 안 바꾼 기기B가 나중에 당겨받으면 A의 순서변경이 조용히 사라지고, 그 뒤 B가 다시 push하면 클라우드의 올바른 순서까지 덮어쓴다. cycle411 develop이 이 정확한 공백을 owners에서 고치며 \"categories도 구조적으로 동일한 공백이 있으나 future cycle 후보로 기록\"이라 명시해둔 항목.",
+    "approach": "mergeNameListWithTombstones 함수 자체(logic.js:578, cycle411이 이미 선택적 localOrderAt/remoteOrderAt LWW 파라미터를 추가)는 변경하지 않고 그대로 재사용한다. owners는 단일 배열+단일 숫자(DB.ownersOrderAt)였지만 categories는 expense/income/saving 세 개의 독립 배열이므로, 공유 단일 숫자를 쓰면 한 타입의 재정렬이 다른 두 타입의 비교 타임스탬프까지 덮어써 잘못된 승자를 고를 위험이 있다 — 반드시 타입별 독립 타임스탬프 DB.categoriesOrderAt={expense:0,income:0,saving:0} 객체로 간다(migrate()에서 각 키 기본값 0 보장, 기존 데이터에 필드가 없어도 안전). moveCat(k,i,dir)이 movedCatOrder가 null이 아닌 실제 교환을 했을 때만(경계 no-op 제외) DB.categoriesOrderAt[k]=Date.now() 스탬프. mergeRemoteDataIntoLocal의 categories forEach 병합 호출에 DB.categoriesOrderAt[k]/remoteData.categoriesOrderAt&&remoteData.categoriesOrderAt[k]를 타입별로 넘기고, 병합 후 각 타입별로 Math.max(local,remote)로 DB.categoriesOrderAt[k]를 갱신해 다음 병합의 기준으로 넘긴다. 테스트는 cycle411의 owners 테스트 패턴(moveOwner가 스탬프를 찍는지/경계에서 안 찍는지, mergeRemoteDataIntoLocal 종단에서 remote가 최신이면 remote 순서가 이기고 local이 최신이면 안 덮어쓰는지)을 moveCat/categories에 맞게 타입별로 재사용하고, 추가로 \"한 타입(예: income)만 재정렬해도 다른 타입(expense/saving)의 병합 결과에는 영향이 없다\"는 격리 테스트를 반드시 포함해 설계 의도(타입별 독립 타임스탬프)를 직접 검증한다. 범위 제외: DB.owners/moveOwner 자체 재변경(이미 완료), mergeNameListWithTombstones 함수 시그니처 변경, moveAsset/moveGoal(id 기반 order 필드를 쓰는 다른 구조라 이 동기화 공백과 무관), CSV import 자산/목표/반복거래 경로 누락, share_target 다중사진 슬롯, duplicateRec() active 강제 등 cycle411 develop이 함께 발견했으나 범위 밖으로 명시한 나머지 항목."
+  },
   "history": [
-    {
-      "cycle": 406,
-      "phase": "critique",
-      "timestamp": "2026-11-26T05:00:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 cycle340-406 전체 배제 목록(twGuard 감사 전체, confirmSheet 더블탭 가드, assetQtyLog edit, planTransfer/planSplitTransfer undo, auth_expired 분류, goal moveGoal, 부채 상환 debtAmortSuffix, 가계부 아카이브 인지(cycle404), 예산 CSV ownerBudgets 포함, 백업 복원 미리보기, 문의하기 메모수정 undo(cycle406), 접근성/데이터클램프/메모자동완성/전역에러배너/seenAt정체/연간결산아카이브/CSV import v1한계/공유계정인증재설계/렌더성능/CDN SRI/모놀리식구조개편/다중통화/세무리포트/부채엔지니어링/클라우드병합재설계/esc XSS/OS알림/할부기능/태그시스템/반복거래순서변경/카테고리일괄merge 등 기각 항목, 그리고 cycle404/405가 명시적으로 범위 제외하며 '아직 열려있는 후보'로 남긴 항목들: openSpendAnalysis/openIncomeAnalysis 아카이브 안내·캘린더셀 시각스타일링·월네비게이션 경계제한·archiveMonthPicked 문구변경·전체내역검색 날짜범위·반복거래 일괄순서변경·목표 다중선택 일괄순서변경·goal.order 백필·자동토큰갱신·인증아키텍처변경·카카오경로변경·클라우드merge화면·부분복원·구버전백업시각역산)를 주고 전략적 재검토시킴. 캘린더 셀 시각 스타일링(순수 코스메틱, 오해를 유발하지 않아 덜 급함), 반복거래/목표 일괄 순서변경(이미 단건 reorder 있어 편의 기능일 뿐 잘못된 데이터 표시 없음) 두 후보를 검토 후 기각하고, openSpendAnalysis(index.html:8943-8996)/openIncomeAnalysis(index.html:7780-7800)가 ST.ledger.y/m 기준으로 spendByCategory/incomeByCategory를 보여주는데, '오래된 데이터 정리'(archiveTxnsBefore)로 그 달 거래가 영구 삭제되면 그냥 빈 rows=[]를 반환해 화면이 칭찬성 빈 상태 문구('아직 쓴 게 없어요 👏 · 이대로만 가면 완벽해요', index.html:8980 / '아직 들어온 수입이 없어요', index.html:7793)를 보여줘 사용자가 실제로는 지워진 과거 달을 '그 달에 한 푼도 안 썼다/못 벌었다'로 오해하게 되는 공백을 최우선으로 선정 — 날짜별 빠른보기(index.html:6450-6451), 가계부 월별 화면 ledArchiveNoticeHtml(index.html:6467-6468, cycle404), 연간 리뷰 archiveNoticeHtml(index.html:8918-8940, cycle399) 세 곳에서 이미 해결한 것과 동일한 문제 클래스이며, cycle404/405가 명시적으로 범위 밖으로 미뤄둔 후보였다. pending_advance_plan에 monthIsArchived(logic.js:727, 기존 함수 재사용) 기반 안내 카드 삽입 + 칭찬 문구 억제 + 예산/트렌드 배지 숨김 + 테스트 2~4건 계획 저장(전체내역·다른 화면 확장·아카이브 로직 자체 변경·금액 추정은 범위 제외로 명시). node test/run.js 4039/4039 통과 확인(서브에이전트가 코드 변경 전 베이스라인으로 확인, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 406,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-27T00:30:00.000Z",
       "summary": "develop(cycle411) 커밋 34f63b2(moveOwner 순서 변경이 클라우드 동기화 시 되돌아가던 버그 수정 — mergeNameListWithTombstones에 선택적 localOrderAt/remoteOrderAt LWW 파라미터 추가, DB.ownersOrderAt 스탬프/병합)를 검토. mergeNameListWithTombstones(logic.js) diff를 직접 추적: localOrderAt/remoteOrderAt 둘 다 없거나 remoteOrderAt==null이면 useRemoteOrder가 항상 false로 떨어져 기존 동작(local 기준)과 100% 동일함을 확인(categories 호출부가 실제로 이 경로를 그대로 타는 것도 diff로 재확인) — 하위호환 보장. remoteOrderAt>localOrderAt인 '다른 기기가 더 최근에 moveOwner'/반대/동률(local 유지)/멤버십 추가와 순서LWW 동시발생/톰스톤과 순서LWW 동시발생의 다섯 경우를 수식으로 직접 재현해 테스트 기대값과 일치함을 확인. migrate()의 DB.ownersOrderAt=DB.ownersOrderAt||0 기본값, moveOwner()가 movedCatOrder()(index.html:5529)의 null 반환(경계 no-op) 시 일찍 return해 스탬프를 안 찍는 경로, mergeRemoteDataIntoLocal()이 병합 후 Math.max로 승자의 ownersOrderAt을 보존해 다음 병합 기준으로 넘기는 것도 실제 코드로 확인. 구버전 원격 데이터(ownersOrderAt 필드 자체가 없음)를 받아도 remoteOrderAt이 undefined→useRemoteOrder=false로 안전하게 폴백해 크래시나 의도치 않은 순서 덮어쓰기가 없음도 확인. node test/run.js를 독립적으로 재실행해 4083/4083 통과 재확인, node --check(logic.js/sw.js/test/run.js) 통과. 실제 버그는 발견하지 못했으나, history 배열 자체가 cycle411 develop 때 맨 앞(unshift)에 잘못 추가돼 나머지 20개 항목(406~410, 오름차순)과 순서가 뒤섞여 있던 기록 버그를 발견해 이번 커밋에서 함께 정리(오래된 2건 406 develop/406 review를 앞에서 잘라내고, 전체를 오름차순으로 재정렬 — 앱 코드는 변경 없음, state.json 북키핑만). 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 411,
+      "phase": "critique",
+      "timestamp": "2026-11-27T01:08:30.059Z",
+      "summary": "cycle411 develop이 moveOwner 동기화 버그를 고치며 범위 밖으로 명시해둔 future 후보(DB.categories[k] 순서의 동일한 동기화 공백)를 이번 critique의 1차 후보로 직접 검증. index.html:1776(mergeRemoteDataIntoLocal의 categories forEach 병합 호출)이 orderAt 파라미터 없이 mergeNameListWithTombstones를 호출하고 있고, moveCat(k,i,dir)(index.html:9359-9363)이 moveOwner와 완전히 동일한 구조(movedCatOrder로 교환 → DB.categories[k]=arr;save();openCatManage(k))이면서 어떤 순서 타임스탬프도 찍지 않음을 grep+직독으로 재확인 — DB.categoriesOrderAt 필드 자체가 코드에 없음. 이는 cycle411 develop이 owners에서 고친 것과 정확히 같은 버그 클래스: 기기A가 카테고리 순서를 바꿔 push해도, 멤버십이 안 바뀌었으면 union이 그대로 돌아가 아직 순서를 안 바꾼 기기B가 나중에 당겨받으면 A의 순서변경이 조용히 사라지고, B가 재push하면 클라우드의 올바른 순서까지 덮어쓴다. 다른 후보(assetQtyLog realizedGain 재계산 검증강화는 데이터클램프 영역과 겹쳐 기각, CSV import 자산/목표/반복거래 경로 누락은 cycle411 develop이 이미 \"의도된 범위일 가능성\"으로 분류해 재검토 가치 낮음)는 검토 후 보류. categories는 owners와 달리 expense/income/saving 세 개의 독립 배열이라, owners처럼 공유 단일 숫자(DB.ownersOrderAt)를 그대로 재사용하면 한 타입의 재정렬이 다른 두 타입의 비교 타임스탬프까지 덮어써 엉뚱한 승자를 고를 위험이 있음을 설계 단계에서 미리 확인 — 반드시 타입별 독립 타임스탬프(DB.categoriesOrderAt={expense,income,saving})로 가야 함을 pending_advance_plan에 명시. mergeNameListWithTombstones 함수 자체(cycle411이 이미 선택적 localOrderAt/remoteOrderAt 파라미터를 추가해둠)는 재사용만 하고 변경하지 않음. node test/run.js 4083/4083 통과 확인(코드 변경 없음, 베이스라인 재확인). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
