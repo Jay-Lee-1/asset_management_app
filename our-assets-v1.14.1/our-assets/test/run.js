@@ -23630,6 +23630,22 @@ test('setRate: AMOUNT_MAX 당일(경계값)은 그대로 저장되고, 그 이�
   sandbox.setRate('fx', 'EUR', '1,500.25');
   assert.strictEqual(sandbox.DB.rates.fx.EUR, 1500.25);
 });
+/* ---------- setRate: toggleAutoRates/toggleConfirmTransfers(cycle413), toggleCatVarUI/
+ * toggleBudgetRolloverUI(cycle412), setBigMin(cycle414), ackGoalAchieved/ackDebtPayoff(cycle409)와
+ * 같은 twGuard 감사 공백 — openRateSheet()는 메뉴(설정) 시트라 #nav와 동일한 구조적 틈으로 튜토리얼
+ * 중에도 그대로 열리는데, 같은 시트의 "10분마다 자동 갱신" 토글은 cycle413에서 twGuard가 막아주는
+ * 반면 시세값 수동 입력 필드(onchange=setRate)만 그때 빠져 DB.rates에 가드 없이 영구 저장됐다
+ * (app-evolve cycle416 develop). ---------- */
+test('[실행형] setRate: 튜토리얼 모드 중에는 twGuard가 막아서 DB.rates도 ratesUpdatedAt도 바뀌지 않는다', () => {
+  sandbox.DB = { rates: { fx: { USD: 1350 }, stocks: {}, goldPerG: 0, ratesUpdatedAt: 0 } };
+  sandbox.TWi = 0;
+  sandbox.lastToast = null;
+  sandbox.setRate('fx', 'USD', '1,999');
+  assert.strictEqual(sandbox.DB.rates.fx.USD, 1350, '튜토리얼 중에는 시세값이 바뀌면 안 됨');
+  assert.strictEqual(sandbox.DB.rates.ratesUpdatedAt, 0, '튜토리얼 중에는 병합 기준 타임스탬프도 찍히면 안 됨');
+  assert.ok(sandbox.lastToast.includes('튜토리얼'), 'twGuard의 안내 토스트만 떠야 함');
+  sandbox.TWi = -1;
+});
 test('saveAsset: 새 종목코드를 등록해도 더 이상 DB.rates.stocks를 0으로 미리 채우지 않고, 미확인 상태라 즉시 시세 동기화를 부른다', () => {
   sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
   sandbox.asDraft = { type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 };

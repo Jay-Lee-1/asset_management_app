@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.564';
+const APP_VERSION='1.47.565';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -10024,7 +10024,15 @@ function openRateSheet(){
   <div style="height:16px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
 }
 
-function setRate(kind,key,val){const n0=Number(String(val).replace(/[^0-9.]/g,''))||0;
+/* toggleAutoRates/toggleConfirmTransfers(cycle413), toggleCatVarUI/toggleBudgetRolloverUI(cycle412),
+ * setBigMin(cycle414), ackGoalAchieved/ackDebtPayoff(cycle409)와 같은 twGuard 공백 — openRateSheet()는
+ * 메뉴(설정)의 시트라 #nav와 동일한 '구조적 틈'(twStage 오버레이 밖)으로 튜토리얼 중에도 그대로 열려,
+ * 바로 위 토글(10분마다 자동 갱신)은 cycle413에서 twGuard가 막아주는데 같은 시트의 시세값 수동 입력
+ * 필드(금/환율/주식/코인 현재가, onchange=setRate)만 그때 빠져 DB.rates에 그대로 영구 저장됐다
+ * (app-evolve cycle416 develop). */
+function setRate(kind,key,val){
+ if(twGuard())return;
+ const n0=Number(String(val).replace(/[^0-9.]/g,''))||0;
  /* AMOUNT_MAX(2038행 주석)가 상한으로 거는 경로 목록(fmtAmt/sanitizeAmount/syncAssetInputs/
   * csvRowToImportTxn/taPctInput)에 시세 연동 관리 시트(openRateSheet)의 수동 입력 필드(금/환율/
   * 주식/코인 현재가)가 빠져 있었다 — 이 필드들은 fmtAmt 대신 onchange=setRate(...,this.value)로
