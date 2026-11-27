@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.556';
+const APP_VERSION='1.47.557';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -9231,13 +9231,20 @@ function catIconOf(type,name){return (DB.catIcon&&DB.catIcon[catKey(type,name)])
 function isVarCat(type,name){return !!(DB.catVar&&DB.catVar[catKey(type,name)])} /* 변동 카테고리 여부 */
 function setCatVar(type,name,on){DB.catVar=DB.catVar||{};if(on)DB.catVar[catKey(type,name)]=true;else delete DB.catVar[catKey(type,name)]}
 function recIsVarying(r){return (r.type==='expense'||r.type==='income')&&isVarCat(r.type,r.category)}
-function toggleCatVarUI(k,i,btn){const c=DB.categories[k][i];const on=!isVarCat(k,c);setCatVar(k,c,on);save();
+/* toggleCatVarUI/toggleBudgetRolloverUI는 카테고리 관리 화면에 '선택모드' 없이도 바로 보이는
+ * 건당 토글(varpill/rollPill)인데, 같은 설정을 일괄로 켜고 끄는 doBulkCatVarToggle/
+ * doBulkRolloverToggle(14046/14071행)만 twGuard를 검사하고 건당 토글 둘은 빠져 있었다 —
+ * ackGoalAchieved/ackDebtPayoff가 빠져 있던 것과 같은 twGuard 감사 공백(app-evolve cycle409
+ * develop). 카테고리 관리는 #nav와 마찬가지로 twStage 오버레이 밖의 실제 화면이라 튜토리얼
+ * 중에도 늘 열 수 있어, 튜토리얼을 둘러보다 이 핀pill을 탭하면 "저장 안 됨" 안내 없이
+ * DB.catVar/DB.catBudgetRollover가 그대로 영구 기록됐다(app-evolve cycle412 develop). */
+function toggleCatVarUI(k,i,btn){if(twGuard())return;const c=DB.categories[k][i];const on=!isVarCat(k,c);setCatVar(k,c,on);save();
  if(btn){btn.classList.toggle('on',on);btn.textContent=on?'변동':'고정';btn.setAttribute('aria-pressed',on)}else openCatManage(k)}
 /* 예산 이월(catBudgetRollover) opt-in 토글 — isVarCat/setCatVar와 동일한 flat map 패턴이지만
  * budgetHistory처럼 지출(expense) 카테고리 전용이라 type을 받지 않고 'expense'로 고정한다. */
 function isBudgetRolloverCat(name){return !!(DB.catBudgetRollover&&DB.catBudgetRollover[catKey('expense',name)])}
 function setBudgetRolloverCat(name,on){DB.catBudgetRollover=DB.catBudgetRollover||{};if(on)DB.catBudgetRollover[catKey('expense',name)]=true;else delete DB.catBudgetRollover[catKey('expense',name)]}
-function toggleBudgetRolloverUI(i,btn){const c=DB.categories.expense[i];const on=!isBudgetRolloverCat(c);setBudgetRolloverCat(c,on);save();
+function toggleBudgetRolloverUI(i,btn){if(twGuard())return;const c=DB.categories.expense[i];const on=!isBudgetRolloverCat(c);setBudgetRolloverCat(c,on);save();
  if(btn){btn.classList.toggle('on',on);btn.textContent=on?'이월':'이월 안함';btn.setAttribute('aria-pressed',on)}else openCatManage('expense')}
 function catGlyph(type,name,size,fallbackIcon){
  const key=catIconOf(type,name)||CATICON[name]||fallbackIcon||'tag';

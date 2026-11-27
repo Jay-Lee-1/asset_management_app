@@ -37369,6 +37369,40 @@ test('toggleCatVarUI: 버튼 클릭 시 상태를 토글하고 DOM(classList/tex
   assert.strictEqual(btn.textContent, '고정');
   assert.strictEqual(btn.ariaPressed, false, '토글 끌 때 aria-pressed가 갱신돼야 함');
 });
+/* ackGoalAchieved/ackDebtPayoff(cycle409)와 같은 twGuard 감사 공백: 카테고리 관리의 건당
+ * 토글(varpill/rollPill)은 doBulkCatVarToggle/doBulkRolloverToggle(일괄 토글)과 달리 twGuard를
+ * 전혀 검사하지 않아, 튜토리얼 중에도 DB.catVar/DB.catBudgetRollover가 영구 기록됐다
+ * (app-evolve cycle412 develop). */
+test('[실행형] toggleCatVarUI: 튜토리얼 모드 중에는 twGuard가 막아서 isVarCat도 DOM도 바뀌지 않는다', () => {
+  setupCatManageDB();
+  sandbox.TWi = 0;
+  const btn = { classList: { toggle(cls, on) { this.on = !!on; }, on: false }, textContent: '고정', ariaPressed: null, setAttribute(name, v) { if (name === 'aria-pressed') this.ariaPressed = v; } };
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.toggleCatVarUI('expense', 0, btn);
+  assert.strictEqual(sandbox.isVarCat('expense', '식비'), false, '튜토리얼 중에는 변동 플래그가 켜지면 안 됨');
+  assert.ok(!saveCalled, '튜토리얼 중에는 save()가 호출되면 안 됨');
+  assert.strictEqual(btn.classList.on, false, '튜토리얼 중에는 버튼 DOM도 갱신되면 안 됨');
+  assert.strictEqual(btn.textContent, '고정');
+  sandbox.save = origSave;
+  sandbox.TWi = -1;
+});
+test('[실행형] toggleBudgetRolloverUI: 튜토리얼 모드 중에는 twGuard가 막아서 isBudgetRolloverCat도 DOM도 바뀌지 않는다', () => {
+  setupCatManageDB();
+  sandbox.TWi = 0;
+  const btn = { classList: { toggle(cls, on) { this.on = !!on; }, on: false }, textContent: '이월 안함', ariaPressed: null, setAttribute(name, v) { if (name === 'aria-pressed') this.ariaPressed = v; } };
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.toggleBudgetRolloverUI(0, btn);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), false, '튜토리얼 중에는 이월 플래그가 켜지면 안 됨');
+  assert.ok(!saveCalled, '튜토리얼 중에는 save()가 호출되면 안 됨');
+  assert.strictEqual(btn.classList.on, false, '튜토리얼 중에는 버튼 DOM도 갱신되면 안 됨');
+  assert.strictEqual(btn.textContent, '이월 안함');
+  sandbox.save = origSave;
+  sandbox.TWi = -1;
+});
 /* 구분(지출/수입/저축) 세그먼트가 class="on"만으로 선택 상태를 표시해 스크린리더가 어떤 탭이
  * 선택돼 있는지 알 수 없던 공백 — app-evolve cycle147 critique/advance. */
 test('openCatManage: 구분 세그먼트가 현재 탭(kind)과 일치하는 버튼에만 aria-pressed="true"를 준다', () => {

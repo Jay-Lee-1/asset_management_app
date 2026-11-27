@@ -1,15 +1,8 @@
 {
   "cycle": 412,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 407,
-      "phase": "develop",
-      "timestamp": "2026-11-26T08:00:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 위임해 조사. budgetForMonth/setBudgetFrom과 budgetForMonthOwner/setBudgetFromOwner(귀속별 예산 오버라이드, cycle398)가 공유하는 순수 핵심인 logic.js의 budgetHistoryValueAt(h,y,m)/setBudgetHistoryAt(h,y,m,amount)가, 같은 섹션의 다른 순수 함수들(budgetProgress/budgetCarry/budgetForMonthEffective/projectedMonthSpend)과 달리 한 번도 직접 호출하는 테스트 없이 전부 index.html 래퍼(DB.budgetHistory 전역 경유)를 통해서만 간접 검증되고 있던 공백을 발견 — `for fn in $(grep -oP '^function \\K\\w+' logic.js); do grep -c \"\\b$fn\\b\" test/run.js; done`으로 전체 logic.js 함수 중 test/run.js에 0회 언급된 유일한 함수임을 확인. 이 둘 자체에 회귀가 생기면(예: budgetHistoryValueAt의 선형 스캔이 전제하는 'from 오름차순' 불변식이 setBudgetHistoryAt에서 깨짐) 래퍼 레벨 테스트만으로는 정확한 원인을 못 잡을 수 있는 실제 커버리지 공백. test/run.js의 기존 budgetForMonth/setBudgetFrom 테스트 블록 바로 뒤(budgetForMonthOwner 블록 앞)에 budgetHistoryValueAt/setBudgetHistoryAt를 배열만으로(DB 전역 없이) 직접 호출하는 테스트 7건 추가: h가 undefined/null/[]면 0, 가장 이른 from 이전 조회시 0, from 달 이후 적용 유지, 여러 항목 중 조회 달 이하 최신 from 선택, 빈 배열에 삽입, 같은 달 재기록시 덮어쓰기(중복 생성 안함), from 비순차 삽입시 오름차순 재정렬(budgetHistoryValueAt이 전제하는 불변식 직접 검증). vm 샌드박스 객체의 cross-realm Object prototype 불일치로 deepStrictEqual이 거짓 실패하는 기존에 문서화된 이슈(qtyCaretAfterFilter와 동일 원인)를 만나 필드별 strictEqual 비교로 수정. logic.js/index.html/sw.js 자체는 변경 없음(테스트 전용 추가라 APP_VERSION/CACHE 버전 변경 불필요). 오케스트레이터가 diff를 직접 리뷰(budgetHistoryValueAt/setBudgetHistoryAt 실제 정의, from<=key 선형스캔과 else break가 정렬 불변식에 의존함을 logic.js:1090-1107에서 재확인)하고 node --check(logic.js/test/run.js), node test/run.js 재실행 4043->4050/4050 통과를 재검증한 뒤 커밋. 코드 동작 변경 없음, 테스트만 추가.",
-      "commit": null
-    },
     {
       "cycle": 407,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-27T01:30:00.000Z",
       "summary": "critique(cycle411)의 계획대로 DB.categories[k](moveCat) 순서 변경이 클라우드 동기화 시 되돌아가던 버그를 고쳤다 — cycle411 develop이 DB.owners/moveOwner에서 고친 것과 정확히 같은 버그 클래스를 categories에 적용. owners는 단일 배열이라 공유 숫자 하나(DB.ownersOrderAt)로 충분했지만, categories는 expense/income/saving 세 개의 독립 배열이라 critique가 설계 단계에서 미리 지적한 대로 타입별 독립 타임스탬프 DB.categoriesOrderAt={expense,income,saving}로 구현 — migrate()에 DB.categoriesOrderAt=DB.categoriesOrderAt||{} 뒤 세 키 각각 기본값 0 보장(index.html:2932-2934 바로 아래), moveCat(k,i,dir)이 movedCatOrder가 null이 아닌 실제 교환을 했을 때만(경계 no-op은 일찍 return) DB.categoriesOrderAt[k]=Date.now() 스탬프(DB.categoriesOrderAt 자체가 없을 수도 있어 ||{}로 방어), mergeRemoteDataIntoLocal의 categories forEach 병합 호출(index.html:1774-1788)에 DB.categoriesOrderAt[k]/remoteData.categoriesOrderAt[k]를 타입별로 넘기고 병합 후 Math.max로 각 타입의 DB.categoriesOrderAt[k]를 갱신. mergeNameListWithTombstones 함수 자체(logic.js:578)는 cycle411 develop이 이미 선택적 localOrderAt/remoteOrderAt 파라미터를 추가해둬 변경 없이 그대로 재사용. test/run.js에 6건 추가 — moveCat이 DB.categoriesOrderAt[k]를 스탬프하는지/경계에서 안 찍는지/필드가 아직 없어도 안 터지고 새로 만드는지 3건(owners 테스트 패턴을 moveCat/타입별로 재사용), mergeRemoteDataIntoLocal 종단 테스트 2건(remote가 최신이면 remote 순서가 이기고, local이 최신이면 안 덮어씀), 그리고 계획이 명시한 격리 테스트 1건(income만 재정렬해도 expense/saving의 병합 결과·타임스탬프에 영향이 없음 — 공유 단일 숫자였다면 깨졌을 설계 의도를 직접 검증). income 카테고리 테스트에서 migrate()가 ADJUST_CAT('잔액 조정')을 자동으로 income에 보충하는 기존 동작(index.html:2958)과 처음 충돌해 FAIL했으나, 로직 버그가 아니라 테스트 픽스처가 ADJUST_CAT을 안 넣은 문제였음을 직접 diff로 확인하고 양쪽 배열에 ADJUST_CAT을 포함시켜 수정. node test/run.js 4083->4089/4089 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 5개(519/1274/0/977194/1770자) 전부 new vm.Script() 파싱 통과. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.555->1.47.556, sw.js CACHE v822->v823. 범위 제외(계획대로): DB.owners/moveOwner 자체 재변경(이미 완료), mergeNameListWithTombstones 함수 시그니처 변경, moveAsset/moveGoal(다른 구조), CSV import 자산/목표/반복거래 경로 누락, share_target 다중사진 슬롯, duplicateRec() active 강제. pending_advance_plan null로 비움, phase를 develop으로 회전, cycle 412로 증가.",
+      "commit": null
+    },
+    {
+      "cycle": 412,
+      "phase": "develop",
+      "timestamp": "2026-11-27T03:11:10.281Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 조사. 카테고리 관리 화면의 건당 토글 핀(toggleCatVarUI: 변동/고정, toggleBudgetRolloverUI: 이월/이월 안함)이 같은 설정의 일괄 토글(doBulkCatVarToggle/doBulkRolloverToggle, index.html:14053/14078)과 달리 twGuard()를 전혀 검사하지 않던 공백을 발견 — ackGoalAchieved/ackDebtPayoff(cycle409)와 동일한 twGuard 감사 공백 클래스. 카테고리 관리 화면은 #nav처럼 twStage 오버레이 밖의 실제 화면이라 튜토리얼 중에도 늘 열 수 있어, 핀을 탭하면 \"저장 안 됨\" 안내 없이 DB.catVar/DB.catBudgetRollover가 그대로 영구 기록됐다(실제 데이터 오염 버그). 두 함수 시작에 if(twGuard())return; 추가(ackGoalAchieved/ackDebtPayoff와 동일 패턴, DB 기록뿐 아니라 버튼 DOM 갱신도 같이 차단). 오케스트레이터가 diff를 직접 리뷰(twActive/twGuard 정의, doBulkCatVarToggle/doBulkRolloverToggle에 이미 twGuard가 있음을 대조 확인)하고 moveAsset/moveCat/moveGoal/moveOwner 등 move류는 재정렬이라 twGuard 없는 게 의도된 설계임을 재확인. test/run.js에 TWi=0(튜토리얼 활성) 상태에서 isVarCat/isBudgetRolloverCat도 안 바뀌고 save()도 버튼 DOM도 안 바뀌는지 확인하는 테스트 2건 추가. node test/run.js 4089->4091/4091 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/977723/1770자) 전부 new Function() 파싱 통과(오케스트레이터가 재검증). index.html/sw.js를 수정했으므로 APP_VERSION 1.47.556->1.47.557, sw.js CACHE v823->v824. 범위 제외: 모든 DB-mutating 함수에 대한 전체 twGuard 재감사(더 큰 별도 사이클 후보로 남김), move류(moveAsset/moveCat/moveGoal/moveOwner) 재정렬은 의도적으로 twGuard 없음(저위험 재정렬).",
       "commit": null
     }
   ]
