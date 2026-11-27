@@ -390,7 +390,7 @@ const FUNCTIONS = [
   // $(...)가 없으면 바로 return하는 얕은 래퍼라(기본 $ 스텁은 'assetBody' 등을 세팅하지 않는 한
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshAllocationHistoryCard', 'refreshInvestGainLossCard',
-  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset',
+  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'resetStaleGoalAchievedAcks', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset',
   // goalWhatIfText/goalWhatIfUpdate: 목표 쪽 what-if 시뮬레이터(app-evolve cycle413 advance) —
   // debtPayoffPtsFor/debtWhatIfText/debtWhatIfUpdate와 완전히 같은 패턴으로, renderGoalForm이
   // goalWhatIfText를 직접 호출하므로 renderGoalForm을 쓰는 이 sandbox에 함께 올라가야 한다.
@@ -22684,6 +22684,80 @@ test('resetStaleDebtPayoffAcks: 리셋 후 다시 완납하면 debtNewlyPaidOff�
   const pts = sandbox.assetBalanceSeries(sandbox.DB.txns, 'd1', sandbox.assetBase(d), -1, sandbox.assetBalSampleDates(sandbox.RANGE_FROM, sandbox.TODAY, 60));
   const p = sandbox.debtPayoffProjection(pts, sandbox.TODAY);
   assert.strictEqual(sandbox.debtNewlyPaidOff(d, p), true, '리셋됐던 ack 덕분에 재완납이 다시 새 완납으로 인정돼야 함');
+});
+
+/* ---------- resetStaleGoalAchievedAcks: resetStaleDebtPayoffAcks(위)와 완전히 같은 역할을 목표
+ * (DB.goals) 쪽에 대응시킨다 — saveGoal()의 achievedAckAt 리셋(cycle256)은 그 목표를 직접 수정
+ * 저장할 때만 일어나는데, networth형 목표는 평범한 거래만으로도(저축을 쓰는 등) saveGoal을 전혀
+ * 거치지 않고 다시 미달성 상태가 될 수 있어, 두 번째 재달성부터 goalNewlyAchieved가 영원히 false를
+ * 돌려주던 공백을 메운다(resetStaleDebtPayoffAcks의 신용카드형 완납→재사용→완납과 동일한 버그
+ * 클래스, app-evolve cycle415 develop). _goalHistCache는 goalHistoryFor()가 참조하는 모듈 스코프
+ * 캐시라 각 테스트 시작마다 수동으로 비운다(위 8134행 등과 동일한 관례). ---------- */
+test('resetStaleGoalAchievedAcks: 순자산이 다시 줄어(achieved=false) 목표는 achievedAckAt이 null로 리셋된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox._goalHistCache.clear();
+  const g = { id: 'g1', type: 'networth', owner: 'all', targetAmount: 1000000, achievedAckAt: 1700000000000 };
+  sandbox.DB = { goals: [g], nwHistory: [{ date: '2026-06-15', nw: 500000 }] }; // 목표(100만원) 미달
+  sandbox.resetStaleGoalAchievedAcks();
+  assert.strictEqual(g.achievedAckAt, null, '다시 미달성 상태가 됐으면 ack이 리셋돼야 함');
+});
+test('resetStaleGoalAchievedAcks: 아직 달성 상태를 유지 중인(achieved=true) 목표는 achievedAckAt을 건드리지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox._goalHistCache.clear();
+  const g = { id: 'g1', type: 'networth', owner: 'all', targetAmount: 1000000, achievedAckAt: 1700000000000 };
+  sandbox.DB = { goals: [g], nwHistory: [{ date: '2026-06-15', nw: 1200000 }] }; // 여전히 목표 초과
+  sandbox.resetStaleGoalAchievedAcks();
+  assert.strictEqual(g.achievedAckAt, 1700000000000, '여전히 달성 상태면 기존 ack을 그대로 둬야 함');
+});
+test('resetStaleGoalAchievedAcks: achievedAckAt이 아예 없는 목표는 애초에 검사하지 않는다(건드릴 것이 없으면 조용히 통과)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox._goalHistCache.clear();
+  const g = { id: 'g1', type: 'networth', owner: 'all', targetAmount: 1000000, achievedAckAt: null };
+  sandbox.DB = { goals: [g], nwHistory: [{ date: '2026-06-15', nw: 500000 }] };
+  sandbox.resetStaleGoalAchievedAcks();
+  assert.strictEqual(g.achievedAckAt, null);
+});
+test('resetStaleGoalAchievedAcks: 리셋된 목표에는 touch()가 호출돼 updatedAt이 갱신되고, 여전히 달성 중인 목표는 호출되지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox._goalHistCache.clear();
+  const reset = { id: 'g1', type: 'networth', owner: 'all', targetAmount: 1000000, achievedAckAt: 1700000000000 };
+  const kept = { id: 'g2', type: 'networth', owner: '나', targetAmount: 1000000, achievedAckAt: 1700000000000 };
+  sandbox.DB = {
+    owners: ['나'],
+    goals: [reset, kept],
+    nwHistory: [{ date: '2026-06-15', nw: 500000, byOwner: { 나: { ta: 1200000, td: 0 } } }], // 전체(all)는 미달, '나'만 여전히 초과
+  };
+  sandbox.resetStaleGoalAchievedAcks();
+  assert.strictEqual(reset.achievedAckAt, null);
+  assert.strictEqual(reset.updatedAt, 'test-updatedAt', '리셋된 목표엔 touch()가 호출돼야 함');
+  assert.strictEqual(kept.achievedAckAt, 1700000000000);
+  assert.strictEqual(kept.updatedAt, undefined, '건드리지 않은 목표엔 touch()가 호출되면 안 됨');
+});
+test('resetStaleGoalAchievedAcks: 연결 자산이 삭제된(goalLinkedAssetGone) asset형 목표는 추세를 알 수 없으므로 ack을 건드리지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox._goalHistCache.clear();
+  const g = { id: 'g1', type: 'asset', linkedAssetId: 'no-such-asset', targetAmount: 1000000, achievedAckAt: 1700000000000 };
+  sandbox.DB = { assets: [], goals: [g], nwHistory: [] };
+  sandbox.resetStaleGoalAchievedAcks();
+  assert.strictEqual(g.achievedAckAt, 1700000000000, '연결 자산이 사라진 걸 "다시 미달성"으로 단정하면 안 됨(goalProgress/debtPayoffProjection과 동일한 원칙)');
+});
+test('resetStaleGoalAchievedAcks: 리셋 후 다시 달성하면 goalNewlyAchieved가 다시 true가 돼 축하 알림이 재발한다(통합 확인)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox._goalHistCache.clear();
+  const g = { id: 'g1', type: 'networth', owner: 'all', targetAmount: 1000000, achievedAckAt: 1700000000000 };
+  sandbox.DB = { goals: [g], nwHistory: [{ date: '2026-06-15', nw: 500000 }] };
+  sandbox.resetStaleGoalAchievedAcks();
+  assert.strictEqual(g.achievedAckAt, null);
+  sandbox._goalHistCache.clear();
+  sandbox.DB.nwHistory = [{ date: '2026-06-15', nw: 1200000 }]; // 다시 모아서 재달성
+  const p = sandbox.goalProgress(g, sandbox.goalHistoryFor(g), sandbox.TODAY);
+  assert.strictEqual(sandbox.goalNewlyAchieved(g, p), true, '리셋됐던 ack 덕분에 재달성이 다시 새 달성으로 인정돼야 함');
+});
+test('startApp()/refreshToday()가 resetStaleDebtPayoffAcks()와 같은 render-refresh 경계에서 resetStaleGoalAchievedAcks()도 호출한다(정적 검사)', () => {
+  const startAppBody = extractFunction('startApp');
+  assert.ok(/resetStaleDebtPayoffAcks\(\);\s*resetStaleGoalAchievedAcks\(\);/.test(startAppBody), 'startApp()이 resetStaleDebtPayoffAcks() 바로 뒤에서 resetStaleGoalAchievedAcks()를 호출하지 않음');
+  const refreshTodayBody = extractFunction('refreshToday');
+  assert.ok(/resetStaleDebtPayoffAcks\(\);resetStaleGoalAchievedAcks\(\);/.test(refreshTodayBody), 'refreshToday()가 resetStaleDebtPayoffAcks() 바로 뒤에서 resetStaleGoalAchievedAcks()를 호출하지 않음');
 });
 
 /* ---------- saveAsset: 동명·동종 자산 중복 차단이 수정(edit)에도 적용되는지 (자산 등록 때만 막고 수정 때는 안 막던 버그) ---------- */
