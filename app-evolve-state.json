@@ -1,15 +1,8 @@
 {
   "cycle": 415,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 410,
-      "phase": "review",
-      "timestamp": "2026-11-26T20:08:10.746Z",
-      "summary": "develop(cycle410) 커밋 8d2119a(normalizeCsvDateCell이 점 뒤 공백 날짜에 시간이 한 칸 더 붙은 표기도 처리하도록 lookahead로 수정)를 검토. 변경된 정규식 ^(\\d{4})\\.\\s*(\\d{1,2})\\.\\s*(\\d{1,2})\\.?(?=\\s|T|$)을 직접 따라가며 '2026. 1. 5 13:25:33'(공백 구분자)·'2026. 1. 5T13:25'(T 구분자)는 매치하고, '2026.1.523'(날짜 뒤 숫자가 더 붙는 모호한 입력)은 greedy 1~2자리 day 매칭이 백트래킹해도 lookahead를 못 통과해 전체 매치가 실패함을 수식으로 재확인 — 이 경우 함수가 원본 문자열을 그대로 반환하는데, 유일한 호출부인 mapGenericCsvRow(logic.js:1830)가 바로 뒤에서 csvDateValid()로 ^\\d{4}-\\d{2}-\\d{2}$ 형식을 강제하므로 모양이 안 맞는 원본 문자열은 자동으로 거부됨을 확인(별도의 방어 코드가 필요 없는 설계가 맞음). normalizeCsvDateCell의 유일한 호출부가 mapGenericCsvRow 하나뿐임을 grep으로 재확인해 이번 변경이 다른 경로(백업/CSV 다른 날짜 필드)에 영향을 주지 않음도 확인. 기존 '점 뒤 공백만' 케이스(시간 없음)가 lookahead의 $ 분기로 여전히 매치해 회귀가 없음도 확인. 추가된 테스트 4건(공백 구분자, 0패딩, T 구분자, 모호한 입력 거부)이 각 분기를 정확히 짚고 있음을 확인. node test/run.js 재실행 4069/4069 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html에서 HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/974281/1770자) 전부 new vm.Script() 파싱 통과, APP_VERSION 1.47.553/sw.js CACHE v820 일치 확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 410,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-27T15:30:00.000Z",
       "summary": "general-purpose 서브에이전트에게 위임해 조사. resetStaleDebtPayoffAcks()(cycle353, startApp/refreshToday에서 매 render-refresh 경계마다 돌아 '완납 후 재사용→재완납'해도 payoffAckAt이 낡아 두 번째 축하가 영영 안 뜨는 문제를 막는 함수)와 완전히 대등한 함수가 Goal 쪽에는 없다는 것을 발견 — goalNewlyAchieved(logic.js)가 achieved인데 achievedAckAt이 이미 있으면 영원히 false를 돌려주는데, 그 ack을 되돌리는 경로는 지금까지 saveGoal()이 그 목표를 직접 수정 저장할 때뿐이었다(cycle256). networth형 목표는 평범한 지출/대출 거래만으로도 saveGoal을 전혀 거치지 않고 순자산이 다시 줄어 achieved가 아니게 될 수 있어, 한 번 달성→ack한 뒤 저축을 쓰고 다시 모아 재달성해도 achievedAckAt이 낡은 채로 영구히 남아 두 번째 축하 알림이 영영 안 뜨는 실질적 버그였다. resetStaleGoalAchievedAcks()를 신설해(goalHistoryFor 바로 뒤) startApp()/refreshToday() 양쪽의 resetStaleDebtPayoffAcks() 호출 직후에 추가 — achievedAckAt이 있는 모든 goal을 goalProgress(g,goalHistoryFor(g),TODAY)로 재평가해 achieved가 아니면 achievedAckAt=null;touch(g)로 되돌린다. 연결 자산이 삭제됐거나(goalLinkedAssetGone) 추적 대상이 아니게 되면(goalLinkedAssetBroken) goalHistoryFor가 빈 이력을 돌려줘 achieved:false로 보이는데, 이건 '재달성 전으로 돌아간 것'이 아니라 '추세 자체를 모르는 것'이므로 섣불리 ack을 되돌리지 않는 가드를 추가(goalProgress/debtPayoffProjection과 같은 '모르면 추측하지 않는다' 원칙, resetStaleDebtPayoffAcks에는 이 가드가 없었으나 goal 쪽엔 필요해 추가). 오케스트레이터가 diff를 직접 리뷰(resetStaleDebtPayoffAcks와 호출 위치·형태가 대등한지 대조)하고 node test/run.js 독립 재실행으로 재검증. test/run.js FUNCTIONS에 resetStaleGoalAchievedAcks 추가, 테스트 7건 추가(순자산 하락 시 ack 리셋, 여전히 달성 상태면 그대로 유지, achievedAckAt 없으면 no-op, 두 목표 중 리셋 대상만 touch, 연결자산 소실 시 ack 보존, 리셋 후 재달성하면 goalNewlyAchieved가 다시 true가 되는 통합 확인, startApp/refreshToday가 resetStaleDebtPayoffAcks 바로 뒤에서 호출하는지 정적 소스 확인). node test/run.js 4120->4127/4127 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/990420/1770자) 전부 new vm.Script() 파싱 통과(오케스트레이터 독립 재검증). index.html/sw.js 수정했으므로 APP_VERSION 1.47.562->1.47.563, sw.js CACHE v829->v830.",
+      "commit": "228240371444d3906bc27023835890894bd1e302"
+    },
+    {
+      "cycle": 415,
+      "phase": "review",
+      "timestamp": "2026-11-27T15:45:00.000Z",
+      "summary": "develop(cycle415) 커밋 2282403(resetStaleGoalAchievedAcks() 신설)을 검토. resetStaleDebtPayoffAcks(1899행)와 호출 위치가 정확히 대등한지(startApp/refreshToday 둘 다 resetStaleDebtPayoffAcks() 바로 뒤) grep으로 재확인, 다른 호출부가 빠지지 않았음도 확인. goalLinkedAssetGone/goalLinkedAssetBroken 가드가 goalHistoryFor의 '연결 자산 소실 시 빈 이력' 동작과 정확히 짝을 맞춰 추세를 모르는 상태를 '미달성으로 되돌아감'과 혼동하지 않는지 두 함수의 실제 정의(4172/4180행)를 직접 대조해 확인. 당초 'DB.nwHistory가 save() 호출 전이라 rollPendingTransfers()가 방금 만든 변화를 못 반영해 networth형 목표의 ack 리셋이 타이밍상 누락될 수 있다'는 가설을 세우고 조사했으나, rollPendingTransfers()(1885행)는 변경이 있을 때 자체적으로 save()를 호출하고, 그 외 net worth를 바꾸는 모든 경로(saveTx/confirmTransferNow/import 등)도 각자 자신의 save()를 동반하므로 resetStaleGoalAchievedAcks() 호출 시점에 DB.nwHistory가 라이브 상태와 불일치하는 실제 경로가 없음을 코드로 직접 추적해 가설을 기각(debt 쪽처럼 매번 라이브 재계산할 필요가 없음을 확인). node test/run.js 독립 재실행 4127/4127 통과 재확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전, 오래된 history 1건(410 review)을 20개 유지를 위해 앞에서 잘라냄).",
       "commit": null
     }
   ]
