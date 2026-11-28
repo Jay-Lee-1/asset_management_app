@@ -187,9 +187,11 @@ function extractMainScript() {
 // addDays/daysBetween/shiftWeekend/recDates/addMonthsStr/recNthDate/recCountUntil/truncateRecEnd,
 // mergeCollection/gcTombstones/decidePushOutcome/computeRelinkBaseline,
 // parseCSV/csvDateValid/csvDedupeKey,
-// esc/normName/lastDay/monthEndStr/monthStartStr/matchTxnQuery/budgetKey/budgetProgress는
+// esc/normName/lastDay/monthEndStr/monthStartStr/matchTxnQuery/budgetKey/budgetProgress,
+// wname/fmtDate/shortDate/fmtDateFull/caretPosAfterFormat/qtyCaretAfterFilter/sanitizeAmount/
+// localHasUnsyncedChanges/shouldRetryCloudSync는
 // index.html이 아니라 logic.js에 있다 — 위 logicSrc로 직접 로드하므로 이 목록에는 없다
-// (app-evolve cycle97 advance, cycle111 advance).
+// (app-evolve cycle97 advance, cycle111 advance, cycle417 advance).
 const FUNCTIONS = [
   'addMonths', 'dpStepDate', 'pkListNextIdx', 'pkGridNextIdx', 'segNextIdx', 'segKeydown', 'fetchWithTimeout', 'withTimeout',
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat', 'catSelectableIdx',
@@ -236,13 +238,12 @@ const FUNCTIONS = [
   'archiveTxnsBefore', 'archiveMonthPicked', 'openArchiveOld',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'writeThemeCache', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
-  'sanitizeAmount', 'sanitizeBackup',
+  'sanitizeBackup',
   'saveRec', 'commitRec', 'editRec', 'duplicateRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals', 'makeMonthCatCache',
   'yearSpendByCategory', 'yearIncomeByCategory', 'yearRealizedGain', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'caretPosAfterFormat', 'fmtAmt', 'qtyCaretAfterFilter', 'fmtQty', 'codeUpperInput',
-  'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty', 'codeUpperInput',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'confirmCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
   // applyPendingCloudConflictMerge(app-evolve cycle353 advance)는 pushCloud()의 conflict 자동병합이

@@ -5,6 +5,9 @@
  * 97사이클 동안 쌓인 문자열 추출 메커니즘의 특수 케이스(ASYNC_PREFIX, 순서 강제, LETS 등)에서
  * 완전히 벗어나므로, 앞으로도 조건에 맞는 순수 함수는 index.html 대신 여기로 옮긴다
  * (app-evolve cycle97 critique/advance).
+ * 이주 판단 기준: 전역 $(/document./closest/querySelector 등 DOM, ST/DB 읽기·쓰기, toast/go/
+ * closeSheet/confirmSheet/save()/touch() 같은 비순수 전역 호출이 몸통에 하나도 없으면 옮긴다
+ * (다른 순수 함수 호출은 무방 — 그 함수도 이미 여기 있거나 함께 옮긴다. app-evolve cycle417).
  */
 
 /* ================= DATE / RECURRENCE ================= */
@@ -2564,3 +2567,82 @@ function backupSummary(obj){
  }
  return{txnCount:txns.length,assetCount:assets.length,exportedAt,latestDate};
 }
+
+/* ================= 날짜 표시 포맷 (순수) ================= */
+function wname(s){return['일','월','화','수','목','금','토'][new Date(s+'T00:00:00').getDay()]}
+function fmtDate(s){const d=new Date(s+'T00:00:00');return `${d.getMonth()+1}월 ${d.getDate()}일 ${wname(s)}요일`}
+function shortDate(s){const d=new Date(s+'T00:00:00');return `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} (${wname(s)})`}
+function fmtDateFull(s){if(!s)return '날짜 선택';const d=new Date(s+'T00:00:00');return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${wname(s)})`}
+
+/* ================= 금액 입력 캐럿 보정 & 정규화 (순수) ================= */
+/* caretPosAfterFormat(oldValue,oldCaret,newValue): fmtAmt()가 매 oninput마다 inp.value를
+ * 통째로 재포맷하면서(천단위 콤마 삽입/제거) 커서 위치를 전혀 다루지 않아, 코드로 .value를
+ * 대입하면(모든 주요 브라우저 공통) 커서가 항상 끝으로 튀던 버그(app-evolve cycle387
+ * critique→advance) 수정의 핵심 헬퍼다. "oldCaret 앞에 숫자가 몇 개 있었는가"만을 좌표로 써서
+ * newValue에서 같은 자리를 되찾는다 — 콤마 개수가 입력 중간에 늘거나 줄어도(예: 999->1,000)
+ * 숫자 개수 기준이라 흔들리지 않는다. 숫자 앞이 아니라 '-' 부호 자체(허용 음수 입력의 맨 앞)를
+ * 가리키는 caret은 숫자 0개로는 구분이 안 되므로 minusConsumed(부호를 이미 지났는지)로 따로
+ * 가른다. */
+function caretPosAfterFormat(oldValue,oldCaret,newValue){
+ oldValue=String(oldValue==null?'':oldValue);newValue=String(newValue==null?'':newValue);
+ oldCaret=Math.max(0,Math.min(oldCaret,oldValue.length));
+ const minusConsumed=oldValue[0]==='-'&&oldCaret>=1;
+ let digitsBefore=0;
+ for(let i=0;i<oldCaret;i++)if(oldValue[i]>='0'&&oldValue[i]<='9')digitsBefore++;
+ if(digitsBefore===0)return minusConsumed?(newValue[0]==='-'?1:0):0;
+ let seen=0;
+ for(let i=0;i<newValue.length;i++){
+  if(newValue[i]>='0'&&newValue[i]<='9'){seen++;if(seen===digitsBefore)return i+1;}
+ }
+ return newValue.length;
+}
+/* qtyCaretAfterFilter(oldValue,oldCaret): fmtQty()도 fmtAmt()와 똑같이 매 oninput마다 inp.value를
+ * 통째로 재대입하면서(숫자·소수점 외 문자 제거, 둘째 소수점부터 제거) 커서 위치를 전혀 다루지
+ * 않았다 — .value 대입은 값이 실제로 바뀌지 않아도 브라우저가 커서를 끝으로 옮기므로
+ * (caretPosAfterFormat 주석과 동일한 근거, app-evolve cycle387이 fmtAmt에서 고친 바로 그 버그
+ * 클래스), 보유수량(FX/금/주식·코인, taPctInput의 비중)처럼 소수점이 있는 수량 입력칸에서 맨
+ * 끝이 아닌 자리를 고쳐 쓸 때마다(예: "12.5"의 "1" 뒤에 "0"을 끼워 "102.5"로 고치는 경우) 커서가
+ * 매 입력마다 끝으로 튀어 연속 수정이 거의 불가능했다(app-evolve cycle393 develop). fmtAmt와
+ * 달리 fmtQty는 콤마를 새로 삽입하지 않고 문자를 제거만 하므로(순서 유지, 삽입 없음)
+ * caretPosAfterFormat의 '숫자 개수로 재탐색' 방식 대신, 필터와 똑같은 한 번의 순회로 "oldCaret
+ * 앞에서 살아남은 문자 수"를 바로 세는 쪽이 더 간단하고 fmtQty의 실제 필터 규칙(숫자는 전부
+ * 유지, 첫 소수점만 유지)과 1:1로 대응돼 읽기도 쉽다. 필터링된 값 자체도 이 함수가 돌려줘
+ * fmtQty가 같은 규칙을 두 번 구현하지 않게 한다. */
+function qtyCaretAfterFilter(oldValue,oldCaret){
+ oldValue=String(oldValue==null?'':oldValue);
+ oldCaret=Math.max(0,Math.min(oldCaret,oldValue.length));
+ let value='',caret=0,dotSeen=false;
+ for(let i=0;i<oldValue.length;i++){
+  const c=oldValue[i];
+  const keep=(c>='0'&&c<='9')||(c==='.'&&!dotSeen);
+  if(c==='.'&&keep)dotSeen=true;
+  if(keep){value+=c;if(i<oldCaret)caret++;}
+ }
+ return {value,caret};
+}
+/* 백업 복원(파일)·클라우드 풀(pullCloud) 양쪽이 공유하는 숫자 필드 검증. 검증 없이 DB에
+ * 그대로 대입하면 NaN/문자열 금액이 balancesUpTo/expenseByCat 등 잔액 계산
+ * 전체로 조용히 전파되고, save()를 거쳐 scheduleCloudPush()로 다른 기기까지 오염이 퍼질 수 있다.
+ * min을 주면(수량성 필드) 그 아래로는 클램프하고, 안 주면(잔액성 필드는 마이너스도 유효한 상태라)
+ * 유한수 여부만 본다 — 다만 그 경우에도 AMOUNT_MAX 상한은 음수 쪽도 대칭으로 걸어둔다(마이너스통장
+ * 등 baseAmount/amountKRW가 min 없이 호출되는 경로라, -AMOUNT_MAX보다 더 큰 절대값의 손상된
+ * 숫자가 상한 없이 그대로 통과해 정밀도가 깨진 채 잔액 계산에 전파될 수 있었다. app-evolve cycle342).
+ * AMOUNT_MAX는 index.html의 메인 인라인 스크립트가 정의하는 전역 상수다 — logic.js가 더 먼저
+ * 로드되지만 이 함수 몸통은 "호출될 때" 그 시점의 전역을 찾으므로(선언 시점이 아니라), 실제
+ * 호출은 항상 두 스크립트가 모두 실행된 뒤에 일어나 문제가 없다. */
+function sanitizeAmount(v,min){
+ const n=Number(v);
+ if(!Number.isFinite(n))return 0;
+ if(n>AMOUNT_MAX)return AMOUNT_MAX;
+ if(min!=null)return n<min?min:n;
+ return n<-AMOUNT_MAX?-AMOUNT_MAX:n;
+}
+
+/* ================= 클라우드 동기화 변경감지/재시도 판정 (순수) ================= */
+/* 이 기기 clock 기준으로 로컬 저장 시각(dataKey()+'__savedAt', save()가 갱신)과 마지막으로
+ * 클라우드와 확인된 시각(dataKey()+'__syncedAt', pullCloud/pushCloud 성공 시 갱신)을 비교한다.
+ * 둘 다 서버 시각이 아니라 이 기기의 Date.now()라서 서버-클라이언트 시계 오차 걱정이 없다. */
+function localHasUnsyncedChanges(savedAt,syncedAt){return !!(savedAt&&(!syncedAt||savedAt>syncedAt))}
+/* 'online' 이벤트에서 동기화를 재시도할지 판정하는 순수 로직. 'conflict'는 사용자가 계정
+ * 화면에서 명시적으로 풀어야 하므로(위 confirmCloudForcePush 등) 여기서 자동으로 건드리지 않는다. */
+function shouldRetryCloudSync(cloudUid,syncState,navigatorOnline){return !!(cloudUid&&syncState==='error'&&navigatorOnline)}

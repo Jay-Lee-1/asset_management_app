@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.570';
+const APP_VERSION='1.47.571';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -1866,10 +1866,6 @@ function rowKeydown(e,fn){if(e.key==='Enter'||e.key===' '){e.preventDefault();fn
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 let TODAY=todayStr();
 function ym(s){const[Y,M]=s.split('-').map(Number);return{y:Y,m:M}}
-function wname(s){return['일','월','화','수','목','금','토'][new Date(s+'T00:00:00').getDay()]}
-function fmtDate(s){const d=new Date(s+'T00:00:00');return `${d.getMonth()+1}월 ${d.getDate()}일 ${wname(s)}요일`}
-function shortDate(s){const d=new Date(s+'T00:00:00');return `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} (${wname(s)})`}
-function fmtDateFull(s){if(!s)return '날짜 선택';const d=new Date(s+'T00:00:00');return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${wname(s)})`}
 const isFuture=s=>s>TODAY;
 /* 이체 확인: 미확인 이체는 '예정'처럼 취급(완료 잔액에서 제외) */
 function isPending(t){
@@ -2306,13 +2302,6 @@ async function deleteCloudAccountData(){
   return{ok:true};
  }catch(e){return{err:'클라우드 연결에 실패했어요 · 인터넷 연결을 확인해 주세요'}}
 }
-/* 이 기기 clock 기준으로 로컬 저장 시각(dataKey()+'__savedAt', save()가 갱신)과 마지막으로
- * 클라우드와 확인된 시각(dataKey()+'__syncedAt', pullCloud/pushCloud 성공 시 갱신)을 비교한다.
- * 둘 다 서버 시각이 아니라 이 기기의 Date.now()라서 서버-클라이언트 시계 오차 걱정이 없다. */
-function localHasUnsyncedChanges(savedAt,syncedAt){return !!(savedAt&&(!syncedAt||savedAt>syncedAt))}
-/* 'online' 이벤트에서 동기화를 재시도할지 판정하는 순수 로직. 'conflict'는 사용자가 계정
- * 화면에서 명시적으로 풀어야 하므로(위 confirmCloudForcePush 등) 여기서 자동으로 건드리지 않는다. */
-function shouldRetryCloudSync(cloudUid,syncState,navigatorOnline){return !!(cloudUid&&syncState==='error'&&navigatorOnline)}
 function markCloudSynced(){try{localStorage.setItem(dataKey()+'__syncedAt',String(Date.now()))}catch(e){}}
 /* pullCloudIfStale()이 실제로 네트워크 pull을 할지 판정하는 순수 로직 — 마지막으로 pull/push가
  * 성공한 시각(markCloudSynced()가 남기는 '__syncedAt')으로부터 thresholdMs 이상 지났을 때만
@@ -11027,20 +11016,8 @@ function openCsvImportInfo(){
   <span style="color:var(--text-3);font-size:12.5px">기존 데이터는 그대로 두고 새 내역만 <b>추가</b>돼요. 이미 있는 내역(같은 날짜·구분·금액·카테고리·자산·메모)은 중복으로 건너뛰고, 가져오기 전에 몇 건이 들어갈지 미리 보여드려요. 은행·카드사에서 내려받은 CSV를 고르면 열 매칭 화면으로 안내해 드려요.</span></div>
   <button class="btn btn-primary" onclick="closeSheet();$('importCsvFile').click()">${svg('ledger')} CSV 파일 고르기</button>`);
 }
-/* 백업 복원(파일)·클라우드 풀(pullCloud) 양쪽이 공유하는 숫자 필드 검증. 검증 없이 DB에
- * 그대로 대입하면 NaN/문자열 금액이 balancesUpTo/expenseByCat 등 잔액 계산
- * 전체로 조용히 전파되고, save()를 거쳐 scheduleCloudPush()로 다른 기기까지 오염이 퍼질 수 있다.
- * min을 주면(수량성 필드) 그 아래로는 클램프하고, 안 주면(잔액성 필드는 마이너스도 유효한 상태라)
- * 유한수 여부만 본다 — 다만 그 경우에도 AMOUNT_MAX 상한은 음수 쪽도 대칭으로 걸어둔다(마이너스통장
- * 등 baseAmount/amountKRW가 min 없이 호출되는 경로라, -AMOUNT_MAX보다 더 큰 절대값의 손상된
- * 숫자가 상한 없이 그대로 통과해 정밀도가 깨진 채 잔액 계산에 전파될 수 있었다. app-evolve cycle342). */
-function sanitizeAmount(v,min){
- const n=Number(v);
- if(!Number.isFinite(n))return 0;
- if(n>AMOUNT_MAX)return AMOUNT_MAX;
- if(min!=null)return n<min?min:n;
- return n<-AMOUNT_MAX?-AMOUNT_MAX:n;
-}
+/* sanitizeAmount(순수, 백업 복원·클라우드 풀 공유 숫자 필드 검증)는 logic.js로 옮겼다
+ * (index.html보다 먼저 로드되는 전역 함수라 호출부는 그대로 동작, app-evolve cycle417 advance). */
 const SANITIZE_QTY_FIELDS=['fxAmount','goldDon','stockQty','cryptoQty','costBasis','interestRate']; /* 보유수량 — 음수 불가 */
 const SANITIZE_FREE_FIELDS=['baseAmount','amountKRW']; /* 자산 잔액 — 마이너스도 유효(마이너스통장 등) */
 /* obj를 변형하지 않고 새 객체를 반환한다(restoreBackup의 실패 시 되돌리기 로직과 독립적으로
@@ -12447,52 +12424,11 @@ function confirmSheet(title,msg,ok,cb){window._cf=cb;
  * 동일하게 "로컬 변수로 캡처 → 공유 변수 null화 → 호출" 순서로 두 번째 탭(또는 늦게 도착한
  * 클릭 이벤트)이 콜백을 다시 못 찾게 한다. */
 function confirmSheetGo(){const cb=window._cf;if(!cb)return;window._cf=null;closeSheet();cb();}
-/* caretPosAfterFormat(oldValue,oldCaret,newValue): fmtAmt()가 매 oninput마다 inp.value를
- * 통째로 재포맷하면서(천단위 콤마 삽입/제거) 커서 위치를 전혀 다루지 않아, 코드로 .value를
- * 대입하면(모든 주요 브라우저 공통) 커서가 항상 끝으로 튀던 버그(app-evolve cycle387
- * critique→advance) 수정의 핵심 헬퍼다. "oldCaret 앞에 숫자가 몇 개 있었는가"만을 좌표로 써서
- * newValue에서 같은 자리를 되찾는다 — 콤마 개수가 입력 중간에 늘거나 줄어도(예: 999->1,000)
- * 숫자 개수 기준이라 흔들리지 않는다. 숫자 앞이 아니라 '-' 부호 자체(허용 음수 입력의 맨 앞)를
- * 가리키는 caret은 숫자 0개로는 구분이 안 되므로 minusConsumed(부호를 이미 지났는지)로 따로
- * 가른다. */
-function caretPosAfterFormat(oldValue,oldCaret,newValue){
- oldValue=String(oldValue==null?'':oldValue);newValue=String(newValue==null?'':newValue);
- oldCaret=Math.max(0,Math.min(oldCaret,oldValue.length));
- const minusConsumed=oldValue[0]==='-'&&oldCaret>=1;
- let digitsBefore=0;
- for(let i=0;i<oldCaret;i++)if(oldValue[i]>='0'&&oldValue[i]<='9')digitsBefore++;
- if(digitsBefore===0)return minusConsumed?(newValue[0]==='-'?1:0):0;
- let seen=0;
- for(let i=0;i<newValue.length;i++){
-  if(newValue[i]>='0'&&newValue[i]<='9'){seen++;if(seen===digitsBefore)return i+1;}
- }
- return newValue.length;
-}
+/* caretPosAfterFormat(순수, fmtAmt()가 쓰는 커서 위치 보정)은 logic.js로 옮겼다
+ * (app-evolve cycle417 advance). */
 function fmtAmt(inp,allowNeg){const oldValue=inp.value;const oldCaret=typeof inp.selectionStart==='number'?inp.selectionStart:oldValue.length;const neg=allowNeg&&/^-/.test(inp.value);let v=inp.value.replace(/[^0-9]/g,'');const n=v?Math.min(Number(v),AMOUNT_MAX):0;const newValue=v?(neg?'-':'')+n.toLocaleString('ko-KR'):(neg?'-':'');inp.value=newValue;try{const pos=caretPosAfterFormat(oldValue,oldCaret,newValue);inp.setSelectionRange(pos,pos);}catch(e){}}
-/* qtyCaretAfterFilter(oldValue,oldCaret): fmtQty()도 fmtAmt()와 똑같이 매 oninput마다 inp.value를
- * 통째로 재대입하면서(숫자·소수점 외 문자 제거, 둘째 소수점부터 제거) 커서 위치를 전혀 다루지
- * 않았다 — .value 대입은 값이 실제로 바뀌지 않아도 브라우저가 커서를 끝으로 옮기므로
- * (caretPosAfterFormat 주석과 동일한 근거, app-evolve cycle387이 fmtAmt에서 고친 바로 그 버그
- * 클래스), 보유수량(FX/금/주식·코인, taPctInput의 비중)처럼 소수점이 있는 수량 입력칸에서 맨
- * 끝이 아닌 자리를 고쳐 쓸 때마다(예: "12.5"의 "1" 뒤에 "0"을 끼워 "102.5"로 고치는 경우) 커서가
- * 매 입력마다 끝으로 튀어 연속 수정이 거의 불가능했다(app-evolve cycle393 develop). fmtAmt와
- * 달리 fmtQty는 콤마를 새로 삽입하지 않고 문자를 제거만 하므로(순서 유지, 삽입 없음)
- * caretPosAfterFormat의 '숫자 개수로 재탐색' 방식 대신, 필터와 똑같은 한 번의 순회로 "oldCaret
- * 앞에서 살아남은 문자 수"를 바로 세는 쪽이 더 간단하고 fmtQty의 실제 필터 규칙(숫자는 전부
- * 유지, 첫 소수점만 유지)과 1:1로 대응돼 읽기도 쉽다. 필터링된 값 자체도 이 함수가 돌려줘
- * fmtQty가 같은 규칙을 두 번 구현하지 않게 한다. */
-function qtyCaretAfterFilter(oldValue,oldCaret){
- oldValue=String(oldValue==null?'':oldValue);
- oldCaret=Math.max(0,Math.min(oldCaret,oldValue.length));
- let value='',caret=0,dotSeen=false;
- for(let i=0;i<oldValue.length;i++){
-  const c=oldValue[i];
-  const keep=(c>='0'&&c<='9')||(c==='.'&&!dotSeen);
-  if(c==='.'&&keep)dotSeen=true;
-  if(keep){value+=c;if(i<oldCaret)caret++;}
- }
- return {value,caret};
-}
+/* qtyCaretAfterFilter(순수, fmtQty()가 쓰는 커서 위치 보정)도 caretPosAfterFormat과 함께
+ * logic.js로 옮겼다(app-evolve cycle417 advance). */
 function fmtQty(inp){
  const oldValue=inp.value;
  const oldCaret=typeof inp.selectionStart==='number'?inp.selectionStart:oldValue.length;

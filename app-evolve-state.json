@@ -1,19 +1,8 @@
 {
-  "cycle": 419,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "index.html 인라인 스크립트의 순수 로직 함수를 logic.js로 선제적으로 이주시켜 test/run.js의 extractFunction() regex-slicing 의존을 줄인다",
-    "why": "index.html은 약 14,500줄짜리 단일 인라인 <script>(1430~15941행)에 999개 함수 선언이 들어있는데, 419사이클이 지난 지금도 logic.js로 옮겨진 건 155개뿐이다. 나머지는 test/run.js가 extractFunction()/extractConst()/extractLet()/extractConstBlock()으로 index.html 원본 소스를 브레이스 깊이 기준 정규식으로 직접 잘라내 실행하는 방식(extractFunction 268회, 나머지 35회 사용)에 의존한다. logic.js 상단 주석과 domstub.js(cycle210) 자체가 이걸 '설계가 아니라 임시방편'이라고 인정하고 있고, cycle418/419도 각각 touchStaleChanged/projectedDateCapped라는 새 순수 헬퍼가 '단위테스트가 필요해서' 그때그때 수동으로 logic.js에 손으로 옮겨 넣었을 뿐, 추출 자체를 사이클의 목표로 삼은 적은 한 번도 없다. 이 간접구조가 깨지기 쉬울수록 모든 develop/review/advance 사이클이 회귀 안전망에 걸 수 있는 신뢰도가 낮아지므로, 지금 안 쓰는 다른 어떤 점 버그 수정보다 복리로 쌓이는 구조적 약점이다.",
-    "approach": "1) index.html의 인라인 함수들 중 DOM($, document), 전역 ST/DB 변이, onclick 배선에 의존하지 않는 순수 계산/포매팅/집계 함수들(logic.js에 이미 있는 날짜/금액/투사 계열 헬퍼와 같은 모양)을 먼저 한 번에 너무 많이 건드리지 않도록 작은 배치로 골라낸다. 2) 그 배치를 logic.js로 그대로(동작 변경 없이) 옮긴다 — index.html이 이미 <script src=\"logic.js\">를 자신의 인라인 스크립트보다 먼저 로드하므로(1429행 부근) 호출부 변경 없이 전역으로 계속 호출 가능하다. 3) 옮긴 함수들에 대해 test/run.js의 extractFunction()/extractConst() 호출을 제거하고 logicSrc가 직접 제공하도록 해, 추출 의존도가 줄어드는 것을 증명한다. 4) index.html 안에 같은 이름의 `function name(` 선언이 남아있지 않은지(중복/드리프트 방지) 확인하는 가벼운 정적 검사를 테스트에 추가한다. 5) logic.js 상단에 '언제 이주 대상인지' 기준을 짧게 적어 다음 사이클들이 버그가 터질 때만 반응적으로 옮기는 대신 계속 선제적으로 이 작업을 이어가게 한다. 전/후 전체 회귀(node test/run.js)로 순수 이동(동작 변경 없음)임을 증명한다."
-  },
+  "cycle": 420,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 414,
-      "phase": "critique",
-      "timestamp": "2026-11-27T12:30:00.000Z",
-      "summary": "cycle413 advance 요약이 '차트/히스토리 시각화 패리티'를 명시적으로 '별도의 더 큰 후속 사이클 후보'로 남겨둔 항목을 이번 critique에서 직접 코드로 검증. openAssetSheet(수정 폼, 5631행)와 openAssetHistory(히스토리 탭+assetBalCard 잔액추이 차트, 7779/3728행)가 분리돼 있어 자산은 '보기'와 '수정하기'가 다른 화면인데, 목표(Goal)는 openGoalForm/renderGoalForm(4355/4455행) 단 하나뿐이라 '보기'가 곧 '수정 폼'이고 cycle413이 goalWhatIf로 들여온 인터랙티브 투사 문구 외에는 차트·히스토리가 전혀 없음을 재확인(goalRowHTML/openGoalsList의 유일한 진입점도 openGoalForm 하나로 수렴, 별도의 '목표 상세' 화면 없음을 grep으로 확인). asset형 목표(d.type==='asset')는 연결 자산이 이미 완비된 잔액추이 차트(1개월/3개월/1년/전체 세그먼트, SVG 라인+영역, 터치 피크)를 갖고 있는데 목표 쪽에는 그 화면으로 가는 진입점이 없고, networth형 목표(d.owner)는 홈 화면의 nwHistoryCard(owner,preset, 3545행)가 이미 그 귀속의 순자산 추이 차트를 그리고 있는데도 목표 폼에서는 재사용할 길이 없음을 확인 — 둘 다 기존 차트를 그대로 재사용할 수 있어 새 차트 컴포넌트가 필요 없는, 비교적 작고 안전한 진입점 추가 작업. 다른 후보는 검토하지 않음(이 항목이 cycle413이 이미 식별해 둔 명확한 후속 과제라 바로 채택). pending_advance_plan에 renderGoalForm의 whatIfHTML 아래 '진행 추이 보기' 버튼(asset형→openAssetHistory 재사용, networth형→nwHistoryCard 기반 가벼운 시트 신설) + 테스트 4건 계획(asset형 라우팅, networth형 라우팅+owner 전달, 신규 미저장 목표는 버튼 숨김, 연결자산 소실 시 방어적 처리) 저장. 범위 제외: assetBalCard/nwHistoryCard 등 기존 차트 자체 변경(재사용만), goalRowHTML 홈 카드에 차트 미리보기 추가(스코프 확장), 목표 전용 신규 차트 컴포넌트. node test/run.js 4116/4116 통과 확인(코드 변경 없음, 베이스라인 재확인). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 414,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-28T09:30:00Z",
       "summary": "general-purpose 서브에이전트에게 위임해 cycle409~419 전체(twGuard/touch() 중앙 백스톱, 6개 관리화면 다중선택, qtyLog 삭제/costBasis 보정, goal/debt projectedDate NaN 수정, goal 진행추이 보기 등)를 배제 목록으로 주고 전략적으로 재검토시킴. 후보로 전체내역 리스트 렌더링 성능(이미 페이지네이션/캐시/디바운스 적용돼 기각), 차트/what-if 접근성(이미 aria-live/라벨/키보드 peek 보유, cycle413/414에서 갖춰짐 확인돼 기각), twGuard/멀티셀렉 추가 재감사(명시적으로 구조적으로 닫힌 것으로 배제) 등을 검토 후 기각하고, 대신 index.html(인라인 <script> 약 14,500줄, 1430~15941행)에 999개 함수가 선언돼 있는데 419사이클이 지난 지금도 logic.js로 옮겨진 건 155개뿐이라는 구조적 공백을 발견 — 나머지 844개는 test/run.js가 extractFunction()/extractConst()/extractLet()/extractConstBlock()으로 index.html 원본 소스를 브레이스 깊이 기준 regex로 직접 잘라내 실행하는 방식(extractFunction 268회, 나머지 35회)에만 의존해 테스트된다. logic.js 상단 주석과 domstub.js(cycle210)가 이미 이 방식을 '설계가 아니라 임시방편'으로 인정하고 있고, cycle418(touchStaleChanged)·cycle419(projectedDateCapped)도 '단위테스트가 필요해서' 그때그때 새 순수 헬퍼를 수동으로 logic.js에 옮겨 넣었을 뿐 추출 자체를 목표로 삼은 사이클은 한 번도 없었음을 history 전체에서 재확인. 이 간접구조가 모든 develop/review/advance 사이클의 회귀 안전망 신뢰도를 깎아먹는 복리성 구조적 약점이라고 판단해 선택 — 오케스트레이터가 서브에이전트의 count 주장(999 함수 선언/155 logic.js 이주/extractFunction 268회)을 grep으로 직접 재확인. pending_advance_plan에 저장: DOM/ST/DB 비의존 순수 함수를 작은 배치로 골라 logic.js로 그대로(동작 변경 없이) 이주 + 해당 함수들의 extractFunction()/extractConst() 호출 제거 + index.html에 동일 이름 선언이 안 남았는지 확인하는 정적 검사 추가 + logic.js 상단에 이주 기준 문서화. node test/run.js 4171/4171 통과 확인(베이스라인, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 419,
+      "phase": "advance",
+      "timestamp": "2026-11-28T10:45:00Z",
+      "summary": "critique(cycle419)의 계획대로 index.html 인라인 스크립트에 남아있던 순수 함수 9개를 logic.js로 이주하는 1차 배치를 완료(999개 중 155개만 logic.js에 있던 구조적 공백을 조금씩 줄이는 다사이클 작업의 첫걸음, 전체를 한 번에 옮기지 않고 작은 배치로 제한). general-purpose 서브에이전트에게 위임해 index.html 함수들을 직접 읽고 DOM($/document/closest/querySelector)·ST·DB·toast/go/closeSheet/confirmSheet/save()/touch() 등 비순수 전역을 전혀 참조하지 않는 함수만 골라 logic.js로 그대로(동작 변경 없이) 옮기게 했다. 이주한 9개: wname/fmtDate/shortDate/fmtDateFull(날짜 표시 포맷, Date와 서로간 호출뿐), caretPosAfterFormat/qtyCaretAfterFilter(fmtAmt/fmtQty가 쓰는 순수 커서 보정, 매개변수만 사용), sanitizeAmount(Number/AMOUNT_MAX 비교뿐 — AMOUNT_MAX는 index.html이 나중에 선언하는 전역이지만 함수 몸통이 호출 시점에 지연 조회하므로 로드 순서상 문제없음), localHasUnsyncedChanges/shouldRetryCloudSync(매개변수 비교만). index.html에서 해당 9개 함수 선언을 전부 삭제하고(logic.js가 더 먼저 로드돼 전역으로 계속 호출 가능) grep으로 동일 이름의 `function name(` 선언이 더 안 남았음을 확인. test/run.js FUNCTIONS 배열에서 이 9개의 extractFunction() 등록을 제거(해당 함수들을 좁은 sandbox에서 extractFunction 단독 호출하던 곳이 없는지도 확인 — num은 23곳의 narrow sandbox가 logicSrc 없이 extractFunction('num')에 의존해 이번 배치에서 제외). logic.js 상단 주석 바로 아래에 이주 판단 기준 3줄 추가(DOM/ST/DB/toast/go/closeSheet/confirmSheet/save()/touch() 비순수 전역이 몸통에 없으면 옮긴다, 다른 순수 함수 호출은 무방). 오케스트레이터가 diff를 직접 리뷰(index.html 삭제분과 logic.js 추가분이 포매팅 외 동작 변경이 없는지 줄 단위 대조, test/run.js FUNCTIONS 변경이 9개 제거뿐인지 확인)하고 node test/run.js 독립 재실행으로 재검증(4171/4171 통과, 서브에이전트 보고와 동일), node --check(logic.js/test/run.js) 통과, 9개 함수명 모두 index.html에 `function name(` 형태로 전혀 안 남음을 오케스트레이터가 직접 grep으로 재확인. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.570->1.47.571, sw.js CACHE v837->v838. 범위 제외(다음 배치 후보로 남김): num(23곳 narrow sandbox 때문에 이번엔 보류, logicSrc를 안 쓰는 그 sandbox들을 먼저 손보거나 함께 옮겨야 함), groupItems(DB.assets/DB.settings 참조라 비순수로 확인돼 영구 제외), fmtAmt/fmtQty/codeUpperInput(DOM 요소를 직접 mutate해 비순수로 확인돼 영구 제외). pending_advance_plan null로 비움, phase를 develop으로 회전, cycle 420으로 증가.",
       "commit": null
     }
   ]
