@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.567';
+const APP_VERSION='1.47.568';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -3036,8 +3036,15 @@ async function requestPersistentStorage(){
  * 이름의 락을 걸어 실제 저장 로직(_saveCore)을 동일 오리진 탭 간 상호배제시킨다 — dataKey()가
  * 계정/게스트별로 다른 키를 돌려주므로 다른 계정끼리는 서로 경합하지 않는다. 미지원 브라우저(구형
  * Safari 등)는 지금까지처럼 _saveCore를 바로 호출한다. 반환값을 동기적으로 소비하는 호출부는
- * 없다(touchSave()가 그대로 전달만 할 뿐이라 락 분기의 fire-and-forget true가 안전하다). */
+ * 없다(touchSave()가 그대로 전달만 할 뿐이라 락 분기의 fire-and-forget true가 안전하다).
+ * 77개의 변경 함수가 각자 맨 앞에 if(twGuard())return;을 넣어야만 튜토리얼 중 저장이 막히는
+ * opt-in 구조라 새 함수가 twGuard를 빠뜨리면 조용히 뚫리는 공백이 반복됐다(app-evolve cycle417).
+ * 실제 영속화는 이 함수 하나를 반드시 거치므로 여기 한 번만 twActive()를 확인하면 기존 77개
+ * 가드(early return으로 더 깔끔하게 UX 막음)는 그대로 두면서 미래의 모든 함수까지 보호된다.
+ * twEnd(done)는 save() 호출 전에 TWi=-1을 먼저 설정하므로(튜토리얼 종료 시의 정상 저장) 여기서
+ * 막히지 않는다. */
 function save(opts){
+ if(twActive()){toast('튜토리얼 중에는 실제로 저장되지 않아요');return false}
  if(typeof navigator!=='undefined'&&navigator.locks&&navigator.locks.request){
   navigator.locks.request('aa_save_'+dataKey(),()=>_saveCore(opts));
   return true;

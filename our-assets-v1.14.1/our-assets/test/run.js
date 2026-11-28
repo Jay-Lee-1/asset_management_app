@@ -27924,6 +27924,7 @@ function makeSaveCtx(opts) {
     TAB_SAVED_AT: 0,
     TAB_SYNC_PENDING: null,
     DB: { owners: [], nwHistory: [], txns: [], assets: [] },
+    twActive: () => false,
   }, opts);
   vm.createContext(ctx);
   vm.runInContext([extractFunction('save'), extractFunction('_saveCore'), extractFunction('foreignSaveIsNewer')].join('\n'), ctx);
@@ -28041,6 +28042,49 @@ test('save()/_saveCore: opts가 없거나 fromDate가 없으면 기존처럼 inv
   ctx.save();
   ctx.save({ deferCloudPush: true });
   assert.deepStrictEqual(calls, [undefined, undefined], 'fromDate가 없는 기존 호출부 70여 곳은 여전히 전체 clear 경로를 타야 함');
+});
+
+/* ---------- save(): twActive() 중앙 가드 (app-evolve cycle417 critique/advance) ----------
+ * 77개 변경 함수가 각자 맨 앞에 if(twGuard())return;을 넣어야만 튜토리얼 중 저장이 막히는
+ * opt-in 구조라서, 새 함수가 twGuard를 빠뜨리면 조용히 뚫리는 공백이 cycle409/412/413/414/416에서
+ * 반복됐다. 실제 영속화는 save() 단 한 곳을 반드시 거치므로, 거기서 한 번만 twActive()를 확인하면
+ * 기존 가드 유무와 무관하게 모든 저장이 막힌다. */
+test('save(): twActive()가 true면(튜토리얼 중) _saveCore를 부르지 않고 토스트만 띄운 뒤 false를 돌려준다', () => {
+  const toasts = [];
+  let coreRan = false;
+  const ctx = makeSaveCtx({
+    twActive: () => true,
+    toast: (msg) => toasts.push(msg),
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => { coreRan = true; } },
+  });
+  const ret = ctx.save();
+  assert.strictEqual(ret, false);
+  assert.strictEqual(coreRan, false, '튜토리얼 중에는 localStorage에 실제로 쓰이면 안 됨');
+  assert.deepStrictEqual(toasts, ['튜토리얼 중에는 실제로 저장되지 않아요']);
+});
+test('save(): twActive()가 true여도 navigator.locks를 요청하지 않는다(가드가 락 분기보다 먼저)', () => {
+  const lockCalls = [];
+  const ctx = makeSaveCtx({
+    twActive: () => true,
+    navigator: { locks: { request: (name, cb) => { lockCalls.push(name); return cb(); } } },
+    dataKey: () => 'k',
+  });
+  ctx.save();
+  assert.deepStrictEqual(lockCalls, []);
+});
+test('save(): twActive()가 false면(평소) 기존처럼 _saveCore까지 정상 진행된다(회귀 가드)', () => {
+  let setCalled = false;
+  const ctx = makeSaveCtx({
+    twActive: () => false,
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => { setCalled = true; } },
+  });
+  const ret = ctx.save();
+  assert.strictEqual(ret, true);
+  assert.strictEqual(setCalled, true);
 });
 
 /* ---------- invalidateBalances: fromDate 부분 무효화 (app-evolve cycle204 critique/advance) ----------
