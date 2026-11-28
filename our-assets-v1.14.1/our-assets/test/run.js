@@ -13605,6 +13605,33 @@ test('saveAssetQtyLogEdit: 이 기록 뒤(또는 같은 날)에 그 자산의 �
   assert.strictEqual(q.addedAmount, 700000, 'qtyLog 표시 자체는 여전히 고쳐짐');
   assert.strictEqual(asset.costBasis, 1500000, '그 뒤 매도가 비례로 깎아놨을 수 있어 자산의 매입원가는 그대로 둬야 함');
 });
+/* qtyLogAddedAmountCostBasisDelta의 '최신 기록인가' 판정은 날짜만 보는데, saveAssetQtyLogEdit이
+ * addedAmount와 날짜를 한 저장에서 동시에 고칠 수 있어(renderQtyLogEditSheet에 둘 다 입력 필드가
+ * 있음) 이 기록을 다른 기록보다 앞으로 옮기면서 "더는 최신이 아니게" 만드는 경우가 있다 — q.date를
+ * costBasisDelta 판정 전에 갱신하지 않으면 옛 날짜(=아직 최신이던 시절) 기준으로 잘못 허용해버린다
+ * (app-evolve cycle418 develop). */
+test('saveAssetQtyLogEdit: addedAmount와 날짜를 같은 저장에서 함께 고쳐 이 기록을 다른 기록보다 앞으로 옮기면(더는 최신이 아니게 됨) costBasis 보정을 적용하면 안 된다(날짜 갱신 전 기준으로 판정하던 버그 수정)', () => {
+  sandbox.TODAY = '2099-12-31';
+  const q = { id: 'q1', assetId: 'a1', date: '2026-02-01', prevQty: 10, newQty: 20, field: 'stockQty', updatedAt: 1, addedAmount: 500000 };
+  const other = { id: 'q2', assetId: 'a1', date: '2026-01-15', prevQty: 20, newQty: 15, field: 'stockQty', updatedAt: 2 };
+  const asset = { id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 15, costBasis: 1500000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [q, other] };
+  // q(2026-02-01)는 지금은 other(2026-01-15)보다 뒤라 '최신' 기록 — 날짜를 안 바꾸면 보정이 적용될
+  // 입력임을 먼저 확인(비교 기준선).
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.addedAmount = 700000;
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(asset.costBasis, 1700000, '날짜를 안 바꾼 기준선에서는 최신 기록이라 보정이 적용돼야 함');
+  // 기준선 확인 후, 같은 시나리오를 날짜도 함께 옮기는 저장으로 다시 재현한다.
+  q.date = '2026-02-01'; q.addedAmount = 500000; asset.costBasis = 1500000;
+  sandbox.editAssetQtyLog('q1');
+  sandbox._qtyLogEditDraft.addedAmount = 700000;
+  sandbox._qtyLogEditDraft.date = '2026-01-01'; // other(2026-01-15)보다 앞으로 옮김 — 더는 최신이 아님
+  sandbox.saveAssetQtyLogEdit('q1');
+  assert.strictEqual(q.date, '2026-01-01');
+  assert.strictEqual(q.addedAmount, 700000, 'qtyLog 표시 자체는 여전히 고쳐짐');
+  assert.strictEqual(asset.costBasis, 1500000, '날짜를 옮긴 뒤에는 더는 최신 기록이 아니므로 costBasis는 건드리면 안 됨');
+});
 test('saveAssetQtyLogEdit: addedAmount 보정으로 바뀐 costBasis도 되돌리기(undo)를 부르면 원래 값으로 정확히 복원된다', () => {
   sandbox.TODAY = '2099-12-31';
   const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 10, newQty: 20, field: 'stockQty', updatedAt: 1, addedAmount: 500000 };

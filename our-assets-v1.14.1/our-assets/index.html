@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.568';
+const APP_VERSION='1.47.569';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -8009,14 +8009,15 @@ function saveAssetQtyLogEdit(id){
  const newSaleProceeds=q.saleProceeds>0?sanitizeAmount(d.saleProceeds,0):q.saleProceeds;
  const prevDate=q.date,prevAddedAmount=q.addedAmount,prevSaleProceeds=q.saleProceeds,prevRealizedGain=q.realizedGain;
  const asset=(DB.assets||[]).find(x=>x.id===q.assetId);
+ q.date=newDate; /* costBasis 보정 자격(바로 아래)을 판정하기 전에 날짜부터 먼저 반영해야 한다 — qtyLogAddedAmountCostBasisDelta는 '이 기록이 최신인가'를 날짜로만 따지는데, 이 저장이 addedAmount와 날짜를 동시에 고치면서 이 기록을 다른 기록보다 앞/뒤로 옮기는 경우 옛 날짜로 최신 여부를 판정해 틀린 결과를 낼 수 있었다(app-evolve cycle418 develop) */
  /* addedAmount(투입 금액) 보정이 자산의 '지금' 매입원가(costBasis)에도 안전하게 반영될 수 있는지
   * qtyLogAddedAmountCostBasisDelta(logic.js)로 미리 판정한다 — q.addedAmount를 아래서 덮어쓰기
   * 전에, 그 함수가 기존 값을 그대로 볼 수 있을 때 호출해야 한다(app-evolve cycle417 develop,
   * saleProceeds 보정은 cycle401부터 있었는데 addedAmount 보정만 qtyLog 표시만 바뀌고 실제
-  * 매입원가는 그대로 남아 손익·연환산수익률에 전혀 반영되지 않던 비대칭을 메운다). */
+  * 매입원가는 그대로 남아 손익·연환산수익률에 전혀 반영되지 않던 비대칭을 메운다). q.date는 바로
+  * 위에서 이미 newDate로 갱신됐으므로 이 판정은 저장 후 날짜 기준으로 정확히 이뤄진다. */
  const costBasisDelta=asset?qtyLogAddedAmountCostBasisDelta((DB.assetQtyLog||[]).filter(x=>x.assetId===q.assetId),id,newAddedAmount):null;
  const prevCostBasis=costBasisDelta!=null?asset.costBasis:undefined;
- q.date=newDate;
  if(q.addedAmount>0)q.addedAmount=newAddedAmount;
  if(costBasisDelta!=null)asset.costBasis=Math.round((asset.costBasis||0)+costBasisDelta);
  if(q.saleProceeds>0&&newSaleProceeds!==q.saleProceeds){
