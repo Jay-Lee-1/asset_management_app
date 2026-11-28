@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.569';
+const APP_VERSION='1.47.570';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -2078,6 +2078,10 @@ function importGuestDataInto(guestRaw){
 }
 
 let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null, DB_JSON_LEN=0;
+/* _saveCore()가 마지막으로 성공 저장한 DB 전체의 스냅샷 — touchStaleChanged()(logic.js)가 이번에
+ * 저장될 배열과 이걸 비교해 touch() 없이 고쳐진 레코드를 찾아낸다(app-evolve cycle418). 세션 첫
+ * save() 전에는 null이라 그 첫 호출에선 백스톱이 통째로 스킵된다(touchStaleChanged 자신의 가드). */
+let _lastSavedSnapshot=null;
 /* pushCloud()의 conflict 자동병합이 시트 열림 중엔 live DB를 바로 덮어쓰지 않고 미뤄두는
  * 보류 상태(TAB_SYNC_PENDING과 같은 '편집 중엔 건드리지 않는다' 패턴) — closeSheet()가 비운다.
  * 아래 applyPendingCloudConflictMerge() 참고(app-evolve cycle353 critique → advance). */
@@ -3064,6 +3068,12 @@ function _saveCore(opts){invalidateBalances(opts&&opts.fromDate,opts);
   let foreignDB=null;if(foreignRaw){try{foreignDB=JSON.parse(foreignRaw)}catch(e){foreignDB=null}}
   if(foreignDB){mergeRemoteDataIntoLocal(foreignDB);TAB_SYNC_PENDING=null}
  }
+ /* touch()/touchSave() opt-in 공백(위 주석, cycle417의 twGuard 중앙화와 같은 구조적 결함) 백스톱 —
+  * mergeCollection()/mergeRecurrences()가 updatedAt으로 승자를 가르는 6개 컬렉션 전부에 대해, 지난
+  * save() 스냅샷과 비교해 updatedAt 없이 바뀐 레코드만 지금 시각으로 찍는다(logic.js
+  * touchStaleChanged). 기존 touch()/touchSave() 호출부는 하나도 바꾸지 않는 순수 추가 안전망이다. */
+ const _tsNow=Date.now();
+ ['txns','assets','goals','inquiries','assetQtyLog','recurrences'].forEach(k=>touchStaleChanged(_lastSavedSnapshot&&_lastSavedSnapshot[k],DB[k],_tsNow));
  /* 순자산 이력의 '오늘' 항목은 앱을 연 시각이 아니라 항상 최신 상태를 반영해야 한다:
   * updateNwHistory는 같은 날짜 항목을 덮어쓰는 멱등 함수라 save() 호출마다 매번 갱신해도 안전하고,
   * localStorage에 쓰기 직전에 반영해야 이번 저장분에 최신 스냅샷이 함께 기록된다. */
@@ -3083,7 +3093,7 @@ function _saveCore(opts){invalidateBalances(opts&&opts.fromDate,opts);
  const byType={};DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt').forEach(a=>{const v=assetEval(a);byType[a.type]=(byType[a.type]||0)+v});
  DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt(),byOwner,byType);
  let ok,json;try{json=JSON.stringify(DB);localStorage.setItem(dataKey(),json);ok=true}catch(e){ok=false}
- if(ok){DB_JSON_LEN=json.length;const at=Date.now();try{localStorage.setItem(dataKey()+'__savedAt',String(at))}catch(e){}TAB_SAVED_AT=at}
+ if(ok){DB_JSON_LEN=json.length;const at=Date.now();try{localStorage.setItem(dataKey()+'__savedAt',String(at))}catch(e){}TAB_SAVED_AT=at;_lastSavedSnapshot=JSON.parse(json)}
  const notice=storageOutcomeMsg(ok,STORAGE_OK);STORAGE_OK=ok;
  if(notice)notice.kind==='fail'?toastFail(notice.msg):toast(notice.msg);
  if(!(opts&&opts.deferCloudPush))scheduleCloudPush();return ok}

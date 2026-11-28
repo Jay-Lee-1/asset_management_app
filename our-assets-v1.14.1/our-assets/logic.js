@@ -512,6 +512,34 @@ function mergeRecurrences(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
  });
  return out;
 }
+/* mergeCollection()/mergeRecurrences()가 "updatedAt이 더 큰 쪽이 이긴다"로 레코드 전체 승자를
+ * 가르는데, touch()/touchSave()(index.html)는 ~89개 호출부가 save() 전에 각자 자발적으로 불러야만
+ * 작동하는 수동 opt-in 관례라 그 호출을 빠뜨리면 다른 기기의 동기화 안 된 사본이 이 수정을 조용히
+ * 되돌릴 수 있다(cycle128/129에서 독립적으로 14곳 재발견, app-evolve cycle417 critique가 twGuard
+ * opt-in 공백을 save()/_saveCore() 중앙 체크로 영구 차단한 것과 같은 구조적 결함 — 이 함수는 그
+ * 평행한 백스톱이다, cycle418). prevArr(지난 성공적인 save()가 남긴 그 컬렉션의 스냅샷)와
+ * curArr(지금 저장될 메모리 상의 배열)를 id로 맞춰 비교해, updatedAt은 그대로인데 다른 필드이
+ * 실제로 달라진(=누군가 touch() 없이 고친) 레코드만 now로 찍어준다. updatedAt이 이미 바뀐
+ * 레코드(touch()를 제대로 부른 경우)는 그대로 둬 이중 스탬프로 호출자의 의도를 어지럽히지 않는다.
+ * prevArr에 없는 id(이번에 새로 생긴 레코드)나 curArr에 없는 id(삭제됨)는 비교 대상이 아니므로
+ * 건드리지 않는다. prevArr 자체가 없으면(세션 첫 save(), 아직 스냅샷이 없음) 아무 것도 하지 않고
+ * 조용히 리턴한다 — "스냅샷 없음"을 "전부 다 바뀜"으로 잘못 해석하면 부팅 직후 멀쩡한 기존
+ * 데이터의 updatedAt이 전부 지금 시각으로 바뀌어버려, 로컬에서 안 건드린 데이터가 유효한 클라우드
+ * 사본보다 더 "최신"인 것처럼 보여 향후 병합에서 부당하게 이겨버린다. */
+function touchStaleChanged(prevArr,curArr,now){
+ if(!prevArr)return;
+ const prevMap=new Map(prevArr.map(r=>[r.id,r]));
+ (curArr||[]).forEach(cur=>{
+  const prev=prevMap.get(cur.id);
+  if(!prev)return;
+  if((cur.updatedAt||0)!==(prev.updatedAt||0))return;
+  const keys=new Set([...Object.keys(prev),...Object.keys(cur)]);
+  keys.delete('id');keys.delete('updatedAt');
+  for(const k of keys){
+   if(JSON.stringify(prev[k])!==JSON.stringify(cur[k])){cur.updatedAt=now;return}
+  }
+ });
+}
 /* mergeCollectionConflicts와 같은 목적(mergeCollection이 실제로 병합을 수행하기 전에 그 병합이 몇 건을
  * 조용히 버릴지 미리 세기)이지만 DB.recurrences 전용 — mergeRecurrences()가 skip/edits/confirmedDates는
  * 합집합으로 보존해 이 셋만 다른 경우는 실제 손실이 아니므로 diff 대상에서 제외하고, day/amount/freq/

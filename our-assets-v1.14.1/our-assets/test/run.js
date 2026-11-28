@@ -25406,6 +25406,60 @@ test('mergeCollectionConflicts: localArr/remoteArr가 없어도(undefined) 터�
   assert.strictEqual(sandbox.mergeCollectionConflicts(undefined, undefined).length, 0);
 });
 
+/* ---------- touchStaleChanged: mergeCollection()/mergeRecurrences()의 "updatedAt이 더 큰 쪽이
+ * 이긴다" LWW 기준을 touch()/touchSave() 호출부가 빠뜨린 레코드로부터 지키는 백스톱(app-evolve
+ * cycle417 critique → cycle418 advance) — _saveCore()가 지난 save()의 스냅샷(prevArr)과 지금
+ * 저장될 배열(curArr)을 이걸로 비교해, updatedAt 없이 바뀐 레코드만 now로 찍는다. ---------- */
+test('touchStaleChanged: updatedAt은 그대로인데 다른 필드가 실제로 달라졌으면 now로 찍는다(touch() 빠뜨림 재현)', () => {
+  const prev = [{ id: 'a1', name: 'old-name', updatedAt: 100 }];
+  const cur = [{ id: 'a1', name: 'new-name', updatedAt: 100 }];
+  sandbox.touchStaleChanged(prev, cur, 999);
+  assert.strictEqual(cur[0].updatedAt, 999, 'touch() 없이 고쳐진 레코드는 백스톱이 대신 찍어줘야 함');
+});
+test('touchStaleChanged: updatedAt이 이미 바뀌어 있으면(touch()를 제대로 부른 경우) 그대로 두고 이중 스탬프하지 않는다', () => {
+  const prev = [{ id: 'a1', name: 'old-name', updatedAt: 100 }];
+  const cur = [{ id: 'a1', name: 'new-name', updatedAt: 200 }];
+  sandbox.touchStaleChanged(prev, cur, 999);
+  assert.strictEqual(cur[0].updatedAt, 200, '호출자가 이미 touch()로 찍은 시각을 백스톱이 999로 덮어쓰면 안 됨');
+});
+test('touchStaleChanged: 아무 필드도 안 바뀌었으면(저장만 다시 일어난 경우) updatedAt을 건드리지 않는다', () => {
+  const prev = [{ id: 'a1', name: 'same', updatedAt: 100 }];
+  const cur = [{ id: 'a1', name: 'same', updatedAt: 100 }];
+  sandbox.touchStaleChanged(prev, cur, 999);
+  assert.strictEqual(cur[0].updatedAt, 100, '변경이 없으면 now를 찍을 이유가 없음');
+});
+test('touchStaleChanged: prevArr에 없는 id(이번에 새로 생긴 레코드)는 건드리지 않는다', () => {
+  const prev = [];
+  const cur = [{ id: 'new1', name: 'brand-new', updatedAt: 100 }];
+  sandbox.touchStaleChanged(prev, cur, 999);
+  assert.strictEqual(cur[0].updatedAt, 100, '신규 레코드는 "이전과 비교해 바뀜"의 대상이 아님');
+});
+test('touchStaleChanged: curArr에 없는 id(삭제된 레코드)가 있어도 터지지 않고 무시한다', () => {
+  const prev = [{ id: 'gone', name: 'x', updatedAt: 100 }];
+  const cur = [];
+  assert.doesNotThrow(() => sandbox.touchStaleChanged(prev, cur, 999));
+});
+test('touchStaleChanged: prevArr 자체가 없으면(세션 첫 save()) 아무 것도 하지 않고 조용히 리턴한다', () => {
+  const cur = [{ id: 'a1', name: 'whatever', updatedAt: 100 }];
+  sandbox.touchStaleChanged(null, cur, 999);
+  assert.strictEqual(cur[0].updatedAt, 100, '스냅샷이 없으면 "전부 다 바뀜"으로 오해해 부팅 직후 멀쩡한 데이터를 전부 지금 시각으로 찍으면 안 됨');
+  sandbox.touchStaleChanged(undefined, cur, 999);
+  assert.strictEqual(cur[0].updatedAt, 100);
+});
+test('touchStaleChanged: id/updatedAt 자체는 비교 대상 필드에서 제외된다(updatedAt을 자기 자신과 비교해 오탐하지 않음)', () => {
+  const prev = [{ id: 'a1', updatedAt: 100 }];
+  const cur = [{ id: 'a1', updatedAt: 100 }];
+  sandbox.touchStaleChanged(prev, cur, 999);
+  assert.strictEqual(cur[0].updatedAt, 100);
+});
+test('touchStaleChanged: 여러 레코드 중 실제로 바뀐 것만 찍고 나머지는 그대로 둔다', () => {
+  const prev = [{ id: 'a1', v: 1, updatedAt: 100 }, { id: 'a2', v: 1, updatedAt: 100 }];
+  const cur = [{ id: 'a1', v: 1, updatedAt: 100 }, { id: 'a2', v: 2, updatedAt: 100 }];
+  sandbox.touchStaleChanged(prev, cur, 999);
+  assert.strictEqual(cur[0].updatedAt, 100, '안 바뀐 a1은 그대로');
+  assert.strictEqual(cur[1].updatedAt, 999, '바뀐 a2만 now로 찍힘');
+});
+
 /* ---------- mergeRecurrences: mergeCollection과 달리 DB.recurrences만을 위한 전용 병합(app-evolve
  * cycle177 critique/advance) — 같은 id가 양쪽에 다 살아있으면 레코드 전체를 통째로 승자/패자로
  * 가르는 대신 skip[]/edits{}는 합쳐서 보존한다. 스칼라 필드(day/freq 등)와 id/tombstone 판정은
@@ -27952,8 +28006,15 @@ function makeSaveCtx(opts) {
     TAB_SYNC_PENDING: null,
     DB: { owners: [], nwHistory: [], txns: [], assets: [] },
     twActive: () => false,
+    // _saveCore()의 touchStaleChanged() 백스톱(app-evolve cycle418)이 읽는 "지난 성공 저장" 스냅샷.
+    // null이면 그 백스톱 자신의 가드로 통째로 스킵되므로, 아래 기본값은 이 함수를 아예 모르던
+    // 기존 테스트들의 동작을 그대로 보존한다(회귀 없음).
+    _lastSavedSnapshot: null,
   }, opts);
   vm.createContext(ctx);
+  // touchStaleChanged는 logic.js에 있어 index.html 쪽 extractFunction만으로는 못 끌어온다
+  // (splitFieldHTML 등 다른 "좁은 sandbox" 테스트들과 같은 패턴으로 logicSrc를 먼저 로드).
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
   vm.runInContext([extractFunction('save'), extractFunction('_saveCore'), extractFunction('foreignSaveIsNewer')].join('\n'), ctx);
   return ctx;
 }
@@ -28112,6 +28173,91 @@ test('save(): twActive()가 false면(평소) 기존처럼 _saveCore까지 정상
   const ret = ctx.save();
   assert.strictEqual(ret, true);
   assert.strictEqual(setCalled, true);
+});
+
+/* ---------- _saveCore: touchStaleChanged() 백스톱 와이어링 (app-evolve cycle417 critique → cycle418
+ * advance) ---------- 저장되는 6개 컬렉션(DB.txns/assets/goals/inquiries/assetQtyLog/recurrences)
+ * 각각에 대해 _lastSavedSnapshot의 지난 스냅샷과 비교해 touch() 없이 바뀐 레코드를 지금 시각으로
+ * 찍고, 성공적으로 저장된 뒤에는 _lastSavedSnapshot을 이번 저장분으로 갱신한다. */
+test('[실행형] _saveCore: touch() 없이 asset.name만 고친 뒤 save()하면 백스톱이 updatedAt을 지금 시각으로 찍어 저장한다(이번 사이클이 막는 실제 버그 재현)', () => {
+  const asset = { id: 'a1', name: 'old-name', updatedAt: 1000 };
+  const ctx = makeSaveCtx({
+    _lastSavedSnapshot: { txns: [], assets: [{ id: 'a1', name: 'old-name', updatedAt: 1000 }], goals: [], inquiries: [], assetQtyLog: [], recurrences: [] },
+    DB: { owners: [], nwHistory: [], txns: [], assets: [asset], goals: [], inquiries: [], assetQtyLog: [], recurrences: [] },
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => {} },
+  });
+  asset.name = 'new-name'; // touch()/touchSave() 호출 없이 직접 수정 — 실제 버그가 발생하던 경로
+  const before = Date.now();
+  ctx.save();
+  assert.ok(asset.updatedAt >= before, 'touch() 없이 바뀐 asset도 save() 한 번으로 updatedAt이 지금 시각으로 찍혀야 함(mergeCollection이 updatedAt만 보고 병합할 때 이 수정이 조용히 버려지지 않도록)');
+});
+test('[실행형] _saveCore: touchSave()로 제대로 찍은 경우(updatedAt이 이미 바뀜)는 백스톱이 다시 건드리지 않는다(회귀 가드)', () => {
+  const stampedAt = 5000;
+  const asset = { id: 'a1', name: 'new-name', updatedAt: stampedAt };
+  const ctx = makeSaveCtx({
+    _lastSavedSnapshot: { txns: [], assets: [{ id: 'a1', name: 'old-name', updatedAt: 1000 }], goals: [], inquiries: [], assetQtyLog: [], recurrences: [] },
+    DB: { owners: [], nwHistory: [], txns: [], assets: [asset], goals: [], inquiries: [], assetQtyLog: [], recurrences: [] },
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => {} },
+  });
+  ctx.save();
+  assert.strictEqual(asset.updatedAt, stampedAt, '호출자가 이미 touch()로 찍어둔 시각을 백스톱이 또 다른 시각으로 덮어쓰면 안 됨(이중 스탬프 금지)');
+});
+test('[실행형] _saveCore: _lastSavedSnapshot이 없으면(세션 첫 save()) 백스톱이 통째로 스킵돼 기존 데이터의 updatedAt을 건드리지 않는다(부팅 직후 오염 방지)', () => {
+  const asset = { id: 'a1', name: 'untouched', updatedAt: 1000 };
+  const ctx = makeSaveCtx({
+    _lastSavedSnapshot: null,
+    DB: { owners: [], nwHistory: [], txns: [], assets: [asset], goals: [], inquiries: [], assetQtyLog: [], recurrences: [] },
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => {} },
+  });
+  ctx.save();
+  assert.strictEqual(asset.updatedAt, 1000, '첫 save() 전에는 비교 기준이 없으므로 아무 레코드도 건드리면 안 됨');
+});
+test('[실행형] _saveCore: 저장에 성공하면 _lastSavedSnapshot을 이번 저장분으로 갱신해 다음 save()의 비교 기준이 된다', () => {
+  const asset = { id: 'a1', name: 'v1', updatedAt: 1000 };
+  const ctx = makeSaveCtx({
+    _lastSavedSnapshot: null,
+    DB: { owners: [], nwHistory: [], txns: [], assets: [asset], goals: [], inquiries: [], assetQtyLog: [], recurrences: [] },
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => {} },
+  });
+  ctx.save(); // 첫 저장: 스냅샷이 없어 백스톱은 스킵되지만, 성공 저장 후 스냅샷은 채워져야 함
+  assert.ok(ctx._lastSavedSnapshot, '첫 저장이 성공했으면 다음 save()를 위한 스냅샷이 생겨야 함');
+  assert.strictEqual(ctx._lastSavedSnapshot.assets[0].name, 'v1');
+  asset.name = 'v2'; // touch() 없이 고침
+  const before = Date.now();
+  ctx.save(); // 두 번째 저장: 방금 채워진 스냅샷과 비교해 v1->v2 변경을 잡아내야 함
+  assert.ok(asset.updatedAt >= before, '두 번째 save()에서는 첫 저장이 남긴 스냅샷을 기준으로 touch() 빠뜨림을 잡아내야 함');
+});
+test('[실행형] _saveCore: localStorage.setItem이 실패하면(ok=false) _lastSavedSnapshot을 갱신하지 않는다(실패한 저장을 기준점으로 삼지 않음)', () => {
+  const asset = { id: 'a1', name: 'v1', updatedAt: 1000 };
+  const ctx = makeSaveCtx({
+    _lastSavedSnapshot: { txns: [], assets: [{ id: 'a1', name: 'v1', updatedAt: 1000 }], goals: [], inquiries: [], assetQtyLog: [], recurrences: [] },
+    DB: { owners: [], nwHistory: [], txns: [], assets: [asset], goals: [], inquiries: [], assetQtyLog: [], recurrences: [] },
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => { throw new Error('quota'); } },
+  });
+  const snapshotBefore = ctx._lastSavedSnapshot;
+  const ok = ctx.save();
+  assert.strictEqual(ok, false);
+  assert.strictEqual(ctx._lastSavedSnapshot, snapshotBefore, '실패한 저장 시도를 다음 비교 기준으로 삼으면 안 됨');
+});
+test('[실행형] _saveCore: DB.goals/inquiries/assetQtyLog/recurrences 중 일부가 없어도(아직 그 필드를 쓰지 않는 호출부) 터지지 않는다(회귀 가드)', () => {
+  const ctx = makeSaveCtx({
+    _lastSavedSnapshot: { txns: [], assets: [] },
+    DB: { owners: [], nwHistory: [], txns: [], assets: [] }, // goals/inquiries/assetQtyLog/recurrences 없음
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => {} },
+  });
+  assert.doesNotThrow(() => ctx.save());
 });
 
 /* ---------- invalidateBalances: fromDate 부분 무효화 (app-evolve cycle204 critique/advance) ----------
