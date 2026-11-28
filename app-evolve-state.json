@@ -1,15 +1,12 @@
 {
   "cycle": 417,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "save()/_saveCore()에 twActive() 중앙 가드 추가 — 개별 함수 twGuard 수동 추가 방식의 구조적 공백을 영구 차단",
+    "why": "77개 함수가 각자 수동으로 if(twGuard())return;을 맨 앞에 넣어야만 튜토리얼 중 저장이 막히는 opt-in 구조라서, 새 변경 함수가 추가될 때마다 twGuard를 빠뜨리는 버그가 cycle409/412/413/414/416에서 반복 발견됐다(예: delAssetQtyLog가 cycle416까지 자산수량기록을 영구 삭제+클라우드 톰스톤 전파). 실제 영속화는 save()/_saveCore() 단 한 곳(index.html:3040-3082)을 반드시 거치고 어떤 호출부도 반환값을 쓰지 않으므로(grep 확인, 0건), 이 한 곳에 twActive() 체크를 추가하면 오늘의 공백은 물론 미래의 모든 함수까지 자동으로 보호된다.",
+    "approach": "1) index.html:3040 save(opts) 함수 맨 앞, navigator.locks 분기 이전에 twActive() 체크(참이면 토스트 띄우고 return false) 추가 — 기존 twGuard()의 토스트 문구와 동일하게. 2) 기존 77개의 개별 if(twGuard())return; 가드는 그대로 유지한다 — UX상 DB 변경 자체를 막는 더 깔끔한 경로이므로 제거하지 않는다. 3) twEnd(done=true)가 save() 호출 전에 TWi=-1을 먼저 설정하는지 index.html:10281-10285 재확인(이미 안전함을 critique에서 확인했지만 advance 구현자가 diff 직전에 다시 한번 눈으로 검증). 4) logic.js는 건드리지 않으므로 node test/run.js는 회귀 없이 그대로 통과해야 함(베이스라인 재확인). 5) DOM 의존적이라 test/run.js로 단위테스트 불가하므로, 가능하면 수동/스크립트 시나리오로: (a) 튜토리얼 중 이미 가드된 함수 하나를 호출해도 중복 토스트가 뜨지 않는지(early return이 save() 도달 전에 걸림), (b) 가드가 없는 경로를 임시로 시뮬레이션해 DB는 메모리상 바뀌어도 localStorage/dataKey()가 변경되지 않는지 확인. 6) index.html 수정이므로 APP_VERSION과 sw.js CACHE 버전 동반 상향. 7) 범위 제외: 77개 기존 가드 제거/리팩터, 정적분석 린트 규칙 신설(별도 과제로 남김)."
+  },
   "history": [
-    {
-      "cycle": 412,
-      "phase": "critique",
-      "timestamp": "2026-11-27T05:30:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 위임해 정산/자산수량기록(assetQtyLog)/예산이월/반복거래편집범위/트래시아카이브(archiveTxnsBefore)/알림mute/일괄작업 계열을 폭넓게 조사. 이미 cycle194~412에서 꼼꼼히 다져진 영역이라(archiveTxnsBefore의 __preArchive_ 베스트에포트 백업, settlement의 N인정산·귀속삭제/합치기대응, catBudgetRollover의 합치기/이름변경/일괄토글 대응 등) 새 결함을 못 찾아 기각. assetQtyLog 수정은 cycle401에서 이미 twGuard+undoToast 완비, saveBudget/catBudgetRollover 토글은 cycle388/389/401/412 완료, sw.js(120줄)도 네트워크우선/캐시폴백이 견고해 손볼 곳 없음을 확인. 대신 '수정 폼' 레이어를 교차비교(saveTx/commitTx 7101~7184행, commitRec 7530~7563행, saveAsset 5701~5821행)하다 saveGoal(4445~4461행)만 이 세 함수가 공통으로 가진 두 안전장치(더블탭 중복저장 가드 _savedDrafts WeakSet, 수정 시 undoToast 6초 되돌리기)를 둘 다 빠뜨리고 있음을 발견 — 오케스트레이터가 index.html:4445-4461을 직접 읽고 _savedDrafts 전체 사용처(grep, 5703/7103/7494행)를 대조해 saveGoal에만 가드가 없음을 재확인. 더블탭 가드 부재는 실제 버그(목표 등록 폼에서 빠른 두 번 탭 시 DB.goals에 중복 push, 4460행), undo 부재는 UX 일관성 결함(목표 수정 시 잘못 입력해도 되돌릴 방법 없음, achievedAckAt 리셋 포함)으로 twGuard 공백 시리즈와 같은 '다른 모든 저장 경로가 가진 패턴 하나만 이 함수에 빠짐' 클래스. pending_advance_plan에 _savedDrafts 가드 추가 위치 + undoToast id 재탐색 패턴(saveAsset 5806~5819행과 동일, cycle391 근거) + 테스트 3건 계획 저장(신규 추가 double-tap 회귀, 수정 undo 복원, 신규는 plain toast만 확인; goalDraft 검증로직/duplicateGoal/delGoal/moveGoal은 범위 제외로 명시). node test/run.js 4091/4091 통과 확인(서브에이전트가 베이스라인으로 확인, 오케스트레이터는 코드 diff 없이 grep/직독으로만 재검증, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 412,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-28T00:00:00.000Z",
       "summary": "develop(cycle417) 커밋 b64a649(saveAssetQtyLogEdit의 addedAmount 보정을 asset.costBasis에도 반영하는 qtyLogAddedAmountCostBasisDelta 신설)을 검토. 신설 함수의 핵심 안전장치인 hasOtherOnOrAfter 날짜 비교 로직을 logic.js에서 직접 읽고, saveAssetQtyLogEdit(index.html 8001행 부근) 호출부가 q.addedAmount를 덮어쓰기 전(아직 원래 값을 보유한 시점)에 델타를 계산하는지 순서를 재확인 — q.date=newDate로 날짜를 갈아끼우기 전에 호출되므로, 같은 수정에서 날짜와 addedAmount를 동시에 바꿔도 '편집 전' 날짜 기준으로 최신 기록 여부를 판정하는 것이 saleProceeds 보정(cycle401)과 같은 기존 날짜-휴리스틱 한계를 그대로 따르는 것이며 이번 diff가 새로 도입한 결함이 아님을 확인. prevCostBasis 캡처 시점(asset.costBasis 변경 전)과 undo 복원 경로(costBasisDelta!=null일 때만 asset도 touchSave에 포함해 되돌림)가 대칭적인지, 자산이 삭제된 경우(asset undefined) costBasisDelta가 null이 되어 조용히 기존 동작을 유지하는지 코드로 직접 추적해 확인. sanitizeAmount(v,0)이 음수를 0으로 clamp하는 것도 확인해 newAddedAmount가 항상 0 이상임을 재확인. 추가된 순수함수 3건(유일한 기록/늦거나 같은 날짜의 다른 기록 있으면 null/id없음·addedAmount없음·변화없음 null)과 통합 4건(costBasis 델타 반영+asset touch/뒤에 다른 기록 있으면 미변경/undo 복원/자산 소실 시 no-op)이 각 분기를 정확히 커버하는지 확인. node test/run.js 독립 재실행 4146/4146 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION 1.47.567/sw.js CACHE v834 일치 재확인. 세션 시작 시 로컬 main 브랜치 포인터가 origin/main보다 훨씬 뒤처진 커밋(51c4fcd)을 가리키던 지난 사이클의 리포지토리 상태 문제도 git fetch origin main 후 git checkout -B main origin/main으로 바로잡아 main이 origin/main과 정확히 일치하도록(34b6527) 복구했다. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전, 오래된 history 1건(412 review)을 20개 유지를 위해 앞에서 잘라냄).",
+      "commit": null
+    },
+    {
+      "cycle": 417,
+      "phase": "critique",
+      "timestamp": "2026-11-28T01:14:58.204Z",
+      "summary": "일반-목적 서브에이전트에게 critique 위임 (cycle409~417 history 전체 선독, 특히 twGuard 공백 클래스가 cycle409/412/413/414/416 다섯 사이클에 걸쳐 각기 다른 함수에서 반복 발견/수정됐음을 확인). 전술적(함수 단위) twGuard 감사는 오케스트레이터가 이미 고갈 선언했으므로, 대신 이 반복 버그 클래스의 근본 원인을 구조적으로 짚었다: twGuard()는 단일 강제 지점이 없고 전적으로 각 변경 함수가 자발적으로 if(twGuard())return;을 맨 앞에 넣어야만 작동하는 수동(opt-in) 패턴 — grep으로 if(twGuard())return 77건, save() 호출부 ~100건을 확인, delAssetQtyLog가 cycle416까지도 이 가드를 빠뜨려 실데이터(자산수량기록)를 영구 삭제하고 클라우드에도 톰스톤을 밀어넣는 실제 크로스디바이스 데이터 손실을 냈던 사례로 비용을 실증. 반면 실제 영속화 지점은 save()/_saveCore()(index.html:3040-3082) 단 하나뿐이고 모든 save() 호출부가 반환값을 확인하지 않으므로(grep으로 =save(/!save( 0건 확인), save() 맨 앞에 twActive() 체크 하나만 추가하면 앞으로 작성될 모든 함수까지 영구히 보호되는 중앙 백스톱이 가능함을 확인. twEnd(done=true)는 save() 호출 전에 TWi=-1을 먼저 설정하므로 안전함도 확인. 기존 77개의 개별 twGuard는 제거하지 않고(더 깔끔한 UX, early-return으로 DB 변경 자체를 막음) save() 레벨 체크는 순수 안전망으로만 추가하는 설계. 대안으로 검토했으나 기각: twGuard 함수별 재감사(고갈 선언됨), homeAlerts 카드 공통화/캐시플로우 예측 화면/가격수집 안정성/settleUpTransfers 최적성/recDates 성능/CSV 벌크 import 성능(모두 cycle413~416에서 이미 검토·기각), Inquiries 목록 일괄선택 부재(cycle415에서 우선순위 낮다고 보류). pending_advance_plan에 저장: save()/_saveCore() 맨 앞에 central guard 추가, 기존 77개 가드는 유지, logic.js 변경 없어 test/run.js 자동 커버 불가하므로 advance 단계에서 수동/스크립트 검증 계획 포함(twEnd 안전성 재확인, 가드 없는 함수 경로로 실제 localStorage 미변경 확인, 기존 가드 77건 중복 토스트 안 뜨는지 회귀). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
