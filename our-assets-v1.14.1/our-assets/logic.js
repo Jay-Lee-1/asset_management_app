@@ -1255,6 +1255,21 @@ function goalProgressRate(nwHistory,today,trendWindowDays){
  const days=daysBetween(first.date,last.date);
  return days>0?(last.nw-first.nw)/days:0;
 }
+/* goalProgress/goalWhatIf/debtPayoffProjection/debtPayoffWhatIf 네 함수 모두 'rate>0이면
+ * addDays(날짜,Math.ceil(남은금액/rate))로 투사일을 만든다'는 같은 패턴을 쓰는데, 목표/부채
+ * 금액은 크고 최근 추세는 아주 느리게만(0에 가깝게) 양수인 경우 Math.ceil(remaining/rate)가
+ * 수백만~수십억일에 달해 addDays()가 내부적으로 만드는 Date가 JS가 표현할 수 있는 범위를 넘어
+ * Invalid Date가 되고, 그걸 그대로 'YYYY-MM-DD'로 문자열화하면 "NaN-NaN-NaN"이 그대로 화면에
+ * 노출된다(goalRowHTML/homeAlerts 등이 projectedDate를 진짜 날짜 문자열로 가정하고 그대로
+ * shortDate2/fmtDateFull에 넘김) — 순자산이 90일 사이 몇 원만 움직여도(반올림 등) rate가 0보다
+ * 아주 조금 큰 값이 되면서 큰 목표액과 만나 실제로 재현되는 버그다. PROJECTION_MAX_DAYS(약 100년)
+ * 보다 먼 투사는 사용자에게 "사실상 못 간다"는 것과 다름없는 정보이므로, 날짜가 깨지는 대신 이
+ * 함수들이 이미 rate<=0일 때 쓰는 것과 같은 null(모르면 추측하지 않는다 원칙)로 수렴시킨다
+ * (app-evolve cycle419 develop). */
+const PROJECTION_MAX_DAYS=36500;
+function projectedDateCapped(baseDate,days){
+ return (days>0&&days<=PROJECTION_MAX_DAYS)?addDays(baseDate,days):null;
+}
 function goalProgress(goal,nwHistory,today,trendWindowDays){
  trendWindowDays=trendWindowDays||90;
  const hist=(nwHistory||[]).filter(h=>h.date<=today);
@@ -1266,7 +1281,7 @@ function goalProgress(goal,nwHistory,today,trendWindowDays){
  let projectedDate=null;
  if(!achieved&&remaining>0&&hist.length>=2){
   const rate=goalProgressRate(nwHistory,today,trendWindowDays);
-  if(rate>0)projectedDate=addDays(hist[hist.length-1].date,Math.ceil(remaining/rate));
+  if(rate>0)projectedDate=projectedDateCapped(hist[hist.length-1].date,Math.ceil(remaining/rate));
  }
  const requiredMonthly=requiredMonthlyPace(cur,target,goal&&goal.targetDate,today);
  return {cur,target,pct,remaining,achieved,projectedDate,requiredMonthly};
@@ -1288,7 +1303,7 @@ function goalWhatIf(nwHistory,today,target,extraPerMonth,trendWindowDays){
  if(!(remaining>0))return {achieved:true,projectedDate:null};
  const baseRate=Math.max(0,goalProgressRate(nwHistory,today,trendWindowDays));
  const effectiveRate=baseRate+(extraPerMonth>0?extraPerMonth/30:0);
- const projectedDate=effectiveRate>0?addDays(last.date,Math.ceil(remaining/effectiveRate)):null;
+ const projectedDate=effectiveRate>0?projectedDateCapped(last.date,Math.ceil(remaining/effectiveRate)):null;
  return {achieved:false,projectedDate};
 }
 
@@ -1342,7 +1357,7 @@ function debtPayoffProjection(pts,today,trendWindowDays){
  const last=hist[hist.length-1];
  if(last.bal<=0)return {achieved:true,projectedDate:null};
  const rate=debtPayoffRate(pts,today,trendWindowDays);
- const projectedDate=rate>0?addDays(last.date,Math.ceil(last.bal/rate)):null;
+ const projectedDate=rate>0?projectedDateCapped(last.date,Math.ceil(last.bal/rate)):null;
  return {achieved:false,projectedDate};
 }
 
@@ -1364,7 +1379,7 @@ function debtPayoffWhatIf(pts,today,extraPerMonth,trendWindowDays){
  if(last.bal<=0)return {achieved:true,projectedDate:null};
  const baseRate=Math.max(0,debtPayoffRate(pts,today,trendWindowDays));
  const effectiveRate=baseRate+(extraPerMonth>0?extraPerMonth/30:0);
- const projectedDate=effectiveRate>0?addDays(last.date,Math.ceil(last.bal/effectiveRate)):null;
+ const projectedDate=effectiveRate>0?projectedDateCapped(last.date,Math.ceil(last.bal/effectiveRate)):null;
  return {achieved:false,projectedDate};
 }
 

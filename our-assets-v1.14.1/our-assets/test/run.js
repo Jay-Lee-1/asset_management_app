@@ -2751,6 +2751,26 @@ test('goalPct: 목표 금액이 0 이하(미설정)면 모은 돈이 있으면 1
   assert.strictEqual(sandbox.goalPct(0, 0), 0);
   assert.strictEqual(sandbox.goalPct(500, 0), 100);
 });
+/* ---------- projectedDateCapped: goalProgress/goalWhatIf/debtPayoffProjection/debtPayoffWhatIf
+ * 네 곳이 공유하는 '날짜+일수 → 투사일' 헬퍼 (app-evolve cycle419 develop) ----------
+ * days가 addDays()가 안전하게 표현할 수 있는 범위를 넘으면(Invalid Date → "NaN-NaN-NaN" 문자열화)
+ * null을 돌려준다 — 아래 goalProgress 등의 "NaN-NaN-NaN" 회귀 테스트가 실제 호출 경로에서 이
+ * 동작을 다시 확인한다. logic.js의 PROJECTION_MAX_DAYS는 최상위 const라 extractConst 주석(위
+ * 93-96행)과 같은 이유로 sandbox 프로퍼티로 노출되지 않으므로, 여기선 같은 값(36500 = 약 100년)을
+ * 그대로 복제해 둔다 — logic.js 쪽 값이 바뀌면 이 숫자도 함께 맞춰야 한다. */
+const PROJECTION_MAX_DAYS = 36500;
+test('projectedDateCapped: days가 0보다 크고 PROJECTION_MAX_DAYS 이하면 addDays와 정확히 같은 날짜를 돌려준다', () => {
+  assert.strictEqual(sandbox.projectedDateCapped('2026-01-01', 20), sandbox.addDays('2026-01-01', 20));
+  assert.strictEqual(sandbox.projectedDateCapped('2026-01-01', PROJECTION_MAX_DAYS), sandbox.addDays('2026-01-01', PROJECTION_MAX_DAYS));
+});
+test('projectedDateCapped: days가 PROJECTION_MAX_DAYS를 넘으면(addDays가 Invalid Date를 만드는 범위) null을 돌려준다', () => {
+  assert.strictEqual(sandbox.projectedDateCapped('2026-01-01', PROJECTION_MAX_DAYS + 1), null);
+  assert.strictEqual(sandbox.projectedDateCapped('2026-01-01', Math.ceil(999999999999999 / 1)), null, '매우 느린 추세(1원/일)와 큰 금액이 만나는 실제 재현 규모에서도 null이어야 함');
+});
+test('projectedDateCapped: days가 0 이하이면(호출부가 보통 걸러내지만 방어적으로) null을 돌려준다', () => {
+  assert.strictEqual(sandbox.projectedDateCapped('2026-01-01', 0), null);
+  assert.strictEqual(sandbox.projectedDateCapped('2026-01-01', -5), null);
+});
 test('goalProgress: 순자산 이력이 없으면(0건) 현재값 0·진행률 0%·투사 날짜 없음', () => {
   const p = sandbox.goalProgress({ targetAmount: 1000000 }, [], '2026-02-01');
   assert.strictEqual(p.cur, 0);
@@ -2828,6 +2848,13 @@ test('goalProgress: 이미 달성했으면 targetDate가 있어도 requiredMonth
   const p = sandbox.goalProgress({ targetAmount: 1000000, targetDate: '2026-07-01' }, hist, '2026-01-01');
   assert.strictEqual(p.requiredMonthly, null);
 });
+test('goalProgress: 목표액은 크고 최근 추세는 아주 느리게만 양수면(Math.ceil(remaining/rate)가 Date 표현 범위를 넘김), projectedDate가 "NaN-NaN-NaN" 문자열이 아니라 null이어야 한다(app-evolve cycle419 develop — addDays가 Invalid Date를 그대로 문자열화하던 버그)', () => {
+  const hist = [{ date: '2026-01-01', nw: 0 }, { date: '2026-04-01', nw: 1 }]; // 90일간 1원만 증가 = 아주 느린 양수 추세
+  const p = sandbox.goalProgress({ targetAmount: 999999999999999 }, hist, '2026-04-01');
+  assert.strictEqual(p.achieved, false);
+  assert.notStrictEqual(p.projectedDate, 'NaN-NaN-NaN');
+  assert.strictEqual(p.projectedDate, null, '투사가 100년을 훨씬 넘기면 날짜가 깨지는 대신 null(모르면 추측하지 않는다)이어야 함');
+});
 
 /* ---------- goalProgressRate/goalWhatIf: 목표 쪽 추가 저축 시뮬레이터 (app-evolve cycle413
  * critique → advance) ---------- goalProgressRate는 goalProgress가 쓰던 '최근 trendWindowDays일
@@ -2878,6 +2905,13 @@ test('goalWhatIf: 추가 저축액이 클수록 투사일이 더 빨라진다(�
 test('goalWhatIf: 이력이 비어있으면 achieved=false이고 투사 날짜도 null(추세 자체가 없음)', () => {
   const wi = sandbox.goalWhatIf([], '2026-01-11', 300000, 50000);
   assert.strictEqual(wi.achieved, false);
+  assert.strictEqual(wi.projectedDate, null);
+});
+test('goalWhatIf: 목표액은 크고 effectiveRate는 아주 느리게만 양수면 projectedDate가 "NaN-NaN-NaN"이 아니라 null이어야 한다(goalProgress와 같은 Date 범위 초과 버그, app-evolve cycle419 develop)', () => {
+  const hist = [{ date: '2026-01-01', nw: 0 }, { date: '2026-04-01', nw: 1 }]; // 90일간 1원 증가
+  const wi = sandbox.goalWhatIf(hist, '2026-04-01', 999999999999999, 0); // extraPerMonth=0 → baseRate 그대로
+  assert.strictEqual(wi.achieved, false);
+  assert.notStrictEqual(wi.projectedDate, 'NaN-NaN-NaN');
   assert.strictEqual(wi.projectedDate, null);
 });
 
@@ -2987,6 +3021,13 @@ test('debtPayoffProjection: 최근 90일 창 안에 포인트가 1개뿐이면(�
   assert.strictEqual(p.achieved, false);
   assert.strictEqual(p.projectedDate, '2026-07-10', '창 안에 2점 미만이면 전체 이력(두 점)으로 폴백해 투사 자체가 사라지면 안 됨');
 });
+test('debtPayoffProjection: 잔액은 크고 최근 추세는 아주 느리게만 줄고 있으면(Math.ceil(bal/rate)가 Date 표현 범위를 넘김), projectedDate가 "NaN-NaN-NaN" 문자열이 아니라 null이어야 한다(goalProgress와 같은 Date 범위 초과 버그, app-evolve cycle419 develop)', () => {
+  const pts = [{ date: '2026-01-01', bal: 999999999999999 }, { date: '2026-04-01', bal: 999999999999998 }]; // 90일간 1원만 감소
+  const p = sandbox.debtPayoffProjection(pts, '2026-04-01');
+  assert.strictEqual(p.achieved, false);
+  assert.notStrictEqual(p.projectedDate, 'NaN-NaN-NaN');
+  assert.strictEqual(p.projectedDate, null, '투사가 100년을 훨씬 넘기면 날짜가 깨지는 대신 null이어야 함');
+});
 /* ---------- debtPayoffRate/debtPayoffWhatIf: 부채 상환 추가 납입 시뮬레이터 (app-evolve cycle262
  * advance) ---------- debtPayoffRate는 debtPayoffProjection이 쓰던 '최근 trendWindowDays일 구간의
  * 일별 감소율' 계산만 떼어낸 것이라, 리팩터 전후로 debtPayoffProjection의 동작 자체가 바뀌지
@@ -3032,6 +3073,13 @@ test('debtPayoffWhatIf: 추가 납입액이 클수록 투사일이 더 빨라진
   const more = sandbox.debtPayoffWhatIf(pts, '2026-01-11', 300000).projectedDate; // +10000/일
   assert.ok(some < none, '추가 납입이 있으면 추가 없을 때보다 빨라야 함');
   assert.ok(more < some, '추가 납입이 더 크면 더 빨라야 함');
+});
+test('debtPayoffWhatIf: 잔액은 크고 effectiveRate는 아주 느리게만 양수면 projectedDate가 "NaN-NaN-NaN"이 아니라 null이어야 한다(debtPayoffProjection과 같은 Date 범위 초과 버그, app-evolve cycle419 develop)', () => {
+  const pts = [{ date: '2026-01-01', bal: 999999999999999 }, { date: '2026-04-01', bal: 999999999999998 }]; // 90일간 1원만 감소
+  const wi = sandbox.debtPayoffWhatIf(pts, '2026-04-01', 0); // extraPerMonth=0 → baseRate 그대로
+  assert.strictEqual(wi.achieved, false);
+  assert.notStrictEqual(wi.projectedDate, 'NaN-NaN-NaN');
+  assert.strictEqual(wi.projectedDate, null);
 });
 /* ---------- amortizationPayoffMonths: 이자율을 아는 부채의 원리금균등상환 개월수 (app-evolve
  * cycle273 critique/advance) ---------- debtPayoffProjection/debtPayoffWhatIf(위)과 달리 상환
