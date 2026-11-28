@@ -409,7 +409,13 @@ const FUNCTIONS = [
   // openGoalNwChart를 참조하므로, 그 실행을 직접 검증하려면 이 sandbox에 함께 올라가야 한다.
   'goalNwChartCard', 'openGoalNwChart',
   'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved', 'goalOrderedIds', 'moveGoal',
-  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'inquiriesTrashBody', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry', 'inqTextInput',
+  'openInquiry', 'sendInquiry', 'inquiryListBody', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'inquiriesTrashBody', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry', 'inqTextInput',
+  // inquirySelPartial/inquiryToggleSel/inquirySelAll/inquiryDelSel/deleteInquiriesUndo: 자산(aSel)·
+  // 일별내역(lSel)·전체내역(hist.selMode)·반복거래(recSel)·목표(goalSel)·카테고리(catSel)·수량
+  // 변경기록(qtyLogSel)이 모두 갖춘 선택모드+일괄삭제를 저장한 메모 목록에도 마지막으로 더한 것
+  // (app-evolve cycle415 critique가 "동일 클래스 공백이나 우선순위 낮음"으로 보류해둔 별도 후보,
+  // app-evolve cycle420 develop).
+  'inquirySelPartial', 'inquiryToggleSel', 'inquirySelAll', 'inquiryDelSel', 'deleteInquiriesUndo',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
   'modeSeg', 'monthNav', 'monthNavKeydown', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -9128,6 +9134,167 @@ test('openInquiryList: 각 메모 행에 수정(editInquiry) 버튼이 삭제 �
   const html = sandbox.lastSheetHtml;
   assert.ok(html.includes("editInquiry('q1')"), '수정 버튼이 있어야 함');
   assert.ok(html.includes("delInquiry('q1')"), '삭제 버튼도 그대로 있어야 함');
+});
+
+/* ---------- inquirySelPartial/inquiryToggleSel/inquirySelAll/inquiryDelSel/deleteInquiriesUndo:
+ * 자산(aSel)·일별내역(lSel)·전체내역(hist.selMode)·반복거래(recSel)·목표(goalSel)·카테고리(catSel)·
+ * 수량변경기록(qtyLogSel)이 모두 갖춘 롱프레스 선택모드+전체선택+일괄삭제를 저장한 메모 목록에도
+ * 마지막으로 더했다 — cycle415 critique가 "동일 클래스 공백이나 구독·매수/매도처럼 자연히 누적되는
+ * 동인이 없어 우선순위 낮음"으로 보류해둔 별도 후보(app-evolve cycle420 develop). ---------- */
+test('openInquiryList: 메모가 있으면 선택모드로 들어가는 "선택" 버튼이 있다', () => {
+  sandbox.ST = { inquirySel: { mode: false, ids: new Set() } };
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }] };
+  sandbox.openInquiryList();
+  assert.ok(sandbox.lastSheetHtml.includes('ST.inquirySel.mode=true;openInquiryList()'), '선택 버튼이 있어야 함');
+});
+test('openInquiryList: 메모가 하나도 없으면 "선택" 버튼 자체를 보여주지 않는다(선택할 대상이 없음)', () => {
+  sandbox.ST = { inquirySel: { mode: false, ids: new Set() } };
+  sandbox.DB = { inquiries: [] };
+  sandbox.openInquiryList();
+  assert.ok(!sandbox.lastSheetHtml.includes('선택'), '빈 목록엔 선택 버튼이 없어야 함');
+});
+test('openInquiryList: 선택모드 중엔 건당 action 버튼(수정/삭제) 대신 체크박스 행을 보여주고, "+ 새 메모 작성" 버튼은 숨긴다', () => {
+  sandbox.ST = { inquirySel: { mode: true, ids: new Set(['q1']) } };
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }] };
+  sandbox.openInquiryList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(!html.includes("editInquiry('q1')"), '선택모드 중엔 수정 버튼이 없어야 함');
+  assert.ok(!html.includes("delInquiry('q1')"), '선택모드 중엔 건당 삭제 버튼이 없어야 함');
+  assert.ok(html.includes("inquiryToggleSel('q1')"), '체크박스 행은 inquiryToggleSel을 불러야 함');
+  assert.ok(html.includes('sel-on'), '선택된 행은 sel-on 클래스가 있어야 함');
+  assert.ok(!html.includes('+ 새 메모 작성'), '선택모드 중엔 추가 버튼이 없어야 함(다른 관리화면과 동일)');
+});
+test('openInquiryList: ST.inquirySel이 없는(기존 테스트가 ST를 최소 모양으로만 세팅해둔) 경우에도 방어적 기본값으로 예외 없이 동작한다', () => {
+  sandbox.ST = {};
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }] };
+  assert.doesNotThrow(() => sandbox.openInquiryList());
+  assert.strictEqual(sandbox.ST.inquirySel.mode, false);
+});
+test('inquiryToggleSel: 선택한 id를 추가하고, #inqListBody가 있으면 그 부분만 다시 그린다(openInquiryList() 전체 재오픈 없음)', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }] };
+  sandbox.ST = { inquirySel: { mode: true, ids: new Set() } };
+  const orig$ = sandbox.$, origOpen = sandbox.openInquiryList;
+  let openCalls = 0;
+  sandbox.$ = (id) => (id === 'inqListBody' ? { innerHTML: '' } : null);
+  sandbox.openInquiryList = () => { openCalls++; };
+  try {
+    sandbox.inquiryToggleSel('q1');
+    assert.ok(sandbox.ST.inquirySel.ids.has('q1'), 'q1이 선택 목록에 추가돼야 함');
+    assert.strictEqual(openCalls, 0, '#inqListBody가 있으면 openInquiryList() 전체를 다시 열면 안 됨');
+  } finally { sandbox.$ = orig$; sandbox.openInquiryList = origOpen; }
+});
+test('inquiryToggleSel: 같은 id를 다시 호출하면 선택이 해제된다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }] };
+  sandbox.ST = { inquirySel: { mode: true, ids: new Set(['q1']) } };
+  const orig$ = sandbox.$;
+  sandbox.$ = () => null;
+  try {
+    sandbox.inquiryToggleSel('q1');
+    assert.ok(!sandbox.ST.inquirySel.ids.has('q1'), 'q1이 선택 목록에서 제거돼야 함');
+  } finally { sandbox.$ = orig$; }
+});
+test('inquirySelAll: 전체선택되지 않은 상태에서 부르면 전체 메모가 선택된다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: 'a', updatedAt: 1 }, { id: 'q2', text: 'b', updatedAt: 2 }] };
+  sandbox.ST = { inquirySel: { mode: true, ids: new Set() } };
+  const orig$ = sandbox.$;
+  sandbox.$ = () => null;
+  try {
+    sandbox.inquirySelAll();
+    assert.strictEqual(sandbox.ST.inquirySel.ids.size, 2);
+    assert.ok(sandbox.ST.inquirySel.ids.has('q1') && sandbox.ST.inquirySel.ids.has('q2'));
+  } finally { sandbox.$ = orig$; }
+});
+test('inquirySelAll: 이미 전체선택된 상태에서 다시 부르면 전체 해제된다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: 'a', updatedAt: 1 }] };
+  sandbox.ST = { inquirySel: { mode: true, ids: new Set(['q1']) } };
+  const orig$ = sandbox.$;
+  sandbox.$ = () => null;
+  try {
+    sandbox.inquirySelAll();
+    assert.strictEqual(sandbox.ST.inquirySel.ids.size, 0);
+  } finally { sandbox.$ = orig$; }
+});
+test('inquiryDelSel: 선택이 비어 있으면 안내 토스트만 띄우고 confirmSheet를 부르지 않는다', () => {
+  sandbox.confirmSheetCalls = [];
+  sandbox.ST = { inquirySel: { mode: true, ids: new Set() } };
+  sandbox.inquiryDelSel();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.lastToast, '선택된 메모가 없어요');
+});
+test('inquiryDelSel: 확인을 누르면 선택 모드가 꺼지고, 선택된 메모 전체가 DB.inquiries에서 빠지며 _deletedAt과 함께 DB.trashInquiries에 담긴다(delInquiry와 동일한 톰스톤 패턴)', () => {
+  sandbox.DB = {
+    inquiries: [
+      { id: 'q1', text: '첫번째', updatedAt: 1 },
+      { id: 'q2', text: '두번째', updatedAt: 2 },
+      { id: 'q3', text: '안지움', updatedAt: 3 },
+    ],
+    deletedIds: {},
+    trashInquiries: [],
+  };
+  sandbox.ST = { inquirySel: { mode: true, ids: new Set(['q1', 'q2']) } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.inquiryDelSel();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '바로 지우지 않고 확인 시트를 띄워야 함');
+  assert.strictEqual(sandbox.ST.inquirySel.ids.size, 2, 'confirmSheet 콜백을 부르기 전에는 선택이 아직 유지되어야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.ST.inquirySel.mode, false, '삭제를 확정하면 선택 모드가 꺼져야 함');
+  assert.strictEqual(sandbox.ST.inquirySel.ids.size, 0);
+  assert.strictEqual(sandbox.DB.inquiries.length, 1, 'q3만 남아야 함');
+  assert.strictEqual(sandbox.DB.inquiries[0].id, 'q3');
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 2);
+  assert.ok(sandbox.DB.trashInquiries.every(q => typeof q._deletedAt === 'number'));
+  assert.ok(typeof sandbox.DB.deletedIds.q1 === 'number' && typeof sandbox.DB.deletedIds.q2 === 'number');
+});
+test('inquiryDelSel: 튜토리얼 모드 중에는 twGuard가 막아서 확인을 눌러도 실제로 지워지지 않는다(delInquiry와 동일한 보호)', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }], deletedIds: {}, trashInquiries: [] };
+  sandbox.ST = { inquirySel: { mode: true, ids: new Set(['q1']) } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.inquiryDelSel();
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.inquiries.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
+  sandbox.TWi = -1;
+});
+test('deleteInquiriesUndo: undoToast로 되돌리면 삭제된 메모가 원래 내용 그대로 복원되고 트래시/톰스톤도 함께 지워진다', () => {
+  sandbox.DB = {
+    inquiries: [{ id: 'q1', text: '첫번째', date: '2026-01-01', updatedAt: 1 }],
+    deletedIds: {},
+    trashInquiries: [],
+  };
+  sandbox.lastUndo = null;
+  sandbox.deleteInquiriesUndo(new Set(['q1']));
+  assert.strictEqual(sandbox.DB.inquiries.length, 0);
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.inquiries.length, 1);
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '첫번째');
+  assert.strictEqual(sandbox.DB.inquiries[0].updatedAt, 'test-updatedAt', '복원 시 touchSave로 updatedAt이 다시 찍혀야 함');
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 0, '되돌리면 트래시에서도 빠져야 함');
+  assert.strictEqual(Object.keys(sandbox.DB.deletedIds).length, 0, '되돌리면 톰스톤도 지워져야 함');
+});
+test('deleteInquiriesUndo: 존재하지 않는 id만 넘기면 아무 일도 하지 않는다(DB.inquiries/트래시 변경 없음, undoToast도 안 띄움)', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }], deletedIds: {}, trashInquiries: [] };
+  sandbox.lastUndo = null;
+  sandbox.deleteInquiriesUndo(new Set(['없는id']));
+  assert.strictEqual(sandbox.DB.inquiries.length, 1);
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 0);
+  assert.strictEqual(sandbox.lastUndo, null);
+});
+test('activeSel: 저장한 메모 선택모드(ST.inquirySel)의 all/del은 inquirySelAll/inquiryDelSel이고, total은 DB.inquiries 전체 개수다', () => {
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: false, ids: new Set() }, qtyLogSel: { mode: false, ids: new Set() }, inquirySel: { mode: true, ids: new Set(['q1']) } };
+  sandbox.DB = { inquiries: [{ id: 'q1' }, { id: 'q2' }] };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.all, 'inquirySelAll()');
+  assert.strictEqual(s.del, 'inquiryDelSel()');
+  assert.strictEqual(s.size, 1);
+  assert.strictEqual(s.total, 2);
+});
+test('exitSelMode: 저장한 메모 선택모드를 끄고 목록을 다시 연다(다른 여섯 관리화면과 동일한 패턴)', () => {
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: false, ids: new Set() }, catSel: { mode: false, ids: new Set() }, qtyLogSel: { mode: false, ids: new Set() }, inquirySel: { mode: true, ids: new Set(['q1']) } };
+  sandbox.DB = { inquiries: [{ id: 'q1' }] };
+  sandbox.exitSelMode();
+  assert.strictEqual(sandbox.ST.inquirySel.mode, false);
+  assert.strictEqual(sandbox.ST.inquirySel.ids.size, 0);
 });
 
 /* mergeRemoteDataIntoLocal이 DB.goals처럼 DB.inquiries도 mergeCollection으로 병합하는지 확인

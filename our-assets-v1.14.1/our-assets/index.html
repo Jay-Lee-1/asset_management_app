@@ -1429,7 +1429,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.571';
+const APP_VERSION='1.47.572';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 /* 트래시 7종(거래/자산/반복/목표/수량기록/카테고리/메모) 공용 탭 순서·라벨·DB 키 — openTrashHub가 그리는
  * 탭과 renderMenu의 통합 배지 합계가 서로 다른 순서/누락으로 어긋나지 않도록 한 곳에서만 정의
@@ -3464,7 +3464,7 @@ let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
 let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',assetQ:'',nwPreset:'m3',allocPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
  hist:{cat:'전체',q:'',assetId:null,catExact:null,catExactType:null,owner:'전체',selMode:false,sel:new Set(),sortAsc:false,
    range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false,balPreset:'m3',debtWhatIfExtra:0,debtPlanStrategy:'avalanche',debtPlanExtra:0},
- plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',yearReview:{y:TM.y},editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()},recSel:{mode:false,ids:new Set()},goalSel:{mode:false,ids:new Set()},catSel:{mode:false,ids:new Set()},qtyLogSel:{mode:false,ids:new Set(),assetId:null}};
+ plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',yearReview:{y:TM.y},editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()},recSel:{mode:false,ids:new Set()},goalSel:{mode:false,ids:new Set()},catSel:{mode:false,ids:new Set()},qtyLogSel:{mode:false,ids:new Set(),assetId:null},inquirySel:{mode:false,ids:new Set()}};
 const TABS=[{id:'home',label:'홈',icon:'home'},{id:'assets',label:'자산관리',icon:'wallet'},{id:'ledger',label:'가계부',icon:'ledger'},{id:'plan',label:'한달 플랜',icon:'plan'},{id:'menu',label:'메뉴',icon:'menu'}];
 
 /* ================= HOME ================= */
@@ -10087,13 +10087,35 @@ function sendInquiry(){
  DB.inquiries.push(touch({id:uid(),date:TODAY,text:v})); /* id/updatedAt 없이는 mergeRemoteDataIntoLocal()의 mergeCollection()에 등록할 수 없음(goals/catIcon과 동일한 '최상위 DB 필드 병합 누락' 버그 클래스) */
  save();closeSheet();toast('저장했어요');
 }
+/* 저장한 메모 목록의 순수 렌더부 — recManageBody/goalsManageBody/qtyLogBody와 동일하게 #inqListBody
+ * 안에 있으면 inquiryToggleSel/inquirySelAll이 이 부분만 다시 그린다. 자산(aSel)·일별내역(lSel)·
+ * 전체내역(hist.selMode)·반복거래(recSel)·목표(goalSel)·카테고리(catSel)·수량변경기록(qtyLogSel)
+ * 일곱 관리화면 모두 갖춘 롱프레스 선택모드+전체선택+일괄삭제를, cycle415 critique가 "동일 클래스
+ * 공백이나 구독·매수/매도처럼 자연히 누적되는 동인이 없어 우선순위 낮음"으로 보류해둔 별도 후보였던
+ * 문의하기 메모 목록에도 마지막으로 더한다(app-evolve cycle420 develop). 검색이 없는 화면이라
+ * qtyLogBody와 동일하게 전체 목록을 그대로 선택 대상으로 삼는다. */
+function inquiryListBody(items){
+ if(!items.length)return `<div class="empty"><div class="ei">${svg('chat')}</div><div class="et">저장한 메모가 없어요</div></div>`;
+ return items.map(q=>{
+  if(ST.inquirySel.mode){
+   const on=ST.inquirySel.ids.has(q.id);
+   const preview=q.text.length>60?q.text.slice(0,60)+'…':q.text;
+   return `<div class="manage-row${on?' sel-on':''}" style="align-items:flex-start" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(preview)}" onclick="inquiryToggleSel('${q.id}')" onkeydown="rowKeydown(event,()=>inquiryToggleSel('${q.id}'))">
+    <div class="sel-check ${on?'on':''}">${svg('check')}</div><div style="flex:1;min-width:0"><div class="mn" style="white-space:pre-wrap;word-break:break-word">${esc(q.text)}</div><div class="msub">${q.date||''}</div></div></div>`;
+  }
+  return `<div class="manage-row" style="align-items:flex-start" data-id="${q.id}" data-lp="1"><div style="flex:1;min-width:0"><div class="mn" style="white-space:pre-wrap;word-break:break-word">${esc(q.text)}</div><div class="msub">${q.date||''}</div></div><div class="row-acts"><button class="act-btn" aria-label="메모 수정" onclick="editInquiry('${q.id}')">${svg('edit')}</button><button class="act-btn danger" aria-label="메모 삭제" onclick="delInquiry('${q.id}')">${svg('trash')}</button></div></div>`;
+ }).join('');
+}
 function openInquiryList(){
+ ST.inquirySel=ST.inquirySel||{mode:false,ids:new Set()}; /* qtyLogSel과 동일한 이유의 방어적 기본값 — 실제 ST 리터럴엔 항상 있지만, saveInquiryEdit/delInquiry의 undo 콜백처럼 이 함수를 독립적으로 부르는 기존 테스트들은 ST를 최소 모양으로만 세팅해 둔 경우가 있다(app-evolve cycle420 develop) */
  const items=[...(DB.inquiries||[])].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
- openSheet(`<h3>저장한 메모</h3><div class="desc">문의하기에서 적어둔 메모예요. 백업에 포함돼요</div>
-  ${items.length?items.map(q=>`<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0"><div class="mn" style="white-space:pre-wrap;word-break:break-word">${esc(q.text)}</div><div class="msub">${q.date||''}</div></div><div class="row-acts"><button class="act-btn" aria-label="메모 수정" onclick="editInquiry('${q.id}')">${svg('edit')}</button><button class="act-btn danger" aria-label="메모 삭제" onclick="delInquiry('${q.id}')">${svg('trash')}</button></div></div>`).join('')
-   :`<div class="empty"><div class="ei">${svg('chat')}</div><div class="et">저장한 메모가 없어요</div></div>`}
-  <div style="height:12px"></div><button class="btn btn-soft" onclick="openInquiry()">+ 새 메모 작성</button>
+ const toolbar=items.length?`<div class="as-tools"><div class="as-actions">${ST.inquirySel.mode?'':`<button class="as-tbtn" onclick="ST.inquirySel.mode=true;openInquiryList()">${svg('check')} 선택</button>`}</div></div>`:'';
+ openSheet(`<h3>저장한 메모</h3><div class="desc">문의하기에서 적어둔 메모예요. 백업에 포함돼요</div>${toolbar}
+  <div id="inqListBody">${inquiryListBody(items)}</div>
+  <div style="height:12px"></div>${ST.inquirySel.mode?'':`<button class="btn btn-soft" onclick="openInquiry()">+ 새 메모 작성</button>`}
   <button class="btn btn-primary" style="margin-top:9px" onclick="closeSheet()">닫기</button>`);
+ if(!ST.inquirySel.mode)wireLongPress($('inqListBody'),id=>{ST.inquirySel.mode=true;ST.inquirySel.ids.add(id);openInquiryList()});
+ updateSelBottom();
 }
 /* 지금까지 저장한 메모는 추가(sendInquiry)·삭제(delInquiry)만 가능하고 고칠 방법이 없었다 —
  * renameOwnerSheet/renameCatSheet가 이미 쓰는 "수정" act-btn + 입력 시트 패턴을 그대로 따라
@@ -12367,7 +12389,7 @@ function ensureEdgeGesture(){
    }
  }x0=null;dx=dy=0;};
  edge.addEventListener('touchend',up);edge.addEventListener('touchcancel',up);
-}function closeSheet(){_draftSnap=null;ovHistPop();if(ST.recSel.mode){ST.recSel.mode=false;ST.recSel.ids.clear();updateSelBottom()} /* recSel은 탭(go())이 아니라 시트 안에서만 쓰는 선택모드라, 시트가 닫힐 때(스와이프·스크림 탭 등 openRecManage()를 거치지 않는 경로 포함) 여기서 정리해야 다음에 열 때 선택모드가 그대로 남아있지 않음(app-evolve cycle301 critique → advance) */if(ST.goalSel.mode){ST.goalSel.mode=false;ST.goalSel.ids.clear();updateSelBottom()} /* goalSel도 recSel과 동일하게 목표 관리 시트 안에서만 쓰는 선택모드라 여기서 정리해야 함(app-evolve cycle305 critique → advance) */if(ST.catSel.mode){ST.catSel.mode=false;ST.catSel.ids.clear();updateSelBottom()} /* catSel도 recSel/goalSel과 동일하게 카테고리 관리 시트 안에서만 쓰는 선택모드라 여기서 정리해야 함(app-evolve cycle388 advance) */if(ST.qtyLogSel.mode){ST.qtyLogSel.mode=false;ST.qtyLogSel.ids.clear();updateSelBottom()} /* qtyLogSel도 recSel/goalSel/catSel과 동일하게 수량기록 관리 시트 안에서만 쓰는 선택모드라 여기서 정리해야 함(app-evolve cycle415 critique → advance) */const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}if(CLOUD_CONFLICT_PENDING)applyPendingCloudConflictMerge(); /* pushCloud() conflict 자동병합이 시트 열림 가드로 미뤄둔 보류 병합을 여기서 소비한다(app-evolve cycle353 advance) */}
+}function closeSheet(){_draftSnap=null;ovHistPop();if(ST.recSel.mode){ST.recSel.mode=false;ST.recSel.ids.clear();updateSelBottom()} /* recSel은 탭(go())이 아니라 시트 안에서만 쓰는 선택모드라, 시트가 닫힐 때(스와이프·스크림 탭 등 openRecManage()를 거치지 않는 경로 포함) 여기서 정리해야 다음에 열 때 선택모드가 그대로 남아있지 않음(app-evolve cycle301 critique → advance) */if(ST.goalSel.mode){ST.goalSel.mode=false;ST.goalSel.ids.clear();updateSelBottom()} /* goalSel도 recSel과 동일하게 목표 관리 시트 안에서만 쓰는 선택모드라 여기서 정리해야 함(app-evolve cycle305 critique → advance) */if(ST.catSel.mode){ST.catSel.mode=false;ST.catSel.ids.clear();updateSelBottom()} /* catSel도 recSel/goalSel과 동일하게 카테고리 관리 시트 안에서만 쓰는 선택모드라 여기서 정리해야 함(app-evolve cycle388 advance) */if(ST.qtyLogSel.mode){ST.qtyLogSel.mode=false;ST.qtyLogSel.ids.clear();updateSelBottom()} /* qtyLogSel도 recSel/goalSel/catSel과 동일하게 수량기록 관리 시트 안에서만 쓰는 선택모드라 여기서 정리해야 함(app-evolve cycle415 critique → advance) */if(ST.inquirySel&&ST.inquirySel.mode){ST.inquirySel.mode=false;ST.inquirySel.ids.clear();updateSelBottom()} /* inquirySel도 recSel/goalSel/catSel/qtyLogSel과 동일하게 저장한 메모 시트 안에서만 쓰는 선택모드라 여기서 정리해야 함 — ST.qtyLogSel 등과 달리 ST.inquirySel&&로 방어하는 이유는 오래된 테스트들이 closeSheet()를 부를 때 ST를 최소 모양으로만 세팅해 둔 경우가 있어서다(app-evolve cycle420 develop) */const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}if(CLOUD_CONFLICT_PENDING)applyPendingCloudConflictMerge(); /* pushCloud() conflict 자동병합이 시트 열림 가드로 미뤄둔 보류 병합을 여기서 소비한다(app-evolve cycle353 advance) */}
 /* 시트를 열 때(openTxSheet/editTx/duplicateTx/recApply, openAssetSheet, openGoalForm,
  * openRecSheet/editRec) snapDraft(kind)로 초안 스냅샷을 찍어두고, 암묵적 닫기 경로
  * (스크림탭/스와이프다운 닫기/뒤로가기)가 그 스냅샷과 달라진 초안을 경고 없이 버리지
@@ -15013,6 +15035,36 @@ function qtyLogDelSel(){
   deleteQtyLogUndo(ids);
  });
 }
+/* 저장한 메모 선택모드(ST.inquirySel) — goalSelPartial/qtyLogSelPartial과 동일한 패턴으로,
+ * inquiryListBody가 #inqListBody 안에 있으면(시트가 열려 있으면) 그 부분만 다시 그리고, 없으면
+ * openInquiryList()로 전체를 새로 연다(app-evolve cycle420 develop, cycle415 critique가 보류해둔
+ * '동일 클래스 공백' 후보를 마지막으로 닫는다). */
+function inquirySelPartial(){const b=$('inqListBody');if(b){b.innerHTML=inquiryListBody([...(DB.inquiries||[])].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)));updateSelBottom();return true}return false}
+function inquiryToggleSel(id){if(window._lpJustFired){window._lpJustFired=false;return}ST.inquirySel.ids.has(id)?ST.inquirySel.ids.delete(id):ST.inquirySel.ids.add(id);if(!inquirySelPartial())openInquiryList()}
+function inquirySelAll(){const items=DB.inquiries||[];if(items.length&&ST.inquirySel.ids.size>=items.length)ST.inquirySel.ids.clear();else items.forEach(q=>ST.inquirySel.ids.add(q.id));if(!inquirySelPartial())openInquiryList()}
+/* 저장한 메모 관리 선택모드 바닥바의 '삭제' 버튼 — goalDelSel/catDelSel과 동일하게 confirmSheet로
+ * 한 번 확인받은 뒤 deleteInquiriesUndo(바로 아래)를 호출한다. delInquiry(건당 삭제)와 같은 문구를
+ * 쓴다(app-evolve cycle420 develop). */
+function inquiryDelSel(){
+ if(!ST.inquirySel.ids.size){toast('선택된 메모가 없어요');return}
+ confirmSheet('메모 삭제',`<b style="color:var(--expense);font-size:16px">${ST.inquirySel.ids.size}개</b> 메모를 삭제할까요?`,'삭제',()=>{
+  const ids=new Set(ST.inquirySel.ids);ST.inquirySel.mode=false;ST.inquirySel.ids.clear();
+  deleteInquiriesUndo(ids);
+ });
+}
+/* deleteGoalsUndo/deleteQtyLogUndo와 동일한 패턴으로 여러 메모를 한 번에 지우고 단일 undoToast로
+ * 되돌릴 수 있게 한다. delInquiry(건당 삭제)와 동일한 톰스톤(DB.trashInquiries)+twGuard를 그대로
+ * 쓴다 — 메모는 목표와 마찬가지로 잔액 캐시나 연쇄 비활성화 대상이 없어 deleteRecsUndo의 fromDate
+ * 보존 같은 추가 처리가 필요 없다(app-evolve cycle420 develop). */
+function deleteInquiriesUndo(ids){
+ if(twGuard())return;
+ const removed=(DB.inquiries||[]).filter(q=>ids.has(q.id));
+ if(!removed.length)return;
+ DB.inquiries=(DB.inquiries||[]).filter(q=>!ids.has(q.id));
+ DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
+ DB.trashInquiries=(DB.trashInquiries||[]).concat(removed.map(q=>Object.assign({},q,{_deletedAt:now})));
+ save();openInquiryList();
+ undoToast(`${removed.length}개 메모를 삭제했어요`,()=>{DB.inquiries.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);DB.trashInquiries=(DB.trashInquiries||[]).filter(q=>!ids.has(q.id));touchSave(...removed);openInquiryList();toast('되돌렸어요')})}
 
 /* ================= ROUTER ================= */
 const renderers={home:renderHome,assets:renderAssets,ledger:renderLedger,history:renderHistory,plan:renderPlan,menu:renderMenu};
@@ -15102,6 +15154,10 @@ function activeSel(){
     토글 버튼이 없다. total은 검색 필터가 없는(openAssetQtyLog가 검색창 자체를 두지 않음) 해당
     자산의 전체 기록 수(app-evolve cycle415 critique → advance). */
  if(ST.qtyLogSel.mode)return{all:'qtyLogSelAll()',del:'qtyLogDelSel()',size:ST.qtyLogSel.ids.size,total:(DB.assetQtyLog||[]).filter(q=>q.assetId===ST.qtyLogSel.assetId).length};
+ /* 저장한 메모 선택모드(ST.inquirySel) — goalSel/qtyLogSel과 동일하게 삭제뿐이라 incl/move 같은
+    토글 버튼이 없다. total은 검색 필터가 없는(openInquiryList가 검색창 자체를 두지 않음) 전체
+    메모 수다(app-evolve cycle420 develop). */
+ if(ST.inquirySel&&ST.inquirySel.mode)return{all:'inquirySelAll()',del:'inquiryDelSel()',size:ST.inquirySel.ids.size,total:(DB.inquiries||[]).length};
  return null;
 }
 function updateSelBottom(){const el=$('selBarBottom');if(!el)return;const s=activeSel();
@@ -15142,6 +15198,7 @@ function exitSelMode(){
  else if(ST.goalSel.mode){ST.goalSel.mode=false;ST.goalSel.ids.clear();openGoalsList();}
  else if(ST.catSel.mode){ST.catSel.mode=false;ST.catSel.ids.clear();openCatManage(_catMgmtKind,true);}
  else if(ST.qtyLogSel.mode){const assetId=ST.qtyLogSel.assetId;ST.qtyLogSel.mode=false;ST.qtyLogSel.ids.clear();openAssetQtyLog(assetId);}
+ else if(ST.inquirySel&&ST.inquirySel.mode){ST.inquirySel.mode=false;ST.inquirySel.ids.clear();openInquiryList();}
  updateSelBottom();
 }
 /* 빈 곳을 탭하면 선택 모드 해제 (항목·버튼·바 제외) */
@@ -15174,7 +15231,7 @@ function navGo(t){ /* 가계부 탭 누르면 마지막 보던 모드(달력/목
 /* 달력↔목록 전환 시 보고 있는 월을 공유 */
 function toList(){histInvalidate();go('history')} /* 달력→전체 */
 function toCal(){go('ledger')} /* 전체→달력 */
-function go(tab){if(ST.aSel.mode){ST.aSel.mode=false;ST.aSel.ids.clear()}if(ST.lSel.mode){ST.lSel.mode=false;ST.lSel.ids.clear()}if(ST.hist.selMode){ST.hist.selMode=false;ST.hist.sel.clear()}if(ST.recSel.mode){ST.recSel.mode=false;ST.recSel.ids.clear()}if(ST.goalSel.mode){ST.goalSel.mode=false;ST.goalSel.ids.clear()}if(ST.catSel.mode){ST.catSel.mode=false;ST.catSel.ids.clear()}if(ST.qtyLogSel.mode){ST.qtyLogSel.mode=false;ST.qtyLogSel.ids.clear()}
+function go(tab){if(ST.aSel.mode){ST.aSel.mode=false;ST.aSel.ids.clear()}if(ST.lSel.mode){ST.lSel.mode=false;ST.lSel.ids.clear()}if(ST.hist.selMode){ST.hist.selMode=false;ST.hist.sel.clear()}if(ST.recSel.mode){ST.recSel.mode=false;ST.recSel.ids.clear()}if(ST.goalSel.mode){ST.goalSel.mode=false;ST.goalSel.ids.clear()}if(ST.catSel.mode){ST.catSel.mode=false;ST.catSel.ids.clear()}if(ST.qtyLogSel.mode){ST.qtyLogSel.mode=false;ST.qtyLogSel.ids.clear()}if(ST.inquirySel&&ST.inquirySel.mode){ST.inquirySel.mode=false;ST.inquirySel.ids.clear()}
  if(ST.tab==='history'&&tab!=='history')clearTimeout(_histQT); /* 전체내역을 벗어나며 histQ 디바운스 타이머가 남아있으면, 언마운트된 화면을 뒤늦게 updateHist()로 다시 그리지 않도록 정리 */
  const _tnAction=tabNavAction(tab,_tabNavPushed); /* 탭 레벨 백버튼 history entry 판정(logic.js) */
  if(_tnAction==='push'){_tabNavPushed=true;try{history.pushState({tabNav:true},'')}catch(e){}}
