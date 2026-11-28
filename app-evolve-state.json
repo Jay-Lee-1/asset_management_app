@@ -1,15 +1,12 @@
 {
   "cycle": 419,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "index.html 인라인 스크립트의 순수 로직 함수를 logic.js로 선제적으로 이주시켜 test/run.js의 extractFunction() regex-slicing 의존을 줄인다",
+    "why": "index.html은 약 14,500줄짜리 단일 인라인 <script>(1430~15941행)에 999개 함수 선언이 들어있는데, 419사이클이 지난 지금도 logic.js로 옮겨진 건 155개뿐이다. 나머지는 test/run.js가 extractFunction()/extractConst()/extractLet()/extractConstBlock()으로 index.html 원본 소스를 브레이스 깊이 기준 정규식으로 직접 잘라내 실행하는 방식(extractFunction 268회, 나머지 35회 사용)에 의존한다. logic.js 상단 주석과 domstub.js(cycle210) 자체가 이걸 '설계가 아니라 임시방편'이라고 인정하고 있고, cycle418/419도 각각 touchStaleChanged/projectedDateCapped라는 새 순수 헬퍼가 '단위테스트가 필요해서' 그때그때 수동으로 logic.js에 손으로 옮겨 넣었을 뿐, 추출 자체를 사이클의 목표로 삼은 적은 한 번도 없다. 이 간접구조가 깨지기 쉬울수록 모든 develop/review/advance 사이클이 회귀 안전망에 걸 수 있는 신뢰도가 낮아지므로, 지금 안 쓰는 다른 어떤 점 버그 수정보다 복리로 쌓이는 구조적 약점이다.",
+    "approach": "1) index.html의 인라인 함수들 중 DOM($, document), 전역 ST/DB 변이, onclick 배선에 의존하지 않는 순수 계산/포매팅/집계 함수들(logic.js에 이미 있는 날짜/금액/투사 계열 헬퍼와 같은 모양)을 먼저 한 번에 너무 많이 건드리지 않도록 작은 배치로 골라낸다. 2) 그 배치를 logic.js로 그대로(동작 변경 없이) 옮긴다 — index.html이 이미 <script src=\"logic.js\">를 자신의 인라인 스크립트보다 먼저 로드하므로(1429행 부근) 호출부 변경 없이 전역으로 계속 호출 가능하다. 3) 옮긴 함수들에 대해 test/run.js의 extractFunction()/extractConst() 호출을 제거하고 logicSrc가 직접 제공하도록 해, 추출 의존도가 줄어드는 것을 증명한다. 4) index.html 안에 같은 이름의 `function name(` 선언이 남아있지 않은지(중복/드리프트 방지) 확인하는 가벼운 정적 검사를 테스트에 추가한다. 5) logic.js 상단에 '언제 이주 대상인지' 기준을 짧게 적어 다음 사이클들이 버그가 터질 때만 반응적으로 옮기는 대신 계속 선제적으로 이 작업을 이어가게 한다. 전/후 전체 회귀(node test/run.js)로 순수 이동(동작 변경 없음)임을 증명한다."
+  },
   "history": [
-    {
-      "cycle": 414,
-      "phase": "review",
-      "timestamp": "2026-11-27T12:08:19.999Z",
-      "summary": "develop(cycle414) 커밋 30fdf1a(setBigMin()에 누락된 twGuard 추가)를 검토. twActive()/twGuard() 정의(index.html:10110-10111, TWi>=0이면 toast 후 true 반환)를 직접 읽고, ackGoalAchieved/toggleCatVarUI/toggleAutoRates 등 기존 '함수 맨 앞에서 전체를 막는' twGuard 관례와 diff가 정확히 같은 모양(두 줄 추가뿐: 가드 1줄 + 주석 1줄)인지 setBigMin() 실제 정의(index.html:4856-4860)를 대조해 확인. setBigMin()의 유일한 호출부(openBigMinSheet()의 저장 버튼 onclick, 4848행과 Enter 키다운 핸들러, 4847행)를 grep으로 재확인해 다른 경로가 가드를 우회하지 않음을 확인. test/run.js FUNCTIONS 화이트리스트와 $ 스텁 맵(bigMinInputValue)에 이미 등록돼 있었음을 확인(cycle413 goalWhatIf 작업에서 bigMinInput 매핑 자체는 이미 있었고, 이번엔 테스트만 추가). 추가된 테스트 3건(정상 입력 시 save/closeSheet/renderCurrent/토스트 전부 호출, 빈 입력이면 기존 설정 유지+save 미호출, TWi=0 튜토리얼 중에는 twGuard가 막아 설정도 save도 안 바뀌고 twGuard 자신의 토스트만 뜨는지)이 각 분기를 정확히 커버하는지 확인. node test/run.js 독립 재실행 4116/4116 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/982598/1770자) 전부 new vm.Script() 파싱 통과, APP_VERSION 1.47.561/sw.js CACHE v828 일치 재확인. 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
     {
       "cycle": 414,
       "phase": "critique",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-28T08:08:10Z",
       "summary": "develop(cycle419) 커밋 6d9cf27(goalProgress/goalWhatIf/debtPayoffProjection/debtPayoffWhatIf의 \"NaN-NaN-NaN\" projectedDate 버그 수정, PROJECTION_MAX_DAYS+projectedDateCapped 신설)을 검토. 수정 전 네 함수가 공유하던 패턴(rate>0이면 addDays(date,Math.ceil(remaining/rate)))이 실제로 거대한 target/bal과 0에 매우 가까운 rate가 만나면 addDays 내부 Date가 JS 표현범위를 넘어 Invalid Date→\"NaN-NaN-NaN\" 문자열이 되는지, logic.js의 addDays 구현(21행, new Date+setDate)과 projectedDateCapped(1266행 부근, days>0&&days<=PROJECTION_MAX_DAYS일 때만 addDays 호출)을 직접 대조해 재확인. grep으로 logic.js의 다른 모든 addDays(...) 호출부(recDates/recNthDate/recCountUntil/cutoff 계산 등)를 전부 훑어 나머지는 n이 호출자가 미리 작은 정수로 제한하는 값들(±트렌드윈도일수, (n+2)*7 등)이라 이번 버그의 영향 범위 밖임을 확인 — 네 함수만 고치면 충분함. index.html에서 projectedDate를 소비하는 모든 지점(goalRowHTML/homeAlerts goalBehind/debtWhatIfText·goalWhatIfText/assetBalCard 부채상환 서브라인 등, grep으로 projectedDate 참조 전부 나열)이 falsy 체크(!p.projectedDate 등)로 null을 이미 안전하게 처리하고 있어 이번에 null 분기가 하나 더 늘어도 새로운 깨짐이 없음을 확인. PROJECTION_MAX_DAYS=36500(약100년) 경계값 테스트(정확히 그 값이면 addDays와 일치, 그보다 1 크면 null)가 맞는지, projectedDateCapped가 vm 샌드박스에 노출 안 되는 top-level const를 테스트 파일에 복제해 둔 기존 한계(extractConst 주석)를 그대로 따르는지 확인. node test/run.js 독립 재실행 4171/4171 통과, node --check(logic.js/test/run.js) 통과. index.html/sw.js는 건드리지 않았으므로 APP_VERSION/CACHE 변경 없음(develop 커밋 설명과 일치). 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 419,
+      "phase": "critique",
+      "timestamp": "2026-11-28T09:30:00Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 cycle409~419 전체(twGuard/touch() 중앙 백스톱, 6개 관리화면 다중선택, qtyLog 삭제/costBasis 보정, goal/debt projectedDate NaN 수정, goal 진행추이 보기 등)를 배제 목록으로 주고 전략적으로 재검토시킴. 후보로 전체내역 리스트 렌더링 성능(이미 페이지네이션/캐시/디바운스 적용돼 기각), 차트/what-if 접근성(이미 aria-live/라벨/키보드 peek 보유, cycle413/414에서 갖춰짐 확인돼 기각), twGuard/멀티셀렉 추가 재감사(명시적으로 구조적으로 닫힌 것으로 배제) 등을 검토 후 기각하고, 대신 index.html(인라인 <script> 약 14,500줄, 1430~15941행)에 999개 함수가 선언돼 있는데 419사이클이 지난 지금도 logic.js로 옮겨진 건 155개뿐이라는 구조적 공백을 발견 — 나머지 844개는 test/run.js가 extractFunction()/extractConst()/extractLet()/extractConstBlock()으로 index.html 원본 소스를 브레이스 깊이 기준 regex로 직접 잘라내 실행하는 방식(extractFunction 268회, 나머지 35회)에만 의존해 테스트된다. logic.js 상단 주석과 domstub.js(cycle210)가 이미 이 방식을 '설계가 아니라 임시방편'으로 인정하고 있고, cycle418(touchStaleChanged)·cycle419(projectedDateCapped)도 '단위테스트가 필요해서' 그때그때 새 순수 헬퍼를 수동으로 logic.js에 옮겨 넣었을 뿐 추출 자체를 목표로 삼은 사이클은 한 번도 없었음을 history 전체에서 재확인. 이 간접구조가 모든 develop/review/advance 사이클의 회귀 안전망 신뢰도를 깎아먹는 복리성 구조적 약점이라고 판단해 선택 — 오케스트레이터가 서브에이전트의 count 주장(999 함수 선언/155 logic.js 이주/extractFunction 268회)을 grep으로 직접 재확인. pending_advance_plan에 저장: DOM/ST/DB 비의존 순수 함수를 작은 배치로 골라 logic.js로 그대로(동작 변경 없이) 이주 + 해당 함수들의 extractFunction()/extractConst() 호출 제거 + index.html에 동일 이름 선언이 안 남았는지 확인하는 정적 검사 추가 + logic.js 상단에 이주 기준 문서화. node test/run.js 4171/4171 통과 확인(베이스라인, 코드 변경 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
