@@ -1,15 +1,8 @@
 {
   "cycle": 419,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 414,
-      "phase": "develop",
-      "timestamp": "2026-11-27T11:12:21.383Z",
-      "summary": "general-purpose 서브에이전트에게 위임해 조사. cycle413 develop이 \"diff를 작게 유지하려 보류, future 후보\"로 명시적으로 남겨둔 setBigMin()(상태 파일 cycle413 develop 요약 참고)을 처리 — ackGoalAchieved/ackDebtPayoff(cycle409)·toggleCatVarUI/toggleBudgetRolloverUI(cycle412)·toggleAutoRates/toggleConfirmTransfers(cycle413)와 같은 twGuard 공백 클래스. openBigMinSheet()(\"큰 지출 기준\" 금액 설정 시트)는 메뉴(설정) 화면에서 여는 시트로 #nav와 동일한 구조적 틈(twStage 오버레이 밖이라 튜토리얼 중에도 그대로 열고 탭 가능)에 있는데, 저장 버튼이 호출하는 setBigMin()은 가드 없이 DB.settings.bigMin=v;save()를 바로 실행해 \"튜토리얼 중에는 실제로 저장되지 않아요\" 약속이 깨지는 실데이터 오염 버그였다. setBigMin() 맨 앞에 if(twGuard())return; 추가(ackGoalAchieved/toggleAutoRates 등과 동일한 함수 전체를 막는 패턴, openBigMinSheet() 자체의 UI나 bigMin() 순수 로직은 변경 없음). test/run.js FUNCTIONS 화이트리스트에 setBigMin 추가, $ 스텁 맵에 bigMinInput 처리 추가(budgetIn 등과 동일 패턴), 테스트 3건 추가(정상 입력 시 설정변경+save()+closeSheet()+renderCurrent()+토스트, 빈 입력이면 기존 설정 유지+save() 미호출 회귀 방지, [실행형] TWi=0(튜토리얼 활성) 상태에서 twGuard가 막아 설정도 save()도 안 바뀌고 twGuard 자신의 토스트만 뜨는지 확인). 오케스트레이터가 diff를 직접 리뷰(두 줄 추가뿐인 최소 변경 확인)하고 node test/run.js 독립 재실행 4113->4116/4116 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/982598/1770자) 전부 new vm.Script() 파싱 통과를 재검증. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.560->1.47.561, sw.js CACHE v827->v828. 범위 제외: 다른 모든 DB-mutating 함수에 대한 전체 twGuard 재감사(반복 기각 범위), move류(moveAsset/moveCat/moveGoal/moveOwner) 재정렬은 의도적으로 twGuard 없음.",
-      "commit": null
-    },
     {
       "cycle": 414,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-28T07:24:48.711Z",
       "summary": "general-purpose 서브에이전트에게 위임해 조사(twGuard/touch() 중앙 백스톱 구조적으로 닫혔다고 보고 재탐색 안 함, recDates/recNthDate/recCountUntil을 수천 건 랜덤 퍼즈로 먼저 검증해 회귀 없음 확인 후 다른 영역으로 이동). goalProgress/goalWhatIf/debtPayoffProjection/debtPayoffWhatIf(logic.js) 네 함수 모두 rate>0일 때 addDays(date, Math.ceil(remaining/rate))로 projectedDate를 계산하는데, remaining이 크고 rate가 0에 매우 가까운 양수(90일간 반올림 수준으로만 증가한 순자산, 거대 부채를 아주 조금만 갚는 경우 등)면 Math.ceil(remaining/rate)가 JS Date가 표현 가능한 범위를 넘는 일수가 되어 addDays()가 Invalid Date를 반환하고, 그걸 그대로 템플릿 포맷해 문자열 \"NaN-NaN-NaN\"이 나온다 — 이 문자열은 truthy라 rate<=0일 때는 이미 null을 반환하는 '모르면 추측하지 않는다' 원칙을 그대로 뚫고 goalRowHTML/homeAlerts goalBehind 카드/debtWhatIfText·goalWhatIfText/assetBalCard 부채상환 서브라인까지 그대로 노출되어 사용자에게 \"이대로면 NaN-NaN-NaN쯤 달성 예상\"이 표시되던 실질적 버그였다. logic.js에 PROJECTION_MAX_DAYS=36500(~100년)와 공유 헬퍼 projectedDateCapped(baseDate,days)를 신설(goalProgress 바로 앞) — days>0 and days<=PROJECTION_MAX_DAYS일 때만 addDays를 호출하고 그 외엔 null. 네 함수의 해당 호출부를 전부 projectedDateCapped로 교체(다른 로직 변경 없음). 수정 전 코드로 되돌려(logic.js만 git stash) 새 테스트 7건이 실제로 실패함을(4164/4171 중 7건 실패) 먼저 확인한 뒤 복원해 통과시키는 방식으로 버그가 실재함을 입증. test/run.js에 projectedDateCapped 단위테스트 3건(정상 일수는 addDays와 일치/cap 초과시 null/0·음수 입력 null) + 네 함수 각각에 대형 target·완만한 추세 회귀테스트 1건씩(projectedDate가 NaN-NaN-NaN 문자열이 아니고 null인지 확인) 추가. PROJECTION_MAX_DAYS는 vm 샌드박스에 top-level const가 바인딩되지 않는 기존 한계(extractConst 주석과 동일 이유)로 테스트 파일에 로컬 상수로 중복 정의. node test/run.js 4164->4171/4171 통과, node --check(logic.js/sw.js/test/run.js) 통과. index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 변경 없음. 범위 제외: amortizationPayoffMonths(이자기반 상환개월수)도 극단적 비율에서 거대하지만 유한한 숫자를 반환하는 관련 문제가 있으나 NaN은 아니라 이번 범위 밖(후속 후보로 남김), 그 외 기존에 이미 닫힌 항목 전부 재검토 없이 fuzz/직독으로만 재확인. 세션 시작 시 로컬 main이 또 캐시된 오래된 커밋(51c4fcd)을 가리키던 동일한 컨테이너 캐시 문제 재발 — git fetch origin main으로 5057084가 실제 origin/main임을 재확인 후 git checkout -B main으로 재정렬. 커밋 6d9cf27.",
       "commit": "6d9cf274f1c76fffa0b55c9fbead6a612c9c34fe"
+    },
+    {
+      "cycle": 419,
+      "phase": "review",
+      "timestamp": "2026-11-28T08:08:10Z",
+      "summary": "develop(cycle419) 커밋 6d9cf27(goalProgress/goalWhatIf/debtPayoffProjection/debtPayoffWhatIf의 \"NaN-NaN-NaN\" projectedDate 버그 수정, PROJECTION_MAX_DAYS+projectedDateCapped 신설)을 검토. 수정 전 네 함수가 공유하던 패턴(rate>0이면 addDays(date,Math.ceil(remaining/rate)))이 실제로 거대한 target/bal과 0에 매우 가까운 rate가 만나면 addDays 내부 Date가 JS 표현범위를 넘어 Invalid Date→\"NaN-NaN-NaN\" 문자열이 되는지, logic.js의 addDays 구현(21행, new Date+setDate)과 projectedDateCapped(1266행 부근, days>0&&days<=PROJECTION_MAX_DAYS일 때만 addDays 호출)을 직접 대조해 재확인. grep으로 logic.js의 다른 모든 addDays(...) 호출부(recDates/recNthDate/recCountUntil/cutoff 계산 등)를 전부 훑어 나머지는 n이 호출자가 미리 작은 정수로 제한하는 값들(±트렌드윈도일수, (n+2)*7 등)이라 이번 버그의 영향 범위 밖임을 확인 — 네 함수만 고치면 충분함. index.html에서 projectedDate를 소비하는 모든 지점(goalRowHTML/homeAlerts goalBehind/debtWhatIfText·goalWhatIfText/assetBalCard 부채상환 서브라인 등, grep으로 projectedDate 참조 전부 나열)이 falsy 체크(!p.projectedDate 등)로 null을 이미 안전하게 처리하고 있어 이번에 null 분기가 하나 더 늘어도 새로운 깨짐이 없음을 확인. PROJECTION_MAX_DAYS=36500(약100년) 경계값 테스트(정확히 그 값이면 addDays와 일치, 그보다 1 크면 null)가 맞는지, projectedDateCapped가 vm 샌드박스에 노출 안 되는 top-level const를 테스트 파일에 복제해 둔 기존 한계(extractConst 주석)를 그대로 따르는지 확인. node test/run.js 독립 재실행 4171/4171 통과, node --check(logic.js/test/run.js) 통과. index.html/sw.js는 건드리지 않았으므로 APP_VERSION/CACHE 변경 없음(develop 커밋 설명과 일치). 실제 버그는 발견하지 못함. 코드 변경 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
     }
   ]
 }
