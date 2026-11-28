@@ -1,15 +1,8 @@
 {
   "cycle": 420,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 414,
-      "phase": "advance",
-      "timestamp": "2026-11-27T13:10:00.000Z",
-      "summary": "cycle414 critique의 계획(renderGoalForm에 '진행 추이 보기' 진입점 추가)을 구현. renderGoalForm(index.html)의 whatIfHTML 블록 바로 아래에 og(저장된 원본)가 있을 때만 보이는 버튼을 추가 — asset형은 og.type 기준(d.type이 아니라, whatIfHTML과 동일한 전제: 아직 저장 안 한 유형 전환은 무시)으로 goalLinkedAssetGone(og)이면 숨기고, 아니면 closeSheet();openAssetHistory(og.linkedAssetId)로 기존 assetBalCard 잔액추이 화면으로 이동. networth형은 신설한 openGoalNwChart(goalId)를 호출해 같은 시트 위에 순자산 추이 차트 시트를 덮어 그린다(뒤로가기는 두지 않음, duplicateGoal 등 기존 같은 시트 내 전환 관례와 동일). 계획이 제안한 'nwHistoryCard를 그대로 재사용'은 실행 전 재검토해서 거부했다 — nwHistoryCard는 홈 화면 전용 고정 id(#nwhChart/#nwhPeekLine/#nwhPeekLabel)와 전역 상태 (ST.nwPreset, #nwHistBody)에 묶여 있고, go()가 탭 전환 시 .page를 지우지 않고 .active만 토글해 홈 화면 DOM이 항상 남아있으므로 그대로 호출하면 문서에 id가 중복돼 $('nwhChart')가 시트가 아니라 숨은 홈 화면 쪽을 찾아버리는 실제 버그가 생긴다(동일 상황을 이미 겪어 assetBalCard가 nwHistoryCard와 별도 id·피크 핸들러를 쓰고 있는 선례를 코드로 직접 재확인). 그래서 assetBalCard와 같은 패턴으로 전용 함수 goalNwChartCard(owner,preset)·전용 id (goalNwChart 등)·전용 전역(_goalNwOwner/_goalNwPreset/_goalNwChartPts/_goalNwPeekIdx 묶음 let 선언 1개)·전용 피크 핸들러(goalNwChartPeekStart/Move/Key/End)·전용 프리셋 핸들러 (goalNwPresetSel)를 새로 만들어 nwHistoryRange/nwHistoryForOwner/nwChartPath/nwNearestPointIndex/nwChartKeyStep/chartPeekRenderAt 등 기존 순수 로직·차트 좌표 함수만 재사용했다(새 차트 컴포넌트를 만들지 않는다는 계획의 원래 취지는 그대로 지킴). 테스트 4건 추가(계획한 4건 그대로): (1) asset형+연결자산 생존 시 closeSheet();openAssetHistory(linkedAssetId) 호출 확인, (2) asset형+연결자산 삭제 시 버튼 숨김(goalLinkedAssetGone), (3) networth형은 openGoalNwChart(goalId)를 열고 실제로 호출해 _goalNwOwner가 goalOwnerEff(목표의 owner)와 같은지, 시트에 제목·차트가 뜨는지까지 실행형으로 검증, (4) 신규(미저장) 목표는 버튼 자체가 없음. test/run.js FUNCTIONS에 goalNwChartCard/openGoalNwChart, LETS에 _goalNwOwner(묶음 let의 대표 이름) 등록. node test/run.js 4120/4120 통과(기존 4116 + 신규 4). APP_VERSION 1.47.561→1.47.562, sw.js CACHE v828→v829 동기화. pending_advance_plan을 비움(phase를 develop으로 회전, cycle 415 시작).",
-      "commit": null
-    },
     {
       "cycle": 415,
       "phase": "develop",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-28T10:45:00Z",
       "summary": "critique(cycle419)의 계획대로 index.html 인라인 스크립트에 남아있던 순수 함수 9개를 logic.js로 이주하는 1차 배치를 완료(999개 중 155개만 logic.js에 있던 구조적 공백을 조금씩 줄이는 다사이클 작업의 첫걸음, 전체를 한 번에 옮기지 않고 작은 배치로 제한). general-purpose 서브에이전트에게 위임해 index.html 함수들을 직접 읽고 DOM($/document/closest/querySelector)·ST·DB·toast/go/closeSheet/confirmSheet/save()/touch() 등 비순수 전역을 전혀 참조하지 않는 함수만 골라 logic.js로 그대로(동작 변경 없이) 옮기게 했다. 이주한 9개: wname/fmtDate/shortDate/fmtDateFull(날짜 표시 포맷, Date와 서로간 호출뿐), caretPosAfterFormat/qtyCaretAfterFilter(fmtAmt/fmtQty가 쓰는 순수 커서 보정, 매개변수만 사용), sanitizeAmount(Number/AMOUNT_MAX 비교뿐 — AMOUNT_MAX는 index.html이 나중에 선언하는 전역이지만 함수 몸통이 호출 시점에 지연 조회하므로 로드 순서상 문제없음), localHasUnsyncedChanges/shouldRetryCloudSync(매개변수 비교만). index.html에서 해당 9개 함수 선언을 전부 삭제하고(logic.js가 더 먼저 로드돼 전역으로 계속 호출 가능) grep으로 동일 이름의 `function name(` 선언이 더 안 남았음을 확인. test/run.js FUNCTIONS 배열에서 이 9개의 extractFunction() 등록을 제거(해당 함수들을 좁은 sandbox에서 extractFunction 단독 호출하던 곳이 없는지도 확인 — num은 23곳의 narrow sandbox가 logicSrc 없이 extractFunction('num')에 의존해 이번 배치에서 제외). logic.js 상단 주석 바로 아래에 이주 판단 기준 3줄 추가(DOM/ST/DB/toast/go/closeSheet/confirmSheet/save()/touch() 비순수 전역이 몸통에 없으면 옮긴다, 다른 순수 함수 호출은 무방). 오케스트레이터가 diff를 직접 리뷰(index.html 삭제분과 logic.js 추가분이 포매팅 외 동작 변경이 없는지 줄 단위 대조, test/run.js FUNCTIONS 변경이 9개 제거뿐인지 확인)하고 node test/run.js 독립 재실행으로 재검증(4171/4171 통과, 서브에이전트 보고와 동일), node --check(logic.js/test/run.js) 통과, 9개 함수명 모두 index.html에 `function name(` 형태로 전혀 안 남음을 오케스트레이터가 직접 grep으로 재확인. index.html/sw.js를 수정했으므로 APP_VERSION 1.47.570->1.47.571, sw.js CACHE v837->v838. 범위 제외(다음 배치 후보로 남김): num(23곳 narrow sandbox 때문에 이번엔 보류, logicSrc를 안 쓰는 그 sandbox들을 먼저 손보거나 함께 옮겨야 함), groupItems(DB.assets/DB.settings 참조라 비순수로 확인돼 영구 제외), fmtAmt/fmtQty/codeUpperInput(DOM 요소를 직접 mutate해 비순수로 확인돼 영구 제외). pending_advance_plan null로 비움, phase를 develop으로 회전, cycle 420으로 증가.",
       "commit": null
+    },
+    {
+      "cycle": 420,
+      "phase": "develop",
+      "timestamp": "2026-11-28T11:22:20Z",
+      "summary": "자산(aSel)·일별내역(lSel)·전체내역(hist.selMode)·반복거래(recSel)·목표(goalSel)·카테고리(catSel)·수량변경기록(qtyLogSel) 일곱 관리화면이 모두 갖춘 롱프레스 선택모드+전체선택+일괄삭제(undo 포함) 패턴을, cycle415 critique가 \"동일 클래스 공백이나 우선순위 낮음\"으로 보류해둔 별도 후보였던 저장한 메모(DB.inquiries) 목록에도 마지막으로 추가했다. ST.inquirySel 신설, openInquiryList()를 선택모드 지원하도록 재구성(inquiryListBody로 순수 렌더부 분리), inquirySelPartial/inquiryToggleSel/inquirySelAll/inquiryDelSel과 delInquiry와 동일한 톰스톤+twGuard+단일 undoToast를 쓰는 deleteInquiriesUndo(ids)를 추가했으며, activeSel()/exitSelMode()/closeSheet()/go(tab)에도 정리 분기를 배선했다. test/run.js에 선택모드 렌더·토글·전체선택·일괄삭제·undo·activeSel·exitSelMode 테스트 15건을 추가해 4171→4186/4186 전부 통과 확인했고, sw.js CACHE v838→v839·APP_VERSION 1.47.571→1.47.572를 함께 올렸다.",
+      "commit": "9c2ca27"
     }
   ]
 }
