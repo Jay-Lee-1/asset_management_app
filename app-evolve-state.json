@@ -1,15 +1,8 @@
 {
   "cycle": 418,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 413,
-      "phase": "develop",
-      "timestamp": "2026-11-27T07:15:00.000Z",
-      "summary": "general-purpose 서브에이전트에게 위임해 조사. 설정 화면의 toggleAutoRates()(시세 자동 연동)와 toggleConfirmTransfers()(이체 확인) 두 토글 함수가 ackGoalAchieved/ackDebtPayoff(cycle409)·toggleCatVarUI/toggleBudgetRolloverUI(cycle412)와 같은 twGuard 공백 클래스임을 발견 — 이 둘은 메뉴(시세 시트/가계부 설정) 안의 토글이라 #nav와 같은 구조적 틈(twStage 오버레이 밖이라 튜토리얼 중에도 그대로 클릭 가능)에 있는데, 특히 toggleConfirmTransfers는 끌 때 실제 미확인 이체/반복거래를 confirmed=true로 영구 확정해버려 \"튜토리얼 중에는 실제로 저장되지 않아요\" 약속이 깨지는 실질적 데이터 오염 버그였다. toggleAutoRates도 설정 플래그와 즉시 syncRates(true) 호출(외부 네트워크 요청)이 영구 저장됐다. 두 함수 맨 앞에 if(twGuard())return; 추가(기존 동작/부수효과는 그대로, ackGoalAchieved/toggleCatVarUI와 동일 패턴). 오케스트레이터가 diff를 직접 리뷰(두 줄 추가뿐인 최소 변경 확인)하고 node test/run.js 재실행으로 재검증. test/run.js FUNCTIONS에 toggleAutoRates 추가(toggleConfirmTransfers는 이미 있었음), 테스트 4건 추가 — toggleAutoRates 기본 동작 2건(켤 때 save+syncRates(true), 끌 때 syncRates 미호출 — 기존엔 이 함수 자체에 테스트가 없었음), 두 함수의 튜토리얼 중 twGuard 차단 테스트 각 1건(toggleConfirmTransfers는 확인 시트 미표시·미확인 이체 미확정까지 검증). node test/run.js 4094->4098/4098 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개 전부 new Function() 파싱 통과(오케스트레이터 독립 재검증). index.html/sw.js 수정했으므로 APP_VERSION 1.47.558->1.47.559, sw.js CACHE v825->v826. 범위 제외: toggleAppLock/toggleBioUnlock/toggleOsNotify/toggleNotifyMuteGroup(금융데이터가 아닌 기기보안/알림권한이라 twGuard 대상 아님으로 판단), setBigMin(동일 클래스 공백이나 diff 작게 유지하려 보류, future 후보), 전체 twGuard 재감사(반복 기각 범위), moveAsset/moveGoal의 클라우드 동기화 순서보존 여부(mergeCollection이 id-keyed 병합이라 moveOwner/moveCat과 다른 메커니즘이라 이 버그 클래스에 해당 안 함을 확인).",
-      "commit": null
-    },
     {
       "cycle": 413,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-28T02:09:38Z",
       "summary": "critique(cycle417)의 계획대로 save()/_saveCore(index.html:3040) 맨 앞, navigator.locks 분기 이전에 twActive() 중앙 가드를 추가했다(참이면 twGuard와 동일한 토스트를 띄우고 false 반환, _saveCore 미호출). 기존 77개의 개별 if(twGuard())return; 가드는 그대로 유지(UX상 더 깔끔한 early-return 경로). twEnd(done)가 save() 호출 전에 TWi=-1을 먼저 설정함을 재확인해 튜토리얼 종료 시의 정상 저장은 막히지 않음을 검증. logic.js는 건드리지 않았지만 test/run.js의 독립 vm 컨텍스트(makeSaveCtx)가 save()/_saveCore만 끌어와 twActive 스텁 없이 실행하던 구조라 twActive 참조 추가로 기존 save() 관련 테스트 5건이 'twActive is not defined'로 깨짐을 발견 — makeSaveCtx 기본 ctx에 twActive:()=>false 스텁을 추가해 회귀를 해소하고, 새 가드 자체를 검증하는 테스트 3건(twActive=true일 때 _saveCore 미호출+토스트+false 반환, 락 분기보다 먼저 막힘, twActive=false일 때 기존처럼 통과)을 추가했다. APP_VERSION 1.47.567→1.47.568, sw.js CACHE v834→v835 동반 상향. 전체 회귀 4149/4149 통과.",
       "commit": null
+    },
+    {
+      "cycle": 418,
+      "phase": "develop",
+      "timestamp": "2026-11-28T03:00:00.000Z",
+      "summary": "general-purpose 서브에이전트에게 위임해 조사. twGuard 개별 함수 재감사(cycle417 advance의 save()/_saveCore() 중앙 백스톱으로 구조적으로 닫혔다고 판단해 재탐색 안 함), logic.js 153개 함수 전수 확인(전부 test/run.js에 전용 케이스 보유, 누락된 단위테스트 후보 없음), 7개 관리화면(자산/가계부/전체내역/반복/목표/카테고리/수량기록) 전부 일괄선택+다중삭제+undoToast 패턴 대등 확인, sw.js 캐시전략/CSV export/what-if 접근성/N인 정산 로직 등 기존에 세심히 검토된 영역에서 새 결함 없음을 재확인 후 기각. 대신 saveAssetQtyLogEdit()(자산 수량 변경 기록 수정 저장)에서 costBasis 보정 자격 판정이 날짜 수정 \"전\" 값을 쓰던 버그를 발견 — renderQtyLogEditSheet는 날짜와 addedAmount를 한 폼에서 동시에 수정할 수 있는데, 기존 코드는 qtyLogAddedAmountCostBasisDelta(logic.js:1445, '이 기록이 자산의 최신 기록인지'를 q.date로만 판정해 안전할 때만 델타를 반환하는 '모르면 추측하지 않는다' 함수) 호출을 q.date=newDate 대입보다 먼저 실행해, 사용자가 이 기록의 날짜를 다른 기록보다 앞으로 옮기면서(=저장 후엔 더는 최신이 아니게 됨) addedAmount도 함께 고치면 옛(수정 전) 날짜 기준으로 여전히 '최신'이라 오판해 실제로는 안전하지 않은 costBasis 델타를 적용해버리는 실질적 데이터 오염 버그였다. q.date=newDate 대입을 costBasisDelta 계산보다 앞으로 옮겨 저장 후(최종) 날짜 기준으로 최신 여부가 정확히 판정되게 수정(index.html, saveAssetQtyLogEdit 내부, 원래 8019행의 대입을 8012행 근처로 이동). saleProceeds/realizedGain 보정 블록은 날짜에 의존하지 않음을 코드로 재확인해 영향 없음. test/run.js에 회귀 테스트 1건 추가 — q1(2026-02-01)이 other(2026-01-15)보다 뒤라 '최신'인 기준선에서는 보정이 정상 적용됨을 먼저 확인한 뒤, 같은 입력에서 날짜만 2026-01-01(other보다 앞)로 바꿔 저장하면 더는 최신이 아니므로 costBasis가 그대로 유지돼야 함을 검증. 서브에이전트가 수정 전 코드로 되돌려 테스트를 돌려 실제로 실패(4149/4150, costBasis가 1700000으로 잘못 상승)함을 먼저 확인한 뒤 수정을 재적용해 통과시킴. node test/run.js 4149->4150/4150 통과, node --check(logic.js/sw.js/test/run.js) 통과, index.html HTML 주석 제거 후 추출한 inline <script> 블록 4개(519/1274/997172/1770자) 전부 new Function() 파싱 통과(오케스트레이터 독립 재검증, 오케스트레이터가 직접 node test/run.js 재실행해 4150/4150 재확인). index.html/sw.js 수정했으므로 APP_VERSION 1.47.568->1.47.569, sw.js CACHE v835->v836. 범위 제외: saveAssetQtyLogEdit의 saleProceeds/realizedGain 보정 경로(날짜 비의존 확인돼 변경 없음), qtyLogEdit 날짜 피커에 min 제약 추가(과거로 옮기는 것 자체는 의도된 동작, 문제는 순수 판정 함수에 전달되는 입력 시점의 순서였을 뿐이라 범위 밖), twGuard 개별 함수 재감사(구조적으로 닫힌 것으로 간주), Inquiries 일괄선택/settleUpTransfers 최적성/CSV/SRI 해시 등 과거 반복 기각 항목.",
+      "commit": "cbeb03b"
     }
   ]
 }
